@@ -1,0 +1,29 @@
+# Build output & vendored/generated files
+dist
+src-tauri/target
+src-tauri/gen
+node_modules
+patches
+package-lock.json
+src-tauri/Cargo.lock
+
+# Assets
+branding
+public
+
+# Markdown is left to the author's own wrapping (docs, samples, changelog).
+**/*.md
+
+# Whitespace here is significant to a consumer that is not Prettier.
+#
+# about.hbs generates the Rust half of THIRD_PARTY_LICENSES.md, which is
+# Markdown: Prettier indents Handlebars tags, and cargo-about renders that
+# indentation literally, turning every license section into an indented code
+# block under an empty heading. Formatting this file silently corrupts a
+# generated artifact, so it is left alone.
+src-tauri/about.hbs
+
+# Test fixtures are byte-significant: browser-print.html is the exact source the
+# committed browser-print.pdf was printed from, and reflowing it would change the
+# glyph positions that fixture exists to test.
+src-tauri/tests/fixtures

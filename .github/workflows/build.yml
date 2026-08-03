@@ -1,0 +1,122 @@
+# Cross-platform installer builds (brief Stage 6). Tauri does not
+# cross-compile installers, so each platform builds on its own runner.
+# Windows (NSIS, per-user, no admin) is the primary target and must work;
+# macOS and Linux are wired up but secondary.
+#
+# NOTE macOS: distribution eventually needs a paid Apple Developer account
+# for code signing / notarization. Until then the .dmg is UNSIGNED — Gatekeeper
+# will warn, and users must right-click > Open. Do not ship broadly this way.
+name: build
+
+# Continuous integration: verify tests + that installers build on every push to
+# main and every PR. Tagged releases are handled by release.yml (which owns the
+# "v*" tags and publishes the GitHub Release), so they are intentionally NOT a
+# trigger here — that would double-build.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+
+  # The Rust unit tests (byte-exact file round-trip, write-path allow-list,
+  # launch-arg parsing) need the toolchain + a built frontend, since compiling
+  # the crate runs Tauri's generate_context! against ../dist.
+  rust-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+      - run: npm ci
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: npm run build # dist/ is needed for Tauri's generate_context!
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      # Advisory-only: report known-vulnerable crates without failing the build,
+      # since transitive advisories are often out of our control until upstream.
+      #
+      # The two ignored IDs are unreachable here. quick-xml 0.39.4 arrives solely
+      # through wayland-scanner, a Linux-only proc-macro that parses the vendored
+      # Wayland protocol XML at compile time, so it is never linked into the app;
+      # the XML parsing that does run (via plist) already uses the fixed 0.41.0.
+      # Both advisories are denial-of-service through hostile XML, which no
+      # document can reach. Upgrading is blocked upstream by wayland-scanner's
+      # "^0.39" requirement, five levels above us: revisit when wl-clipboard-rs
+      # and arboard bump their Wayland stack.
+      #
+      # Ignoring the two IDs rather than the crate keeps any *new* quick-xml
+      # advisory visible. Without them this step failed on every run, which left
+      # it unable to signal anything.
+      - name: Dependency security audit (advisory)
+        continue-on-error: true
+        run: |
+          cargo install cargo-audit --locked
+          cargo audit --file src-tauri/Cargo.lock \
+            --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+
+  build:
+    needs: [test, rust-test]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest # NSIS installer, per-user, no admin
+          - platform: macos-latest # .dmg (unsigned for now, see note above)
+          - platform: ubuntu-24.04 # .AppImage (runs without admin rights)
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: monoleaf-${{ matrix.platform }}
+          if-no-files-found: warn
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/appimage/*.AppImage

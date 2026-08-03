@@ -1,0 +1,1035 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Monoleaf</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <svg width="0" height="0" style="position: absolute" aria-hidden="true">
+      <defs>
+        <symbol id="i-new" viewBox="0 0 24 24">
+          <path
+            d="M13 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V9z"
+          />
+          <path d="M13 3v6h6" />
+          <path d="M12 12v6M9 15h6" />
+        </symbol>
+        <symbol id="i-open" viewBox="0 0 24 24">
+          <path
+            d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H5.7a2 2 0 0 0-1.9 1.4L3 15.5z"
+          />
+          <path
+            d="M3 7v11a1 1 0 0 0 1 1h14.3a2 2 0 0 0 1.9-1.4l1.6-5.3a1 1 0 0 0-1-1.3H5.7a2 2 0 0 0-1.9 1.4z"
+          />
+        </symbol>
+        <symbol id="i-save" viewBox="0 0 24 24">
+          <path
+            d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"
+          />
+          <path d="M17 21v-8H7v8M7 3v5h8" />
+        </symbol>
+        <symbol id="i-save-as" viewBox="0 0 24 24">
+          <path d="M11 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v3" />
+          <path d="M7 3v5h8" />
+          <path d="M20.2 13.8a1.7 1.7 0 0 1 2.4 2.4L17 21.8 14 22.5l.7-3z" />
+        </symbol>
+        <symbol id="i-print" viewBox="0 0 24 24">
+          <path d="M6 9V3h12v6" />
+          <path
+            d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"
+          />
+          <path d="M6 14h12v8H6z" />
+        </symbol>
+        <symbol id="i-page" viewBox="0 0 24 24">
+          <path d="M4 6h16M4 12h16M4 18h16" />
+          <circle cx="9" cy="6" r="2" />
+          <circle cx="15" cy="12" r="2" />
+          <circle cx="7" cy="18" r="2" />
+        </symbol>
+        <symbol id="i-link" viewBox="0 0 24 24">
+          <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+          <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+        </symbol>
+        <symbol id="i-comment-add" viewBox="0 0 24 24">
+          <path d="M21 12a8 8 0 0 1-8 8H4l2.5-2.9A8 8 0 1 1 21 12z" />
+          <path d="M12 8.5v6M9 11.5h6" />
+        </symbol>
+        <symbol id="i-comments" viewBox="0 0 24 24">
+          <path d="M21 12a8 8 0 0 1-8 8H4l2.5-2.9A8 8 0 1 1 21 12z" />
+        </symbol>
+        <symbol id="i-check" viewBox="0 0 24 24">
+          <path d="M4.5 12.5l5 5 10-11" />
+        </symbol>
+        <symbol id="i-x" viewBox="0 0 24 24">
+          <path d="M6 6l12 12M18 6L6 18" />
+        </symbol>
+        <symbol id="i-check-all" viewBox="0 0 24 24">
+          <path d="M2.5 12.5l4.5 4.5 8.5-9.5" />
+          <path d="M12 16l1.5 1.5L22 8" />
+        </symbol>
+        <symbol id="i-x-all" viewBox="0 0 24 24">
+          <path d="M4 5l9 9M13 5l-9 9" />
+          <path d="M14 12l6 6M20 12l-6 6" />
+        </symbol>
+        <symbol id="i-next" viewBox="0 0 24 24">
+          <path d="M5 12h13M13 6.5l5.5 5.5-5.5 5.5" />
+        </symbol>
+        <symbol id="i-info" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 11v6M12 7.2v.4" />
+        </symbol>
+        <symbol id="i-callout" viewBox="0 0 24 24">
+          <rect x="3" y="5" width="18" height="14" rx="2" />
+          <path d="M12 9v3.5M12 15.3v.4" />
+        </symbol>
+        <symbol id="i-quote" viewBox="0 0 24 24">
+          <path d="M5 5v14" />
+          <path d="M9 8h11M9 12h11M9 16h7" />
+        </symbol>
+        <symbol id="i-clear-format" viewBox="0 0 24 24">
+          <path
+            d="M15 5.5 5.7 14.8a1.6 1.6 0 0 0 0 2.3l1.7 1.7a1.6 1.6 0 0 0 2.3 0L21 7.5a1.6 1.6 0 0 0 0-2.3l-1.2-1.2a1.6 1.6 0 0 0-2.3 0z"
+          />
+          <path d="M10.5 9.5 16 15M8.5 21H21" />
+        </symbol>
+        <symbol id="i-align-left" viewBox="0 0 24 24">
+          <path d="M4 6h16M4 10h10M4 14h16M4 18h10" />
+        </symbol>
+        <symbol id="i-align-center" viewBox="0 0 24 24">
+          <path d="M4 6h16M7 10h10M4 14h16M7 18h10" />
+        </symbol>
+        <symbol id="i-align-right" viewBox="0 0 24 24">
+          <path d="M4 6h16M10 10h10M4 14h16M10 18h10" />
+        </symbol>
+        <symbol id="i-align-justify" viewBox="0 0 24 24">
+          <path d="M4 6h16M4 10h16M4 14h16M4 18h16" />
+        </symbol>
+        <symbol id="i-list-ul" viewBox="0 0 24 24">
+          <path d="M9 6h11M9 12h11M9 18h11" />
+          <circle cx="4.5" cy="6" r="1.1" />
+          <circle cx="4.5" cy="12" r="1.1" />
+          <circle cx="4.5" cy="18" r="1.1" />
+        </symbol>
+        <symbol id="i-list-ol" viewBox="0 0 24 24">
+          <path d="M10 6h10M10 12h10M10 18h10" />
+          <path d="M3.2 5h1.2v3.2M3 8.4h1.8" stroke-width="1.3" />
+          <path
+            d="M3 11.4c0-.5.5-.9 1-.9s1 .4 1 .9c0 .8-2 1.6-2 2.6h2"
+            stroke-width="1.3"
+          />
+        </symbol>
+        <symbol id="i-table" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="16" rx="1.5" />
+          <path d="M3 9.5h18M3 14.5h18M9.5 9.5V20M15.5 9.5V20" />
+        </symbol>
+        <symbol id="i-toc" viewBox="0 0 24 24">
+          <path d="M4 5h16M8 10h12M8 15h12M8 20h12" />
+          <path d="M4 10h.02M4 15h.02M4 20h.02" />
+        </symbol>
+        <symbol id="i-math" viewBox="0 0 24 24">
+          <path d="M3 13l2.6 6L10 4h11" />
+        </symbol>
+        <symbol id="i-outline" viewBox="0 0 24 24">
+          <path d="M4 6h5M4 12h5M4 18h5M13 6h7M13 12h7M13 18h7" />
+        </symbol>
+        <symbol id="i-search" viewBox="0 0 24 24">
+          <circle cx="11" cy="11" r="7" />
+          <path d="M20.5 20.5l-4.4-4.4" />
+        </symbol>
+        <symbol id="i-image" viewBox="0 0 24 24">
+          <rect x="3" y="4" width="18" height="16" rx="2" />
+          <circle cx="8.5" cy="9.5" r="1.6" />
+          <path d="M4 18l5-5 4 4 3-3 4 4" />
+        </symbol>
+        <symbol id="i-checklist" viewBox="0 0 24 24">
+          <path d="M10 6h10M10 12h10M10 18h10" />
+          <path d="M2.5 5l1.4 1.4L6.6 3.6" />
+          <path d="M2.5 11l1.4 1.4L6.6 9.6" />
+          <path d="M2.5 17l1.4 1.4L6.6 15.6" />
+        </symbol>
+        <symbol id="i-gear" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="3" />
+          <path
+            d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"
+          />
+        </symbol>
+      </defs>
+    </svg>
+    <div id="app">
+      <div id="titlebar" data-tauri-drag-region>
+        <span class="titlebar-brand" data-tauri-drag-region>
+          <svg
+            class="brand-logo brand-light"
+            role="img"
+            aria-label="Monoleaf"
+            focusable="false"
+            viewBox="0 0 1075 218"
+          >
+            <g transform="translate(-71.21,-59.67) scale(0.32904)">
+              <path
+                d="M512 236 C680 372 686 556 512 788 C338 556 344 372 512 236 Z"
+                fill="#E8A33D"
+              />
+              <g stroke="#23252A" stroke-linecap="round" fill="none">
+                <path d="M512 322 L512 712" stroke-width="30" />
+                <g stroke-width="22">
+                  <path d="M512 430 L430 388" />
+                  <path d="M512 430 L594 388" />
+                  <path d="M512 540 L416 498" />
+                  <path d="M512 540 L608 498" />
+                  <path d="M512 640 L438 602" />
+                  <path d="M512 640 L586 602" />
+                </g>
+              </g>
+            </g>
+            <g transform="translate(212.30,177.60) scale(0.09766,-0.09766)">
+              <path
+                d="M1366 0V940Q1366 1096 1375 1240Q1326 1061 1287 960L923 0H789L420 960L364 1130L331 1240L334 1129L338 940V0H168V1409H419L794 432Q814 373 832.5 305.5Q851 238 857 208Q865 248 890.5 329.5Q916 411 925 432L1293 1409H1538V0Z"
+                fill="#23252A"
+              />
+              <path
+                transform="translate(1706,0)"
+                d="M1053 542Q1053 258 928.0 119.0Q803 -20 565 -20Q328 -20 207.0 124.5Q86 269 86 542Q86 1102 571 1102Q819 1102 936.0 965.5Q1053 829 1053 542ZM864 542Q864 766 797.5 867.5Q731 969 574 969Q416 969 345.5 865.5Q275 762 275 542Q275 328 344.5 220.5Q414 113 563 113Q725 113 794.5 217.0Q864 321 864 542Z"
+                fill="#23252A"
+              />
+              <path
+                transform="translate(2845,0)"
+                d="M825 0V686Q825 793 804.0 852.0Q783 911 737.0 937.0Q691 963 602 963Q472 963 397.0 874.0Q322 785 322 627V0H142V851Q142 1040 136 1082H306Q307 1077 308.0 1055.0Q309 1033 310.5 1004.5Q312 976 314 897H317Q379 1009 460.5 1055.5Q542 1102 663 1102Q841 1102 923.5 1013.5Q1006 925 1006 721V0Z"
+                fill="#23252A"
+              />
+              <path
+                transform="translate(3984,0)"
+                d="M1053 542Q1053 258 928.0 119.0Q803 -20 565 -20Q328 -20 207.0 124.5Q86 269 86 542Q86 1102 571 1102Q819 1102 936.0 965.5Q1053 829 1053 542ZM864 542Q864 766 797.5 867.5Q731 969 574 969Q416 969 345.5 865.5Q275 762 275 542Q275 328 344.5 220.5Q414 113 563 113Q725 113 794.5 217.0Q864 321 864 542Z"
+                fill="#23252A"
+              />
+              <path
+                transform="translate(5123,0)"
+                d="M138 0V1484H318V0Z"
+                fill="#E8A33D"
+              />
+              <path
+                transform="translate(5578,0)"
+                d="M276 503Q276 317 353.0 216.0Q430 115 578 115Q695 115 765.5 162.0Q836 209 861 281L1019 236Q922 -20 578 -20Q338 -20 212.5 123.0Q87 266 87 548Q87 816 212.5 959.0Q338 1102 571 1102Q1048 1102 1048 527V503ZM862 641Q847 812 775.0 890.5Q703 969 568 969Q437 969 360.5 881.5Q284 794 278 641Z"
+                fill="#E8A33D"
+              />
+              <path
+                transform="translate(6717,0)"
+                d="M414 -20Q251 -20 169.0 66.0Q87 152 87 302Q87 470 197.5 560.0Q308 650 554 656L797 660V719Q797 851 741.0 908.0Q685 965 565 965Q444 965 389.0 924.0Q334 883 323 793L135 810Q181 1102 569 1102Q773 1102 876.0 1008.5Q979 915 979 738V272Q979 192 1000.0 151.5Q1021 111 1080 111Q1106 111 1139 118V6Q1071 -10 1000 -10Q900 -10 854.5 42.5Q809 95 803 207H797Q728 83 636.5 31.5Q545 -20 414 -20ZM455 115Q554 115 631.0 160.0Q708 205 752.5 283.5Q797 362 797 445V534L600 530Q473 528 407.5 504.0Q342 480 307.0 430.0Q272 380 272 299Q272 211 319.5 163.0Q367 115 455 115Z"
+                fill="#E8A33D"
+              />
+              <path
+                transform="translate(7856,0)"
+                d="M361 951V0H181V951H29V1082H181V1204Q181 1352 246.0 1417.0Q311 1482 445 1482Q520 1482 572 1470V1333Q527 1341 492 1341Q423 1341 392.0 1306.0Q361 1271 361 1179V1082H572V951Z"
+                fill="#E8A33D"
+              />
+            </g>
+          </svg>
+          <svg
+            class="brand-logo brand-dark"
+            aria-hidden="true"
+            focusable="false"
+            viewBox="0 0 1075 218"
+          >
+            <g transform="translate(-71.21,-59.67) scale(0.32904)">
+              <path
+                d="M512 236 C680 372 686 556 512 788 C338 556 344 372 512 236 Z"
+                fill="#E8A33D"
+              />
+              <g stroke="#23252A" stroke-linecap="round" fill="none">
+                <path d="M512 322 L512 712" stroke-width="30" />
+                <g stroke-width="22">
+                  <path d="M512 430 L430 388" />
+                  <path d="M512 430 L594 388" />
+                  <path d="M512 540 L416 498" />
+                  <path d="M512 540 L608 498" />
+                  <path d="M512 640 L438 602" />
+                  <path d="M512 640 L586 602" />
+                </g>
+              </g>
+            </g>
+            <g transform="translate(212.30,177.60) scale(0.09766,-0.09766)">
+              <path
+                d="M1366 0V940Q1366 1096 1375 1240Q1326 1061 1287 960L923 0H789L420 960L364 1130L331 1240L334 1129L338 940V0H168V1409H419L794 432Q814 373 832.5 305.5Q851 238 857 208Q865 248 890.5 329.5Q916 411 925 432L1293 1409H1538V0Z"
+                fill="#F5F1E8"
+              />
+              <path
+                transform="translate(1706,0)"
+                d="M1053 542Q1053 258 928.0 119.0Q803 -20 565 -20Q328 -20 207.0 124.5Q86 269 86 542Q86 1102 571 1102Q819 1102 936.0 965.5Q1053 829 1053 542ZM864 542Q864 766 797.5 867.5Q731 969 574 969Q416 969 345.5 865.5Q275 762 275 542Q275 328 344.5 220.5Q414 113 563 113Q725 113 794.5 217.0Q864 321 864 542Z"
+                fill="#F5F1E8"
+              />
+              <path
+                transform="translate(2845,0)"
+                d="M825 0V686Q825 793 804.0 852.0Q783 911 737.0 937.0Q691 963 602 963Q472 963 397.0 874.0Q322 785 322 627V0H142V851Q142 1040 136 1082H306Q307 1077 308.0 1055.0Q309 1033 310.5 1004.5Q312 976 314 897H317Q379 1009 460.5 1055.5Q542 1102 663 1102Q841 1102 923.5 1013.5Q1006 925 1006 721V0Z"
+                fill="#F5F1E8"
+              />
+              <path
+                transform="translate(3984,0)"
+                d="M1053 542Q1053 258 928.0 119.0Q803 -20 565 -20Q328 -20 207.0 124.5Q86 269 86 542Q86 1102 571 1102Q819 1102 936.0 965.5Q1053 829 1053 542ZM864 542Q864 766 797.5 867.5Q731 969 574 969Q416 969 345.5 865.5Q275 762 275 542Q275 328 344.5 220.5Q414 113 563 113Q725 113 794.5 217.0Q864 321 864 542Z"
+                fill="#F5F1E8"
+              />
+              <path
+                transform="translate(5123,0)"
+                d="M138 0V1484H318V0Z"
+                fill="#E8A33D"
+              />
+              <path
+                transform="translate(5578,0)"
+                d="M276 503Q276 317 353.0 216.0Q430 115 578 115Q695 115 765.5 162.0Q836 209 861 281L1019 236Q922 -20 578 -20Q338 -20 212.5 123.0Q87 266 87 548Q87 816 212.5 959.0Q338 1102 571 1102Q1048 1102 1048 527V503ZM862 641Q847 812 775.0 890.5Q703 969 568 969Q437 969 360.5 881.5Q284 794 278 641Z"
+                fill="#E8A33D"
+              />
+              <path
+                transform="translate(6717,0)"
+                d="M414 -20Q251 -20 169.0 66.0Q87 152 87 302Q87 470 197.5 560.0Q308 650 554 656L797 660V719Q797 851 741.0 908.0Q685 965 565 965Q444 965 389.0 924.0Q334 883 323 793L135 810Q181 1102 569 1102Q773 1102 876.0 1008.5Q979 915 979 738V272Q979 192 1000.0 151.5Q1021 111 1080 111Q1106 111 1139 118V6Q1071 -10 1000 -10Q900 -10 854.5 42.5Q809 95 803 207H797Q728 83 636.5 31.5Q545 -20 414 -20ZM455 115Q554 115 631.0 160.0Q708 205 752.5 283.5Q797 362 797 445V534L600 530Q473 528 407.5 504.0Q342 480 307.0 430.0Q272 380 272 299Q272 211 319.5 163.0Q367 115 455 115Z"
+                fill="#E8A33D"
+              />
+              <path
+                transform="translate(7856,0)"
+                d="M361 951V0H181V951H29V1082H181V1204Q181 1352 246.0 1417.0Q311 1482 445 1482Q520 1482 572 1470V1333Q527 1341 492 1341Q423 1341 392.0 1306.0Q361 1271 361 1179V1082H572V951Z"
+                fill="#E8A33D"
+              />
+            </g>
+          </svg>
+        </span>
+        <span class="titlebar-controls">
+          <button
+            id="win-min"
+            class="win-btn"
+            title="Minimize"
+            aria-label="Minimize"
+          >
+            <svg viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M0 5h10" />
+            </svg>
+          </button>
+          <button
+            id="win-max"
+            class="win-btn"
+            title="Maximize"
+            aria-label="Maximize"
+          >
+            <svg class="ico-max" viewBox="0 0 10 10" aria-hidden="true">
+              <rect x="0.5" y="0.5" width="9" height="9" />
+            </svg>
+            <svg class="ico-restore" viewBox="0 0 10 10" aria-hidden="true">
+              <rect x="0.5" y="2.5" width="7" height="7" />
+              <path d="M2.5 2.5V0.5h7v7H7.5" />
+            </svg>
+          </button>
+          <button
+            id="win-close"
+            class="win-btn win-close"
+            title="Close"
+            aria-label="Close"
+          >
+            <svg viewBox="0 0 10 10" aria-hidden="true">
+              <path d="M0 0l10 10M10 0L0 10" />
+            </svg>
+          </button>
+        </span>
+      </div>
+      <header id="toolbar">
+        <div class="toolbar-row">
+          <div class="toolbar-group">
+            <button
+              id="btn-file"
+              class="style-btn"
+              title="File"
+              aria-haspopup="true"
+              aria-expanded="false"
+            >
+              File<span class="caret">▾</span>
+            </button>
+          </div>
+          <span class="separator"></span>
+          <div class="ribbon-tabs" role="tablist">
+            <button
+              id="tab-edit"
+              class="ribbon-tab"
+              role="tab"
+              aria-selected="true"
+              title="Text editing tools"
+            >
+              Edit
+            </button>
+            <button
+              id="tab-review"
+              class="ribbon-tab"
+              role="tab"
+              aria-selected="false"
+              title="Track changes and review tools"
+            >
+              Review
+            </button>
+          </div>
+          <span class="toolbar-spacer"></span>
+          <div class="toolbar-group">
+            <button
+              id="btn-find"
+              class="icon-btn"
+              title="Find & replace (Ctrl+F)"
+              aria-label="Find and replace"
+            >
+              <svg class="icon"><use href="#i-search" /></svg>
+            </button>
+            <button
+              id="btn-outline"
+              class="icon-btn"
+              aria-pressed="false"
+              title="Outline (document navigator)"
+              aria-label="Outline"
+            >
+              <svg class="icon"><use href="#i-outline" /></svg>
+            </button>
+            <button
+              id="btn-comments"
+              class="icon-btn has-badge"
+              aria-pressed="false"
+              title="Comments sidebar"
+              aria-label="Comments"
+            >
+              <svg class="icon"><use href="#i-comments" /></svg
+              ><span id="comments-count" class="badge" hidden></span>
+            </button>
+            <button
+              id="btn-settings"
+              class="icon-btn"
+              title="Settings"
+              aria-label="Settings"
+              aria-expanded="false"
+            >
+              <svg class="icon"><use href="#i-gear" /></svg>
+            </button>
+            <button
+              id="btn-about"
+              class="icon-btn"
+              title="About Monoleaf and third-party licenses"
+              aria-label="About"
+            >
+              <svg class="icon"><use href="#i-info" /></svg>
+            </button>
+          </div>
+        </div>
+        <div class="toolbar-row toolbar-panels">
+          <div id="panel-edit" class="ribbon-panel">
+            <div class="toolbar-group">
+              <button
+                id="btn-style"
+                class="style-btn"
+                title="Text style"
+                aria-expanded="false"
+              >
+                Paragraph<span class="caret">▾</span>
+              </button>
+            </div>
+            <span class="separator"></span>
+            <div class="toolbar-group">
+              <button
+                id="btn-bold"
+                class="icon-btn glyph"
+                title="Bold (Ctrl+B)"
+              >
+                <b>B</b>
+              </button>
+              <button
+                id="btn-italic"
+                class="icon-btn glyph"
+                title="Italic (Ctrl+I)"
+              >
+                <i>I</i>
+              </button>
+              <button
+                id="btn-strike"
+                class="icon-btn glyph"
+                title="Strikethrough (Ctrl+Shift+X)"
+              >
+                <s>S</s>
+              </button>
+              <button
+                id="btn-underline"
+                class="icon-btn glyph"
+                title="Underline (Ctrl+U)"
+              >
+                <u>U</u>
+              </button>
+              <button
+                id="btn-highlight"
+                class="icon-btn glyph"
+                title="Highlight (Ctrl+Alt+H)"
+              >
+                <span class="hl-glyph">ab</span>
+              </button>
+              <button
+                id="btn-subscript"
+                class="icon-btn glyph script-glyph"
+                title="Subscript (Ctrl+=)"
+                aria-label="Subscript"
+              >
+                <span>x<sub>2</sub></span>
+              </button>
+              <button
+                id="btn-superscript"
+                class="icon-btn glyph script-glyph"
+                title="Superscript (Ctrl+Shift+=)"
+                aria-label="Superscript"
+              >
+                <span>x<sup>2</sup></span>
+              </button>
+              <button
+                id="btn-math"
+                class="icon-btn"
+                title="Insert equation (Ctrl+M)"
+                aria-label="Insert equation"
+              >
+                <svg class="icon"><use href="#i-math" /></svg>
+              </button>
+              <button
+                id="btn-case"
+                class="icon-btn glyph"
+                title="Change case"
+                aria-label="Change case"
+              >
+                <span class="case-glyph">Aa</span>
+              </button>
+              <button
+                id="btn-clear-format"
+                class="icon-btn"
+                title="Clear formatting"
+                aria-label="Clear formatting"
+              >
+                <svg class="icon"><use href="#i-clear-format" /></svg>
+              </button>
+            </div>
+            <span class="separator"></span>
+            <div class="toolbar-group">
+              <button
+                id="btn-ul"
+                class="icon-btn"
+                title="Bullet list"
+                aria-label="Bullet list"
+              >
+                <svg class="icon"><use href="#i-list-ul" /></svg>
+              </button>
+              <button
+                id="btn-ol"
+                class="icon-btn"
+                title="Numbered list"
+                aria-label="Numbered list"
+              >
+                <svg class="icon"><use href="#i-list-ol" /></svg>
+              </button>
+              <button
+                id="btn-task"
+                class="icon-btn"
+                title="Checklist (task list)"
+                aria-label="Checklist"
+              >
+                <svg class="icon"><use href="#i-checklist" /></svg>
+              </button>
+              <button
+                id="btn-quote"
+                class="icon-btn"
+                title="Blockquote"
+                aria-label="Blockquote"
+              >
+                <svg class="icon"><use href="#i-quote" /></svg>
+              </button>
+            </div>
+            <span class="separator"></span>
+            <div class="toolbar-group">
+              <button
+                id="btn-align-left"
+                class="icon-btn"
+                title="Align left (Ctrl+L)"
+                aria-label="Align left"
+              >
+                <svg class="icon"><use href="#i-align-left" /></svg>
+              </button>
+              <button
+                id="btn-align-center"
+                class="icon-btn"
+                title="Center (Ctrl+E)"
+                aria-label="Center"
+              >
+                <svg class="icon"><use href="#i-align-center" /></svg>
+              </button>
+              <button
+                id="btn-align-right"
+                class="icon-btn"
+                title="Align right (Ctrl+R)"
+                aria-label="Align right"
+              >
+                <svg class="icon"><use href="#i-align-right" /></svg>
+              </button>
+              <button
+                id="btn-align-justify"
+                class="icon-btn"
+                title="Justify (Ctrl+J)"
+                aria-label="Justify"
+              >
+                <svg class="icon"><use href="#i-align-justify" /></svg>
+              </button>
+            </div>
+            <span class="separator"></span>
+            <div class="toolbar-group">
+              <button
+                id="btn-link"
+                class="icon-btn"
+                title="Insert/edit link (Ctrl+K)"
+                aria-label="Link"
+              >
+                <svg class="icon"><use href="#i-link" /></svg>
+              </button>
+              <button
+                id="btn-table"
+                class="icon-btn"
+                data-tool="table"
+                title="Insert table"
+                aria-label="Insert table"
+              >
+                <svg class="icon"><use href="#i-table" /></svg>
+              </button>
+              <button
+                id="btn-toc"
+                class="icon-btn"
+                title="Table of contents (insert / update)"
+                aria-label="Table of contents"
+              >
+                <svg class="icon"><use href="#i-toc" /></svg>
+              </button>
+              <button
+                id="btn-image"
+                class="icon-btn"
+                title="Insert image by URL"
+                aria-label="Insert image"
+              >
+                <svg class="icon"><use href="#i-image" /></svg>
+              </button>
+              <button
+                id="btn-callout"
+                class="icon-btn"
+                title="Insert callout (note / tip / warning…)"
+                aria-label="Insert callout"
+              >
+                <svg class="icon"><use href="#i-callout" /></svg>
+              </button>
+              <button
+                id="btn-code"
+                class="icon-btn glyph"
+                title="Inline code (Ctrl+`)"
+              >
+                &lt;/&gt;
+              </button>
+              <button
+                id="btn-comment-2"
+                class="icon-btn"
+                title="Comment on selection (Ctrl+Shift+M)"
+                aria-label="Comment"
+              >
+                <svg class="icon"><use href="#i-comment-add" /></svg>
+              </button>
+            </div>
+          </div>
+
+          <div id="panel-review" class="ribbon-panel" hidden>
+            <div class="toolbar-group">
+              <button
+                id="btn-comment"
+                class="icon-btn"
+                title="Comment on selection (Ctrl+Shift+M)"
+                aria-label="Comment"
+              >
+                <svg class="icon"><use href="#i-comment-add" /></svg>
+              </button>
+            </div>
+            <span class="separator"></span>
+            <div class="toolbar-group">
+              <button
+                id="btn-suggest"
+                class="pill"
+                aria-pressed="false"
+                title="Track changes (Ctrl+Shift+E)"
+              >
+                Track changes
+              </button>
+            </div>
+            <span class="separator"></span>
+            <div class="toolbar-group">
+              <button
+                id="btn-accept"
+                class="icon-btn"
+                title="Accept the change at the cursor and jump to the next"
+                aria-label="Accept change"
+              >
+                <svg class="icon"><use href="#i-check" /></svg>
+              </button>
+              <button
+                id="btn-reject"
+                class="icon-btn"
+                title="Reject the change at the cursor and jump to the next"
+                aria-label="Reject change"
+              >
+                <svg class="icon"><use href="#i-x" /></svg>
+              </button>
+              <button
+                id="btn-accept-all"
+                class="icon-btn"
+                title="Accept all changes"
+                aria-label="Accept all"
+              >
+                <svg class="icon"><use href="#i-check-all" /></svg>
+              </button>
+              <button
+                id="btn-reject-all"
+                class="icon-btn"
+                title="Reject all changes"
+                aria-label="Reject all"
+              >
+                <svg class="icon"><use href="#i-x-all" /></svg>
+              </button>
+              <button
+                id="btn-next-change"
+                class="icon-btn"
+                title="Jump to the next change"
+                aria-label="Next change"
+              >
+                <svg class="icon"><use href="#i-next" /></svg>
+              </button>
+            </div>
+          </div>
+
+          <button
+            id="btn-overflow"
+            class="icon-btn toolbar-overflow-btn"
+            title="More tools"
+            aria-label="More tools"
+            aria-haspopup="true"
+            aria-expanded="false"
+            hidden
+          >
+            <span class="ov-chevron" aria-hidden="true">»</span>
+          </button>
+        </div>
+      </header>
+      <div id="file-menu" class="menu" hidden>
+        <button id="btn-new" class="menu-row">
+          <span>New</span><span class="menu-hint">Ctrl+N</span>
+        </button>
+        <button id="btn-open" class="menu-row">
+          <span>Open…</span><span class="menu-hint">Ctrl+O</span>
+        </button>
+        <button id="btn-save" class="menu-row">
+          <span>Save</span><span class="menu-hint">Ctrl+S</span>
+        </button>
+        <button id="btn-save-as" class="menu-row">
+          <span>Save As…</span><span class="menu-hint">Ctrl+Shift+S</span>
+        </button>
+        <div class="menu-sep"></div>
+        <button id="btn-import-pdf" class="menu-row">
+          <span>Import from PDF…</span>
+        </button>
+        <button id="btn-export" class="menu-row">
+          <span>Export to PDF…</span>
+        </button>
+        <button id="btn-export-html" class="menu-row">
+          <span>Export to HTML…</span>
+        </button>
+        <button id="btn-page-setup" class="menu-row">
+          <span>Page setup…</span>
+        </button>
+        <button id="btn-doc-props" class="menu-row">
+          <span>Document properties…</span>
+        </button>
+      </div>
+      <div id="table-picker" class="menu" hidden>
+        <div
+          id="tp-grid"
+          title="Sweep out the table size, click to insert"
+        ></div>
+        <div id="tp-label" class="context-note">Insert table</div>
+        <div class="tp-custom">
+          <input
+            id="tp-cols"
+            type="number"
+            min="1"
+            max="20"
+            value="3"
+            aria-label="Columns"
+          />
+          <span>×</span>
+          <input
+            id="tp-rows"
+            type="number"
+            min="1"
+            max="50"
+            value="3"
+            aria-label="Rows"
+          />
+          <button id="tp-insert">Insert</button>
+        </div>
+      </div>
+      <div id="settings-menu" class="menu" hidden>
+        <button
+          id="btn-live"
+          class="menu-row"
+          aria-pressed="true"
+          title="Formatted writing view vs. raw markdown source (Ctrl+Q)"
+        >
+          <span>Live preview</span><span class="switch"></span>
+        </button>
+        <button
+          id="btn-flags"
+          class="menu-row"
+          aria-pressed="false"
+          title="Highlight constructs outside portable CommonMark+GFM"
+        >
+          <span>Portability flags</span><span class="switch"></span>
+        </button>
+        <button
+          id="btn-mode"
+          class="menu-row"
+          aria-pressed="false"
+          title="Parse richer constructs (subscript, superscript, emoji)"
+        >
+          <span>Enhanced markdown</span><span class="switch"></span>
+        </button>
+        <button
+          id="btn-pagination"
+          class="menu-row"
+          aria-pressed="true"
+          title="Show real page boundaries and the page counter, computed from the print layout"
+        >
+          <span>Page layout</span><span class="switch"></span>
+        </button>
+        <button
+          id="btn-remote-images"
+          class="menu-row"
+          aria-pressed="false"
+          title="Allow documents to load images from the internet. Off by default: a remote image tells whoever wrote the document when and where you opened it."
+        >
+          <span>Load remote images</span><span class="switch"></span>
+        </button>
+        <button
+          id="btn-theme"
+          class="menu-row"
+          aria-pressed="false"
+          title="Switch between light and dark appearance"
+        >
+          <span>Dark mode</span><span class="switch"></span>
+        </button>
+        <button
+          id="btn-autosave"
+          class="menu-row"
+          aria-pressed="false"
+          title="Automatically save changes to the open file as you edit"
+        >
+          <span>Autosave</span><span class="switch"></span>
+        </button>
+        <button
+          id="btn-reopen"
+          class="menu-row"
+          aria-pressed="true"
+          title="Ask to reopen the last document when Monoleaf starts"
+        >
+          <span>Reopen last file</span><span class="switch"></span>
+        </button>
+        <div class="menu-sep"></div>
+        <button id="btn-name" class="menu-row">
+          <span>Your name…</span><span id="menu-name" class="menu-hint"></span>
+        </button>
+      </div>
+      <div id="overflow-menu" class="menu" hidden></div>
+      <div id="content">
+        <aside id="outline-sidebar" hidden></aside>
+        <main id="editor"></main>
+        <aside id="comments-sidebar" hidden></aside>
+      </div>
+      <footer id="statusbar">
+        <span id="file-name" title="Unsaved document">Untitled</span>
+        <span class="status-spacer"></span>
+        <span id="word-count"></span>
+        <span
+          id="page-indicator"
+          title="Current page / total pages (computed from the real print layout)"
+        ></span>
+        <span id="zoom-controls">
+          <button id="zoom-out" title="Zoom out (Ctrl+-)">−</button>
+          <input
+            id="zoom-slider"
+            type="range"
+            min="50"
+            max="200"
+            step="10"
+            value="100"
+            aria-label="Zoom"
+          />
+          <button id="zoom-in" title="Zoom in (Ctrl+=)">+</button>
+          <button id="zoom-pct" title="Reset to 100% (Ctrl+0)">100%</button>
+        </span>
+      </footer>
+    </div>
+    <div id="error-bar" hidden>
+      <span id="error-text"></span>
+      <button id="btn-dismiss-error">Dismiss</button>
+    </div>
+    <div id="pagination-measure" aria-hidden="true"></div>
+    <div id="print-preview" hidden>
+      <div class="preview-toolbar">
+        <span
+          >Print preview — choose "Microsoft Print to PDF" or "Save as PDF" in
+          the print dialog</span
+        >
+        <button id="btn-print">Print / Save as PDF…</button>
+        <button id="btn-close-preview">Close</button>
+      </div>
+      <div id="print-root"></div>
+    </div>
+    <dialog id="about-dialog" class="ml-dialog">
+      <h2 id="about-title">Monoleaf</h2>
+      <p id="about-blurb">
+        A portable, WYSIWYG markdown editor. One file, single source of truth.
+      </p>
+      <p id="about-copyright">
+        © 2026 vibingbiochemist · Released under the MIT License
+      </p>
+      <h3>Third-party licenses</h3>
+      <pre id="about-licenses"></pre>
+      <menu>
+        <button id="btn-close-about">Close</button>
+      </menu>
+    </dialog>
+    <dialog id="page-dialog" class="ml-dialog">
+      <form method="dialog">
+        <label for="page-size">Paper size</label>
+        <select id="page-size">
+          <option value="A4">A4</option>
+          <option value="Letter">Letter</option>
+        </select>
+        <label for="page-margin">Margins (CSS, e.g. 20mm or 25mm 18mm)</label>
+        <input id="page-margin" type="text" spellcheck="false" />
+        <label for="page-header"
+          >Header — placeholders: {page} {pages} {title} {date}</label
+        >
+        <input id="page-header" type="text" spellcheck="false" />
+        <label for="page-footer">Footer</label>
+        <input id="page-footer" type="text" spellcheck="false" />
+        <label class="check-row"
+          ><input id="page-justify" type="checkbox" /> Justify body text
+          (Blocksatz)</label
+        >
+        <menu>
+          <button value="ok" type="submit">Save to file</button>
+          <button value="cancel" type="submit">Cancel</button>
+        </menu>
+      </form>
+    </dialog>
+    <dialog id="comment-dialog" class="ml-dialog">
+      <form method="dialog">
+        <label for="comment-text">Comment</label>
+        <textarea id="comment-text" rows="4"></textarea>
+        <menu>
+          <button value="ok" type="submit">Comment</button>
+          <button value="cancel" type="submit">Cancel</button>
+        </menu>
+      </form>
+    </dialog>
+    <dialog id="name-dialog" class="ml-dialog">
+      <form method="dialog">
+        <label for="name-input"
+          >Your name — shown on your comments and replies</label
+        >
+        <input
+          id="name-input"
+          type="text"
+          spellcheck="false"
+          placeholder="e.g. Martin"
+        />
+        <menu>
+          <button value="ok" type="submit">Save</button>
+          <button value="cancel" type="submit">Cancel</button>
+        </menu>
+      </form>
+    </dialog>
+    <dialog id="link-dialog" class="ml-dialog">
+      <form method="dialog">
+        <label for="link-url">Link URL</label>
+        <input
+          id="link-url"
+          type="text"
+          placeholder="https://"
+          spellcheck="false"
+        />
+        <menu>
+          <button value="ok" type="submit">OK</button>
+          <button value="cancel" type="submit">Cancel</button>
+        </menu>
+      </form>
+    </dialog>
+    <dialog id="image-dialog" class="ml-dialog">
+      <form method="dialog">
+        <label for="image-url"
+          >Image URL — the picture stays at this address, not in the file</label
+        >
+        <input
+          id="image-url"
+          type="text"
+          placeholder="https://"
+          spellcheck="false"
+        />
+        <label for="image-alt">Alt text (optional)</label>
+        <input id="image-alt" type="text" spellcheck="false" />
+        <menu>
+          <button value="ok" type="submit">Insert</button>
+          <button value="cancel" type="submit">Cancel</button>
+        </menu>
+      </form>
+    </dialog>
+    <dialog id="meta-dialog" class="ml-dialog">
+      <form method="dialog">
+        <label for="meta-title">Title</label>
+        <input id="meta-title" type="text" spellcheck="false" />
+        <label for="meta-author">Author</label>
+        <input id="meta-author" type="text" spellcheck="false" />
+        <label for="meta-date">Date</label>
+        <input id="meta-date" type="text" spellcheck="false" />
+        <label for="meta-subject">Subject</label>
+        <input id="meta-subject" type="text" spellcheck="false" />
+        <label for="meta-keywords">Keywords</label>
+        <input id="meta-keywords" type="text" spellcheck="false" />
+        <label class="meta-check"
+          ><input id="meta-frontmatter" type="checkbox" /> Store as YAML front
+          matter (visible at the top; for pandoc, Obsidian, etc.)</label
+        >
+        <menu>
+          <button value="ok" type="submit">Save</button>
+          <button value="cancel" type="submit">Cancel</button>
+        </menu>
+      </form>
+    </dialog>
+    <dialog id="close-dialog" class="ml-dialog">
+      <form method="dialog">
+        <p id="close-message">This document has unsaved changes.</p>
+        <menu>
+          <button value="save" type="submit">Save</button>
+          <button value="discard" type="submit">Don't save</button>
+          <button value="cancel" type="submit">Cancel</button>
+        </menu>
+      </form>
+    </dialog>
+    <dialog id="confirm-dialog" class="ml-dialog">
+      <form method="dialog">
+        <h2 id="confirm-title">Monoleaf</h2>
+        <p id="confirm-message"></p>
+        <menu>
+          <button id="confirm-ok" value="ok" type="submit">OK</button>
+          <button id="confirm-cancel" value="cancel" type="submit">
+            Cancel
+          </button>
+        </menu>
+      </form>
+    </dialog>
+  </body>
+</html>

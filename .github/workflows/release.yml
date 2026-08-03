@@ -1,0 +1,57 @@
+# Publish a release. Push a version tag to trigger it:
+#
+#     git tag v1.0.0 && git push origin v1.0.0
+#
+# It runs the tests, builds the Windows installer, and creates a DRAFT GitHub
+# Release with the installer attached — you review and click "Publish" so
+# nothing goes public by accident. (Can also be run manually from the Actions
+# tab via workflow_dispatch, from a tagged commit.)
+#
+# Windows-only for now: it is the tested, primary target. macOS/Linux are built
+# for verification by build.yml but not shipped until they can be tested/signed.
+name: release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm test
+
+  release:
+    needs: test
+    runs-on: windows-latest
+    permissions:
+      contents: write # create the GitHub Release and upload the installer
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Monoleaf ${{ github.ref_name }}"
+          releaseBody: "See the assets below to download and install. The installer is unsigned (SmartScreen may warn: More info → Run anyway)."
+          releaseDraft: true
+          prerelease: false

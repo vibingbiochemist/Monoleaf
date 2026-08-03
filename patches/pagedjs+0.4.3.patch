@@ -1,0 +1,132 @@
+diff --git a/node_modules/pagedjs/dist/paged.js b/node_modules/pagedjs/dist/paged.js
+index a04c7ce..f7f5a6e 100644
+--- a/node_modules/pagedjs/dist/paged.js
++++ b/node_modules/pagedjs/dist/paged.js
+@@ -636,6 +636,12 @@
+ 	}
+ 
+ 	function findElement(node, doc, forceQuery) {
++		// monoleaf: null-safe. Break-token resolution (createBreakToken) can pass
++		// a null node when an overflowing MathML/table subtree can't be mapped
++		// back to source; returning null instead of throwing lets callers bail.
++		if (!node || typeof node.getAttribute !== "function") {
++			return null;
++		}
+ 		const ref = node.getAttribute("data-ref");
+ 		return findRef(ref, doc, forceQuery);
+ 	}
+@@ -1771,10 +1777,16 @@
+ 							prevNode = prevNode.parentElement;
+ 						}
+ 						renderedNode = findElement(prevNode, rendered);
++						// monoleaf: the recovery lookup can still fail to map the
++						// node back to source (MathML/table subtrees) — bail rather
++						// than dereference null.
++						const renderedNodeFromSource = findElement(renderedNode, source);
++						if (!renderedNodeFromSource) {
++							return;
++						}
+ 						// Check if temp is the last rendered node at its level.
+ 						if (!temp.nextSibling) {
+ 							// We need to ensure that the previous sibling of temp is fully rendered.
+-							const renderedNodeFromSource = findElement(renderedNode, source);
+ 							const walker = document.createTreeWalker(renderedNodeFromSource, NodeFilter.SHOW_ELEMENT);
+ 							const lastChildOfRenderedNodeFromSource = walker.lastChild();
+ 							const lastChildOfRenderedNodeMatchingFromRendered = findElement(lastChildOfRenderedNodeFromSource, rendered);
+@@ -1787,7 +1799,7 @@
+ 						}
+ 						// renderedNode is actually the last unbroken box that does not overflow.
+ 						// Break Token is therefore the next sibling of renderedNode within source node.
+-						node = findElement(renderedNode, source).nextSibling;
++						node = renderedNodeFromSource.nextSibling;
+ 						offset = 0;
+ 					} else {
+ 						node = findElement(renderedNode, source);
+@@ -1801,6 +1813,9 @@
+ 					}
+ 
+ 					parent = findElement(renderedNode, source);
++					if (!parent) {
++						return; // monoleaf: unmappable node — no break token here
++					}
+ 					index = indexOfTextNode(temp, parent);
+ 					// No seperatation for the first textNode of an element
+ 					if(index === 0) {
+@@ -1819,6 +1834,9 @@
+ 				}
+ 
+ 				parent = findElement(renderedNode, source);
++				if (!parent) {
++					return; // monoleaf: unmappable node — no break token here
++				}
+ 				index = indexOfTextNode(container, parent);
+ 
+ 				if (index === -1) {
+diff --git a/node_modules/pagedjs/src/chunker/layout.js b/node_modules/pagedjs/src/chunker/layout.js
+index 31b319c..e799e6f 100644
+--- a/node_modules/pagedjs/src/chunker/layout.js
++++ b/node_modules/pagedjs/src/chunker/layout.js
+@@ -407,10 +407,16 @@ class Layout {
+ 						prevNode = prevNode.parentElement;
+ 					}
+ 					renderedNode = findElement(prevNode, rendered);
++					// monoleaf: the recovery lookup can still fail to map the node
++					// back to source (MathML/table subtrees) — bail rather than
++					// dereference null.
++					const renderedNodeFromSource = findElement(renderedNode, source);
++					if (!renderedNodeFromSource) {
++						return;
++					}
+ 					// Check if temp is the last rendered node at its level.
+ 					if (!temp.nextSibling) {
+ 						// We need to ensure that the previous sibling of temp is fully rendered.
+-						const renderedNodeFromSource = findElement(renderedNode, source);
+ 						const walker = document.createTreeWalker(renderedNodeFromSource, NodeFilter.SHOW_ELEMENT);
+ 						const lastChildOfRenderedNodeFromSource = walker.lastChild();
+ 						const lastChildOfRenderedNodeMatchingFromRendered = findElement(lastChildOfRenderedNodeFromSource, rendered);
+@@ -423,7 +429,7 @@ class Layout {
+ 					}
+ 					// renderedNode is actually the last unbroken box that does not overflow.
+ 					// Break Token is therefore the next sibling of renderedNode within source node.
+-					node = findElement(renderedNode, source).nextSibling;
++					node = renderedNodeFromSource.nextSibling;
+ 					offset = 0;
+ 				} else {
+ 					node = findElement(renderedNode, source);
+@@ -437,6 +443,9 @@ class Layout {
+ 				}
+ 
+ 				parent = findElement(renderedNode, source);
++				if (!parent) {
++					return; // monoleaf: unmappable node — no break token here
++				}
+ 				index = indexOfTextNode(temp, parent);
+ 				// No seperatation for the first textNode of an element
+ 				if(index === 0) {
+@@ -455,6 +464,9 @@ class Layout {
+ 			}
+ 
+ 			parent = findElement(renderedNode, source);
++			if (!parent) {
++				return; // monoleaf: unmappable node — no break token here
++			}
+ 			index = indexOfTextNode(container, parent);
+ 
+ 			if (index === -1) {
+diff --git a/node_modules/pagedjs/src/utils/dom.js b/node_modules/pagedjs/src/utils/dom.js
+index 2c0e50d..941ee06 100644
+--- a/node_modules/pagedjs/src/utils/dom.js
++++ b/node_modules/pagedjs/src/utils/dom.js
+@@ -480,6 +480,12 @@ export function cloneNode(n, deep=false) {
+ }
+ 
+ export function findElement(node, doc, forceQuery) {
++	// monoleaf: null-safe. Break-token resolution (createBreakToken) can pass a
++	// null node when an overflowing MathML/table subtree can't be mapped back to
++	// source; returning null instead of throwing lets callers bail cleanly.
++	if (!node || typeof node.getAttribute !== "function") {
++		return null;
++	}
+ 	const ref = node.getAttribute("data-ref");
+ 	return findRef(ref, doc, forceQuery);
+ }

@@ -1,0 +1,39 @@
+[package]
+name = "monoleaf"
+version = "0.9.0"
+description = "Monoleaf - a portable, single-file markdown editor"
+authors = ["vibingbiochemist <info@monoleaf.org>"]
+license = "MIT"
+repository = "https://github.com/vibingbiochemist/Monoleaf"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "monoleaf_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-opener = "2.5.4"
+tauri-plugin-clipboard-manager = "2.3.2"
+tauri-plugin-single-instance = "2"
+pdf-extract = "0.12"
+
+# The `windows` crate is only used by the (Windows-only) spell-check module, so
+# gate it to Windows targets. Left in [dependencies] it would drag the
+# Windows-only `windows-future` crate into the macOS/Linux build graph, where
+# its bindings fail to compile (windows_core::imp::IMarshal is Windows-only) —
+# breaking CI on the Linux runner.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = ["Win32_Globalization", "Win32_System_Com"] }
+

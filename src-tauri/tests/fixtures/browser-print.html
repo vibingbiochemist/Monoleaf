@@ -1,0 +1,31 @@
+<!doctype html>
+<!-- Source for browser-print.pdf. Regenerate with:
+     chrome --headless --no-pdf-header-footer \
+       --print-to-pdf=browser-print.pdf browser-print.html
+     Kept next to the PDF so the fixture is reviewable and reproducible. The
+     table CSS is copied from Monoleaf's own print stylesheet (src/export.ts). -->
+<html><head><meta charset="utf-8"><style>
+@page { size: Letter; margin: 20mm; }
+body { font-family: Georgia, serif; font-size: 11pt; line-height: 1.5; }
+h1 { font-size: 20pt; } h2 { font-size: 15pt; }
+table { border-collapse: collapse !important; margin: 8pt 0; width: 100%;
+        table-layout: auto; font-size: 10pt; }
+table th, table td { border: 0.75pt solid #b0b0b0 !important; padding: 4pt 7pt;
+                     text-align: left; vertical-align: top; }
+table th { background: #f3f3f1 !important; font-weight: 600; }
+</style></head><body>
+<h1>Assay Report</h1>
+<p>Warm the assay buffer to room temperature before adding the reagent to each
+well. Read absorbance at 450 nm within ten minutes of the final incubation step.</p>
+<h2>Method notes</h2>
+<p>The plate was incubated for ninety minutes at thirty-seven degrees in a
+humidified chamber before the reagent was added to every well.</p>
+<ul><li>First bullet point in the list</li><li>Second bullet point here</li></ul>
+<table>
+<thead><tr><th>Sample</th><th>Group</th><th>Signal</th></tr></thead>
+<tbody>
+<tr><td>Sample A</td><td>Treated</td><td>1.24</td></tr>
+<tr><td>Sample B</td><td>Control</td><td>0.98</td></tr>
+</tbody></table>
+<p>Closing paragraph after the table.</p>
+</body></html>
