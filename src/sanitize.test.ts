@@ -31,6 +31,35 @@ describe("sanitizeDocumentHtml", () => {
     );
   });
 
+  it("removes media tags the renderer never emits", () => {
+    // Surface reduction: none of these are constructs renderDocumentHtml can
+    // produce, so allowing them only widens the area a remote-content bug can
+    // hide in (<video poster> was one).
+    for (const [tag, html] of [
+      [
+        "video",
+        '<video poster="https://evil.example/p.png" src="x.mp4"></video>',
+      ],
+      ["audio", '<audio src="x.mp3"></audio>'],
+      ["track", '<video><track src="x.vtt"></video>'],
+    ]) {
+      expect(sanitizeDocumentHtml(html), tag).not.toMatch(
+        new RegExp(`<${tag}`, "i"),
+      );
+    }
+  });
+
+  it("keeps task-list checkboxes (markdown-it-task-lists emits <input>)", () => {
+    // renderDocumentHtml -> sanitizeDocumentHtml is the real export/print
+    // pipeline, so forbidding <input> outright would silently delete every
+    // checkbox from the PDF and the self-contained HTML export.
+    const out = sanitizeDocumentHtml(
+      '<ul class="contains-task-list"><li class="task-list-item">' +
+        '<input class="task-list-item-checkbox" disabled type="checkbox" checked>done</li></ul>',
+    );
+    expect(out).toContain('type="checkbox"');
+  });
+
   it("preserves data-srcline (pagination break mapping)", () => {
     expect(sanitizeDocumentHtml('<p data-srcline="7">x</p>')).toContain(
       'data-srcline="7"',
