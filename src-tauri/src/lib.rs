@@ -24,7 +24,10 @@ fn first_markdown_arg<I: IntoIterator<Item = String>>(args: I) -> Option<String>
 /// Return and clear the pending launch file (opened via file association).
 #[tauri::command]
 fn take_launch_file(state: tauri::State<LaunchFile>) -> Option<String> {
-    state.0.lock().unwrap().take()
+    // `unwrap_or_else(into_inner)` throughout: none of this state carries an
+    // invariant a panic could corrupt, so a single panic while a lock is held
+    // must not poison it and turn every later call into a panic of its own.
+    state.0.lock().unwrap_or_else(|e| e.into_inner()).take()
 }
 
 /// Payloads queued for windows created at runtime. The frontend calls
@@ -51,7 +54,7 @@ fn spawn_document_window(app: &AppHandle, payload: Option<String>) -> Result<Str
         app.state::<PendingPayloads>()
             .0
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(label.clone(), p);
     }
     // Same chrome AND same launch state as the main window (see
@@ -98,7 +101,11 @@ fn take_window_payload(
     window: tauri::WebviewWindow,
     state: tauri::State<PendingPayloads>,
 ) -> Option<String> {
-    state.0.lock().unwrap().remove(window.label())
+    state
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(window.label())
 }
 
 #[cfg(windows)]
@@ -284,10 +291,26 @@ fn spell_add(word: String) -> Result<(), String> {
 // these.
 const WRITABLE_EXTS: &[&str] = &["md", "markdown", "html", "htm", "txt"];
 
-fn validate_write_path(path: &str) -> Result<(), String> {
+/// Checks every file command applies before touching `fs`.
+///
+/// A path beginning with two separators is a UNC/network path (Windows treats
+/// `/` and `\` alike, so `//host/share` and `\\host\share` are the same thing).
+/// Merely opening one makes Windows contact that host over SMB and authenticate
+/// with an NTLM handshake, which hands the host a hash of the user's
+/// credentials. Nothing an attacker controls reaches these commands today —
+/// this is here so the next bug that influences a path cannot become that.
+fn validate_path(path: &str) -> Result<(), String> {
     if path.contains('\0') {
         return Err("Invalid path".into());
     }
+    if matches!(path.as_bytes(), [b'\\' | b'/', b'\\' | b'/', ..]) {
+        return Err("Network paths are not supported".into());
+    }
+    Ok(())
+}
+
+fn validate_write_path(path: &str) -> Result<(), String> {
+    validate_path(path)?;
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -303,9 +326,7 @@ fn validate_write_path(path: &str) -> Result<(), String> {
 
 #[tauri::command]
 fn read_file(path: String) -> Result<String, String> {
-    if path.contains('\0') {
-        return Err("Invalid path".into());
-    }
+    validate_path(&path)?;
     let bytes = fs::read(&path).map_err(|e| format!("Failed to read {path}: {e}"))?;
     String::from_utf8(bytes).map_err(|_| format!("{path} is not valid UTF-8 text"))
 }
@@ -447,5 +468,31 @@ mod tests {
         let bad = std::env::temp_dir().join("monoleaf_evil.bat");
         assert!(write_file(bad.to_string_lossy().into_owned(), "x".into()).is_err());
         assert!(!bad.exists());
+    }
+
+    /// Both file commands refuse UNC/network paths. Asserted on the shared
+    /// validator, not by calling the commands: before this guard existed the
+    /// commands would reach `fs`, and on Windows that is precisely the SMB
+    /// handshake (and the multi-second timeout) the guard exists to prevent.
+    #[test]
+    fn file_commands_reject_network_paths() {
+        for path in [
+            r"\\attacker.test\share\note.md",
+            "//attacker.test/share/note.md",
+            r"\/attacker.test/share/note.md",
+            r"/\attacker.test\share\note.md",
+        ] {
+            assert_eq!(
+                validate_path(path),
+                Err("Network paths are not supported".to_string()),
+                "not rejected: {path}"
+            );
+            // write_file layers the extension check on top of the same guard.
+            assert!(validate_write_path(path).is_err(), "not rejected: {path}");
+        }
+        // A single leading separator is an ordinary absolute path.
+        assert!(validate_path("/tmp/note.md").is_ok());
+        assert!(validate_path(r"C:\Users\x\note.md").is_ok());
+        assert!(validate_path("note.md\0.bat").is_err());
     }
 }
