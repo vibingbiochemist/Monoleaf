@@ -51,6 +51,35 @@ describe("page config block", () => {
     expect(parsePageConfig(second.doc.toString()).size).toBe("Letter");
   });
 
+  it("rejects a margin that is not plain CSS lengths", () => {
+    const withMargin = (margin: string) =>
+      parsePageConfig(`<!--ml:page {"margin":${JSON.stringify(margin)}}-->`)
+        .margin;
+    // The injection vector: close @page and open top-level rules of your own.
+    expect(
+      withMargin(
+        "15mm } #print-root p { color: transparent } body { background-image: url(https://tracker.test/beacon.png) } @page { margin: 15mm",
+      ),
+    ).toBe(DEFAULT_PAGE_CONFIG.margin);
+    expect(withMargin("20mm } body { color: red")).toBe(
+      DEFAULT_PAGE_CONFIG.margin,
+    );
+    expect(withMargin("url(https://tracker.test/beacon.png)")).toBe(
+      DEFAULT_PAGE_CONFIG.margin,
+    );
+    expect(withMargin("20em")).toBe(DEFAULT_PAGE_CONFIG.margin);
+    expect(withMargin("")).toBe(DEFAULT_PAGE_CONFIG.margin);
+  });
+
+  it("accepts one to four plain CSS lengths", () => {
+    for (const margin of ["20mm", "25mm 18mm", "1in 0.75in 1in 0.75in"]) {
+      expect(
+        parsePageConfig(`<!--ml:page {"margin":${JSON.stringify(margin)}}-->`)
+          .margin,
+      ).toBe(margin);
+    }
+  });
+
   it("uses CRLF for the appended block in CRLF documents", () => {
     const state = createDocumentState("# doc\r\n");
     const after = state.update(
@@ -343,6 +372,24 @@ describe("buildPrintCss", () => {
     expect(html).toContain("<p>centered text</p>");
     const css = buildPrintCss(DEFAULT_PAGE_CONFIG, VARS);
     expect(css).toContain('[align="center"] { text-align: center; }');
+  });
+
+  it("a hostile page-setup margin reaches the stylesheet as nothing", () => {
+    // Opening this document is enough: schedulePagination builds the same CSS
+    // ~300ms later, with no user interaction and no Export.
+    const doc =
+      '<!--ml:page {"size":"A4","margin":"15mm } #print-root p { color: transparent } ' +
+      'body { background-image: url(https://tracker.test/beacon.png) } @page { margin: 15mm",' +
+      '"header":"","footer":"","justify":false}-->';
+    const css = buildPrintCss(parsePageConfig(doc), VARS);
+    expect(css).not.toContain("url(");
+    expect(css).not.toContain("tracker.test");
+    expect(css).not.toContain("color: transparent");
+    // Well formed: the @page block holds no braces beyond its own.
+    const block = /@page \{[^{}]*\}/.exec(css);
+    expect(block).not.toBeNull();
+    expect(block![0]).toContain("size: A4;");
+    expect(block![0]).toContain(`margin: ${DEFAULT_PAGE_CONFIG.margin};`);
   });
 
   it("the page-break rule is unscoped so Paged.js's break scan matches it", () => {

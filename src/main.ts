@@ -74,6 +74,7 @@ import { renderOutline } from "./outline";
 import { openSearchPanel } from "@codemirror/search";
 import {
   buildPrintCss,
+  MARGIN_RE,
   marginToPx,
   parsePageConfig,
   PRINT_FONT_PX,
@@ -1098,10 +1099,21 @@ function pageSetup() {
     "close",
     () => {
       if (pageDialog.returnValue === "ok") {
+        // The margin is interpolated into the @page block, so only plain CSS
+        // lengths may be written (see MARGIN_RE). Say so rather than silently
+        // storing a different margin than the one that was typed.
+        const margin = pageMargin.value.trim();
+        if (!MARGIN_RE.test(margin)) {
+          reportError(
+            `Page margin must be one to four CSS lengths, e.g. "20mm" or "25mm 18mm". Page setup was not saved.`,
+          );
+          view.focus();
+          return;
+        }
         view.dispatch(
           setPageConfigSpec(view.state, {
             size: pageSize.value === "Letter" ? "Letter" : "A4",
-            margin: pageMargin.value.trim() || "20mm",
+            margin,
             header: pageHeader.value,
             footer: pageFooter.value,
             justify: pageJustify.checked,

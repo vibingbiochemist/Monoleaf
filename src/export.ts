@@ -137,6 +137,20 @@ export const DEFAULT_PAGE_CONFIG: PageConfig = {
 
 const PAGE_RE = /<!--ml:page (\{.*?\})-->/;
 
+/**
+ * One to four CSS lengths and nothing else. Anything unexpected falls back to
+ * the default rather than reaching the stylesheet.
+ *
+ * `margin` is interpolated straight into the `@page` block by buildPrintCss, so
+ * an unvalidated value could close that block and append top-level rules of its
+ * own — loading a remote background image (a request the "Load remote images"
+ * setting never sees), or hiding text so the exported PDF differs from what the
+ * editor showed. That needs no Export and no user interaction: opening a file
+ * schedules pagination, which builds the same stylesheet ~300ms later.
+ */
+export const MARGIN_RE =
+  /^(?:\d+(?:\.\d+)?(?:mm|cm|in|pt|pc|px)\s+){0,3}\d+(?:\.\d+)?(?:mm|cm|in|pt|pc|px)$/;
+
 // The editor page mirrors these print values so what you see matches the PDF
 // (both render in the same WebView2/Chromium engine). 11pt body, 1.5 leading.
 export const PRINT_FONT_PX = (11 * 96) / 72; // 11pt at CSS 96dpi ≈ 14.67px
@@ -187,7 +201,7 @@ export function parsePageConfig(text: string): PageConfig {
     return {
       size: data.size === "Letter" ? "Letter" : "A4",
       margin:
-        typeof data.margin === "string"
+        typeof data.margin === "string" && MARGIN_RE.test(data.margin)
           ? data.margin
           : DEFAULT_PAGE_CONFIG.margin,
       header:
