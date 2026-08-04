@@ -1,0 +1,23 @@
+# Monoleaf has no auto-updater: a security fix reaches users only when they
+# download and reinstall. That makes finding out about a vulnerable dependency
+# early the whole game, and this is the main way it happens — the audit steps in
+# build.yml catch what is already public, Dependabot opens the PR that fixes it.
+#
+# All three ecosystems the app actually ships or builds with are covered. The
+# Cargo manifest lives in src-tauri, not the repo root.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

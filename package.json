@@ -35,6 +35,9 @@
     "postinstall": "patch-package",
     "test:e2e": "node --test --test-timeout=120000 \"e2e/**/*.test.mjs\""
   },
+  "overrides": {
+    "katex": "$katex"
+  },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-markdown": "^6.5.1",

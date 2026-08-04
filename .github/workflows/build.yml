@@ -18,12 +18,21 @@ on:
     branches: [main]
   pull_request:
 
+# Nothing here writes to the repository. release.yml scopes contents: write to
+# the one job that publishes, which is where it belongs.
+permissions:
+  contents: read
+
+# Actions are pinned to full commit SHAs, not tags: a tag is mutable, so a
+# retagged action would run in CI with whatever permissions its job holds.
+# Refresh with, e.g.:
+#   gh api repos/actions/checkout/git/ref/tags/v4 --jq .object.sha
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
@@ -32,6 +41,9 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm test
+      # Dev-only advisories do not ship, so this scopes to production deps. It
+      # exists to fail the day one lands in the bundle the user installs.
+      - run: npm audit --omit=dev --audit-level=high
 
   # The Rust unit tests (byte-exact file round-trip, write-path allow-list,
   # launch-arg parsing) need the toolchain + a built frontend, since compiling
@@ -39,12 +51,12 @@ jobs:
   rust-test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
         with:
           components: clippy, rustfmt
       - name: Install Linux build dependencies
@@ -57,9 +69,6 @@ jobs:
       - run: npm run build # dist/ is needed for Tauri's generate_context!
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml
-      # Advisory-only: report known-vulnerable crates without failing the build,
-      # since transitive advisories are often out of our control until upstream.
-      #
       # The two ignored IDs are unreachable here. quick-xml 0.39.4 arrives solely
       # through wayland-scanner, a Linux-only proc-macro that parses the vendored
       # Wayland protocol XML at compile time, so it is never linked into the app;
@@ -72,8 +81,21 @@ jobs:
       # Ignoring the two IDs rather than the crate keeps any *new* quick-xml
       # advisory visible. Without them this step failed on every run, which left
       # it unable to signal anything.
-      - name: Dependency security audit (advisory)
-        continue-on-error: true
+      #
+      # Blocking, not advisory: ignoring two known-unreachable IDs only buys
+      # anything if a third advisory stops the build. Swallowing the exit code
+      # made the ignore list pointless — nothing could fail either way. A new
+      # *vulnerability* now fails this job.
+      #
+      # Deliberately NOT `--deny warnings`. In cargo-audit that means "any
+      # warning", which today is 19 findings: 17 unmaintained + 2 unsound,
+      # almost all in the GTK 3 stack Tauri pulls in on Linux (atk, gdk, gtk,
+      # glib, gdkx11 …) plus proc-macro-error, ttf-parser and the unic-* crates.
+      # None is a vulnerability and none is ours to fix, so denying warnings
+      # would put this step straight back to failing on every run — the exact
+      # state the ignore list above was introduced to get out of. Revisit if
+      # Tauri's Linux stack moves to GTK 4.
+      - name: Dependency security audit
         run: |
           cargo install cargo-audit --locked
           cargo audit --file src-tauri/Cargo.lock \
@@ -90,14 +112,14 @@ jobs:
           - platform: ubuntu-24.04 # .AppImage (runs without admin rights)
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
 
       - name: Install Linux build dependencies
         if: startsWith(matrix.platform, 'ubuntu')
@@ -108,11 +130,11 @@ jobs:
 
       - run: npm ci
 
-      - uses: tauri-apps/tauri-action@v0
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: monoleaf-${{ matrix.platform }}
           if-no-files-found: warn

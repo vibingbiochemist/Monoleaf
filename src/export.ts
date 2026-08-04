@@ -351,6 +351,15 @@ export function renderDocumentHtml(
   }
   // Math: $…$ / $$…$$ as MathML, which the print webview renders natively.
   // MathML avoids KaTeX's CSS + web fonts, which Paged.js would strip anyway.
+  //
+  // This plugin bundles its own KaTeX (^0.16.4) while the live preview uses the
+  // top-level one, so two copies used to ship: two versions to patch when an
+  // advisory lands, and a standing risk of the editor and the PDF disagreeing
+  // about a formula. package.json pins both to one version via an `overrides`
+  // entry ("katex": "$katex" — npm requires the reference form when the package
+  // is also a direct dependency). Verified safe by diffing MathML output for
+  // inline/display/matrix/cases/accents/error formulas across both versions:
+  // byte-identical. Re-check that diff before bumping KaTeX.
   md.use(katexPlugin, { output: "mathml", throwOnError: false });
   md.use(footnotePlugin); // [^1] references + a footnotes section at the end
   installAdmonitions(md); // > [!NOTE] blockquotes → styled callout boxes
