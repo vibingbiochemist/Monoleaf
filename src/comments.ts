@@ -7,6 +7,7 @@ import {
   ViewUpdate,
 } from "@codemirror/view";
 import { trimRange } from "./ranges";
+import { escapeDashes } from "./htmlcomment";
 
 /**
  * Single-file review comments (brief Stage 3). A comment anchors to a text
@@ -47,16 +48,6 @@ export interface CommentThread {
 
 const ANCHOR_RE = /<!--c:([a-z0-9]+)([se])-->/g;
 const BODY_RE = /<!--c:([a-z0-9]+) (\{.*?\})-->/g;
-
-/**
- * A body must never contain "--", or it would terminate the enclosing HTML
- * comment. JSON.stringify never emits "--" outside string values, and inside
- * them "-" is a legal escape for "-", so this round-trips losslessly
- * through JSON.parse.
- */
-function escapeDashes(json: string): string {
-  return json.replace(/--/g, "-\\u002d");
-}
 
 function serializeBody(id: string, resolved: boolean, thread: CommentEntry[]) {
   return `<!--c:${id} ${escapeDashes(JSON.stringify({ resolved, thread }))}-->`;

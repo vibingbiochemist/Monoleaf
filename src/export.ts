@@ -19,6 +19,7 @@ import { EditorState, TransactionSpec } from "@codemirror/state";
 import { PortabilityMode } from "./portability";
 import { ADMONITIONS, admonitionKind } from "./admonitions";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
+import { escapeDashes } from "./htmlcomment";
 
 // Curated language set for fenced-code highlighting in the PDF (core + these
 // keeps the bundle lean). registerLanguage also registers each language's
@@ -176,11 +177,6 @@ export function marginToPx(margin: string): {
   if (v.length === 3)
     return { top: v[0], right: v[1], bottom: v[2], left: v[1] };
   return { top: v[0], right: v[1], bottom: v[2], left: v[3] };
-}
-
-/** Same escaping rule as comment bodies: "--" would end the HTML comment. */
-function escapeDashes(json: string): string {
-  return json.replace(/--/g, "-\\u002d");
 }
 
 export function parsePageConfig(text: string): PageConfig {

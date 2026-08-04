@@ -1,3 +1,5 @@
+import { escapeDashes } from "./htmlcomment";
+
 /**
  * Document metadata (title / author / date / subject / keywords). Stored in
  * the single .md, round-trip-safe, in one of two formats:
@@ -36,11 +38,6 @@ const FIELDS: (keyof DocMeta)[] = [
 const META_COMMENT_RE = /<!--ml:meta (\{[\s\S]*?\})-->\r?\n?/;
 // Front matter is only front matter at the very top of the file.
 const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
-
-/** "--" would prematurely close an HTML comment (same rule as comment bodies). */
-function escapeDashes(json: string): string {
-  return json.replace(/--/g, "-\\u002d");
-}
 
 export function isEmptyMeta(meta: DocMeta): boolean {
   return FIELDS.every((f) => meta[f].trim() === "");
