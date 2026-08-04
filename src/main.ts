@@ -1073,7 +1073,13 @@ async function exportHtml() {
     const fileTitle = fileLabel().replace(/\.(md|markdown)$/i, "");
     const { meta } = parseMeta(markdown);
     const body = sanitizeDocumentHtml(renderDocumentHtml(markdown, mode));
-    const html = wrapStandaloneHtml(body, meta.title.trim() || fileTitle);
+    // The exported file gets a CSP mirroring this window's setting, so a shared
+    // .html cannot fetch what the app itself was told not to fetch.
+    const html = wrapStandaloneHtml(
+      body,
+      meta.title.trim() || fileTitle,
+      remoteImagesEnabled,
+    );
     const path = await save({
       filters: [{ name: "HTML", extensions: ["html"] }],
       defaultPath: `${fileTitle}.html`,

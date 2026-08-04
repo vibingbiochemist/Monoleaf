@@ -60,6 +60,26 @@ describe("sanitizeDocumentHtml", () => {
     expect(out).toContain('type="checkbox"');
   });
 
+  it("pairs every target with rel=noopener noreferrer", () => {
+    // Harmless in the app, where clicks are intercepted and routed through
+    // openExternal — but the exported HTML opens in a real browser, where
+    // target without rel is reverse tabnabbing: the opened page gets a live
+    // window.opener handle back to the document.
+    for (const html of [
+      '<a href="https://example.com" target="_blank">x</a>',
+      '<a href="https://example.com" target="_self">x</a>',
+      '<area href="https://example.com" target="_blank">',
+    ]) {
+      const out = sanitizeDocumentHtml(html);
+      expect(out, html).toMatch(/rel="noopener noreferrer"/);
+    }
+  });
+
+  it("leaves rel alone on links with no target", () => {
+    const out = sanitizeDocumentHtml('<a href="https://example.com">x</a>');
+    expect(out).not.toMatch(/rel=/);
+  });
+
   it("preserves data-srcline (pagination break mapping)", () => {
     expect(sanitizeDocumentHtml('<p data-srcline="7">x</p>')).toContain(
       'data-srcline="7"',

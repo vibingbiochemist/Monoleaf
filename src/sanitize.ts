@@ -35,19 +35,28 @@ import { blockRemoteContent, remoteImagesAllowed } from "./remoteimages";
 // needs no re-registration.
 let hookInstalled = false;
 
-function installRemoteContentHook(): void {
+function installHooks(): void {
   if (hookInstalled || typeof DOMPurify.addHook !== "function") return;
   hookInstalled = true;
   DOMPurify.addHook("afterSanitizeAttributes", (node) => {
     // Runs for every node, including text nodes, which have no tagName.
     const el = node as Element;
-    if (typeof el.getAttribute !== "function" || remoteImagesAllowed()) return;
-    blockRemoteContent(el);
+    if (typeof el.getAttribute !== "function") return;
+    if (!remoteImagesAllowed()) blockRemoteContent(el);
+    // `target` is allowed (ADD_ATTR) but nothing pairs it with `rel`. Inside the
+    // app that is harmless — clicks are intercepted and routed to the system
+    // browser via openExternal, and the window never navigates. In the exported
+    // HTML, opened in a real browser, it is reverse tabnabbing: the opened page
+    // keeps a live window.opener handle and can navigate the document that
+    // spawned it. Both hooks share one registration, per the note above.
+    if (el.hasAttribute("target")) {
+      el.setAttribute("rel", "noopener noreferrer");
+    }
   });
 }
 
 export function sanitizeDocumentHtml(html: string): string {
-  installRemoteContentHook();
+  installHooks();
   return DOMPurify.sanitize(html, {
     ADD_ATTR: ["align", "target"],
     FORBID_TAGS: [

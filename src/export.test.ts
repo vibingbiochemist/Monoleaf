@@ -10,6 +10,7 @@ import {
   renderDocumentHtml,
   renderStandaloneHtml,
   setPageConfigSpec,
+  wrapStandaloneHtml,
 } from "./export";
 import { createDocumentState, serializeDocument } from "./document";
 import { cellDisplayHtml } from "./tablecell";
@@ -399,6 +400,60 @@ describe("buildPrintCss", () => {
     expect(css).toContain(".ml-pagebreak { display: block");
     expect(css).not.toContain("#print-root .ml-pagebreak");
     expect(css).toContain("break-after: page");
+  });
+});
+
+describe("the exported HTML shell carries its own CSP", () => {
+  // The exported file is opened in a full browser, which applies none of the
+  // app's restrictions — so a sanitizer gap in the app becomes an unbacked gap
+  // in every file the user shares. The meta CSP is that backstop.
+  const cspOf = (html: string): string => {
+    const m =
+      /<meta http-equiv="Content-Security-Policy" content="([^"]*)">/.exec(
+        html,
+      );
+    return m === null ? "" : m[1];
+  };
+
+  it("defaults to the safer policy when the caller says nothing", () => {
+    const csp = cspOf(wrapStandaloneHtml("<p>x</p>", "Doc"));
+    expect(csp).not.toBe("");
+    expect(csp).toContain("img-src data:");
+    expect(csp).not.toContain("https:");
+    // Nothing in a standalone export should ever execute.
+    expect(csp).toContain("default-src 'none'");
+    expect(csp).toContain("script-src 'none'");
+  });
+
+  it("mirrors the remote-images setting when it is on", () => {
+    const csp = cspOf(wrapStandaloneHtml("<p>x</p>", "Doc", true));
+    expect(csp).toContain("img-src data: https:");
+    expect(csp).toContain("script-src 'none'");
+  });
+
+  it("keeps inline styles working — the export depends on them", () => {
+    // Table borders, callout boxes and code colours are all inline styles.
+    const csp = cspOf(wrapStandaloneHtml("<p>x</p>", "Doc"));
+    expect(csp).toContain("style-src 'unsafe-inline'");
+  });
+
+  it("declares the policy before any content it governs", () => {
+    const html = wrapStandaloneHtml(
+      '<img src="data:image/gif;base64,AA">',
+      "D",
+    );
+    const at = html.indexOf("Content-Security-Policy");
+    expect(at).toBeGreaterThan(-1); // else the comparison below is vacuous
+    expect(at).toBeLessThan(html.indexOf("<body>"));
+  });
+
+  it("renderStandaloneHtml passes the setting through", () => {
+    expect(cspOf(renderStandaloneHtml("# x\n", "strict", "T"))).toContain(
+      "img-src data:",
+    );
+    expect(cspOf(renderStandaloneHtml("# x\n", "strict", "T", true))).toContain(
+      "img-src data: https:",
+    );
   });
 });
 

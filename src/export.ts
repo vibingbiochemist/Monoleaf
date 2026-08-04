@@ -461,8 +461,43 @@ export function renderStandaloneHtml(
   markdown: string,
   mode: PortabilityMode,
   title: string,
+  allowRemoteImages = false,
 ): string {
-  return wrapStandaloneHtml(renderDocumentHtml(markdown, mode), title);
+  return wrapStandaloneHtml(
+    renderDocumentHtml(markdown, mode),
+    title,
+    allowRemoteImages,
+  );
+}
+
+/**
+ * The exported file's own Content-Security-Policy.
+ *
+ * Everything else in this module assumes the app's CSP and sanitizer are doing
+ * their jobs. An exported .html has neither: it opens in a full browser with no
+ * restrictions, so any sanitizer gap becomes a live gap in every file the user
+ * shares, with nothing behind it. This is that backstop.
+ *
+ * `style-src 'unsafe-inline'` is unavoidable and not a weakening — the whole
+ * export strategy is inline styles (table borders, callout boxes, code colours)
+ * so the file needs no external stylesheet. `script-src 'none'` is the directive
+ * that matters, and nothing the renderer emits is a script.
+ *
+ * `img-src` mirrors the reader's own "Load remote images" setting at the moment
+ * of export: off means the exported file cannot phone home either, which is the
+ * same promise the app makes about the document it was made from.
+ */
+function standaloneCsp(allowRemoteImages: boolean): string {
+  const img = allowRemoteImages ? "data: https:" : "data:";
+  return [
+    "default-src 'none'",
+    "script-src 'none'",
+    `img-src ${img}`,
+    "style-src 'unsafe-inline'",
+    "font-src data:",
+    "base-uri 'none'",
+    "form-action 'none'",
+  ].join("; ");
 }
 
 /**
@@ -471,7 +506,11 @@ export function renderStandaloneHtml(
  * renderStandaloneHtml so the caller can sanitize the body before it is inlined
  * into a shareable file.
  */
-export function wrapStandaloneHtml(body: string, title: string): string {
+export function wrapStandaloneHtml(
+  body: string,
+  title: string,
+  allowRemoteImages = false,
+): string {
   const safeTitle = title.replace(
     /[&<>]/g,
     (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c] ?? c,
@@ -480,6 +519,7 @@ export function wrapStandaloneHtml(body: string, title: string): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="${standaloneCsp(allowRemoteImages)}">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${safeTitle}</title>
 <style>
