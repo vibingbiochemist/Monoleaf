@@ -16,6 +16,14 @@ on:
   push:
     tags: ["v*"]
 
+# Read-only by default. Only the release job below widens this to contents:
+# write, and only because publishing the Release needs it — so the version and
+# gate jobs cannot write to the repository even though they run in the workflow
+# that publishes. Without this block they would inherit whatever the repository
+# default token grants.
+permissions:
+  contents: read
+
 # Actions are pinned to full commit SHAs, not tags: a tag is mutable, and this
 # workflow's release job holds contents: write, so a retagged action would run
 # with permission to publish. Refresh with, e.g.:
@@ -117,6 +125,8 @@ jobs:
           cache: npm
 
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
+        with:
+          toolchain: stable # the SHA pin hides which toolchain this is
 
       - run: npm ci
 

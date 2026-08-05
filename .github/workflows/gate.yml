@@ -54,8 +54,12 @@ jobs:
         with:
           node-version: 22
           cache: npm
+      # `toolchain: stable` is stated explicitly because the SHA pin means the
+      # ref no longer says which toolchain this is. The action defaults to
+      # stable, so this is documentation rather than a fix.
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
         with:
+          toolchain: stable
           components: clippy, rustfmt
       - uses: ./.github/actions/linux-deps
       - run: npm ci

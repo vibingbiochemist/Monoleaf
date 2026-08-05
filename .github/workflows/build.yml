@@ -35,6 +35,21 @@ jobs:
   gate:
     uses: ./.github/workflows/gate.yml
 
+  # Flags a PR that introduces a dependency with a known vulnerability or an
+  # incompatible licence, at review time rather than after merge. The API behind
+  # it is only available on public repos (or private with Advanced Security),
+  # hence the visibility guard — a no-op while this repo is private.
+  #
+  # Ported from Andrew Gockenbach's PR (Monoleaf_beta #31).
+  dependency-review:
+    if: github.event_name == 'pull_request' && !github.event.repository.private
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4 branch head, resolved 2026-08-04
+        with:
+          fail-on-severity: high
+
   build:
     needs: gate
     strategy:
@@ -54,6 +69,8 @@ jobs:
           cache: npm
 
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
+        with:
+          toolchain: stable # the SHA pin hides which toolchain this is
 
       - uses: ./.github/actions/linux-deps
         if: startsWith(matrix.platform, 'ubuntu')
