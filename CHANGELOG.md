@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.9.0] - 2026-08-01
+## [0.9.0] - 2026-08-04
 
 First public release.
 
@@ -72,6 +72,32 @@ First public release.
   `withGlobalTauri` disabled and file writes constrained to document extensions.
 - Documents never leave your machine: no account, no cloud, no telemetry. The
   app window never navigates; external links open in your system browser.
+- **The page-setup block cannot inject CSS.** A margin value travels with the
+  document and is interpolated into the printed page's `@page` rule, so it is
+  validated as plain CSS lengths and nothing else. Without that, a document could
+  close the rule and append styles of its own — applied on open, since page
+  layout is measured when a file loads, not when it is printed.
+- **Remote content is blocked on every attribute that fetches**, not just
+  `<img src>`: `srcset`, `poster` and the legacy `background` attribute on any
+  element, `href`/`xlink:href` on the SVG elements that load one, and any inline
+  `style` that references a remote URL — including through CSS escape sequences
+  and `image-set()`, neither of which a pattern over `url()` tokens catches.
+  Inline `data:` images are unaffected, in either setting.
+- **Exported HTML carries its own Content-Security-Policy.** A shared `.html`
+  opens in an ordinary browser, which applies none of the app's restrictions;
+  scripts are refused outright and images are limited to what the reader's remote
+  content setting allowed at the moment of export. Links that open a new tab now
+  carry `rel="noopener noreferrer"`.
+- **Network paths are refused by the file commands.** On Windows, merely touching
+  a `\\host\share` path makes the system authenticate to that host and hand it a
+  hash of the user's credentials.
+- **A panic while importing a PDF cannot take the app down**, and cannot poison
+  the locks that the rest of the session depends on.
+- Supply chain: CI runs on a least-privilege token with every third-party action
+  pinned to a commit hash, blocking npm and cargo advisory audits on both the
+  build and release paths, CodeQL static analysis, dependency review on incoming
+  changes, and Dependabot across npm, Cargo and Actions. A release tag is checked
+  against the version in all three manifests before anything is published.
 
 ### Known limitations
 

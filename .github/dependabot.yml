@@ -13,7 +13,7 @@
 # updates are opened regardless of schedule once Dependabot alerts are enabled in
 # the repository settings.
 #
-# Grouping ported from Andrew Gockenbach's PR (Monoleaf_beta #31).
+# Grouping contributed by Andrew Gockenbach.
 version: 2
 updates:
   - package-ecosystem: npm

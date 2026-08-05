@@ -8,8 +8,7 @@
 # public with no further setup. The Rust backend can be added as a second matrix
 # language once CodeQL's Rust support leaves preview.
 #
-# Ported from Andrew Gockenbach's PR (Monoleaf_beta #31), which was opened
-# against the wrong repository.
+# Contributed by Andrew Gockenbach.
 name: codeql
 
 on:

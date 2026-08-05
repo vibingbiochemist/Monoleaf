@@ -40,7 +40,7 @@ jobs:
   # it is only available on public repos (or private with Advanced Security),
   # hence the visibility guard — a no-op while this repo is private.
   #
-  # Ported from Andrew Gockenbach's PR (Monoleaf_beta #31).
+  # Contributed by Andrew Gockenbach.
   dependency-review:
     if: github.event_name == 'pull_request' && !github.event.repository.private
     runs-on: ubuntu-latest
