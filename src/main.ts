@@ -338,6 +338,23 @@ let remoteImagesEnabled = loadRemoteImagePreference();
 const AUTOSAVE_KEY = "monoleaf.autosave";
 let autosaveEnabled = localStorage.getItem(AUTOSAVE_KEY) === "true";
 
+// Opening a file on a network share (\\server\share) makes Windows authenticate
+// to that server and hand it a hash of the user's credentials, so the backend
+// refuses those paths unless this is on. Plenty of people keep documents on a
+// file server, so it has to be switchable — the default is what stops a path
+// Monoleaf did not choose from reaching a host it did not choose.
+//
+// Rust holds the authoritative flag; this pushes the stored preference to it on
+// startup and on every toggle, the same shape as the remote-image setting.
+const NETWORK_PATHS_KEY = "monoleaf.allow-network-paths";
+let networkPathsEnabled = localStorage.getItem(NETWORK_PATHS_KEY) === "true";
+function pushNetworkPathSetting(): void {
+  void invoke("set_allow_network_paths", { allow: networkPathsEnabled }).catch(
+    () => {},
+  );
+}
+pushNetworkPathSetting();
+
 // Reopen the last file on launch (on by default). LAST_FILE_KEY remembers the
 // path of the most recently opened/saved document; on startup — when no crash
 // recovery is pending — the user is asked whether to reopen it, otherwise the
@@ -403,6 +420,9 @@ function refreshModeButtons() {
   document
     .getElementById("btn-remote-images")!
     .setAttribute("aria-pressed", String(remoteImagesEnabled));
+  document
+    .getElementById("btn-network-paths")!
+    .setAttribute("aria-pressed", String(networkPathsEnabled));
   document
     .getElementById("btn-reopen")!
     .setAttribute("aria-pressed", String(reopenLastEnabled));
@@ -1755,6 +1775,17 @@ async function loadPath(path: string) {
     const content = await invoke<string>("read_file", { path });
     loadIntoEditor(content, path);
   } catch (err) {
+    // A refused network path is a setting the user can reverse, so offer it and
+    // retry once rather than reporting a dead end.
+    if (await offerNetworkPaths(err)) {
+      try {
+        loadIntoEditor(await invoke<string>("read_file", { path }), path);
+        return;
+      } catch (retryErr) {
+        await showError(retryErr);
+        return;
+      }
+    }
     await showError(err);
   }
 }
@@ -1801,7 +1832,13 @@ async function saveFile(forcePrompt = false): Promise<boolean> {
       if (path === null) return false;
     }
     const contents = serializeDocument(view.state);
-    await invoke("write_file", { path, contents });
+    try {
+      await invoke("write_file", { path, contents });
+    } catch (err) {
+      // Same offer as on open: saving to a share is the user's call to make.
+      if (!(await offerNetworkPaths(err))) throw err;
+      await invoke("write_file", { path, contents });
+    }
     currentPath = path;
     // The document has a real name now, so any imported suggestion is spent.
     suggestedName = null;
@@ -1872,6 +1909,45 @@ function toggleRemoteImages() {
   refreshModeButtons();
   schedulePagination(50);
   view.focus();
+}
+
+function setNetworkPaths(enabled: boolean) {
+  networkPathsEnabled = enabled;
+  localStorage.setItem(NETWORK_PATHS_KEY, String(enabled));
+  pushNetworkPathSetting();
+  refreshModeButtons();
+}
+
+function toggleNetworkPaths() {
+  setNetworkPaths(!networkPathsEnabled);
+  view.focus();
+}
+
+/**
+ * The backend refused a network path. Offer the setting rather than leaving the
+ * user at a dead end with no idea what to do about it — the refusal is a policy
+ * decision they are allowed to reverse, and the alternative (mapping a drive) is
+ * not something most people would think of.
+ *
+ * Returns true when the setting was just switched on, meaning the caller should
+ * retry the operation. COUPLED: the match below is on NETWORK_PATH_REFUSED in
+ * src-tauri/src/lib.rs.
+ */
+async function offerNetworkPaths(err: unknown): Promise<boolean> {
+  if (!String(err).includes("Network paths are not supported")) return false;
+  const allow = await uiConfirm(
+    "This file is on a network share. Opening one makes Windows sign in to that " +
+      "server, which hands it a hash of your credentials — so Monoleaf does not " +
+      "do it unless you say so.\n\nAllow network paths from now on? You can turn " +
+      "this off again in the menu, and mapped drives (Z:) never needed it.",
+    {
+      title: "Network path",
+      okLabel: "Allow network paths",
+      cancelLabel: "Cancel",
+    },
+  );
+  if (allow) setNetworkPaths(true);
+  return allow;
 }
 
 function toggleReopen() {
@@ -2259,6 +2335,7 @@ const formatButtons: Record<string, () => void> = {
   theme: toggleTheme,
   autosave: toggleAutosave,
   "remote-images": toggleRemoteImages,
+  "network-paths": toggleNetworkPaths,
   reopen: toggleReopen,
 };
 

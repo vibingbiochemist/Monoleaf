@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::fs;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
 
@@ -291,26 +291,47 @@ fn spell_add(word: String) -> Result<(), String> {
 // these.
 const WRITABLE_EXTS: &[&str] = &["md", "markdown", "html", "htm", "txt"];
 
+/// The refusal the frontend recognises in order to offer the setting.
+///
+/// COUPLED: `main.ts` matches this text to decide whether to ask "Allow network
+/// paths?" and retry. Change it here and you must change it there.
+const NETWORK_PATH_REFUSED: &str = "Network paths are not supported";
+
+/// True for a UNC/network path. Windows treats `/` and `\` alike, so
+/// `//host/share` and `\\host\share` are the same thing, as are the mixed forms.
+fn is_network_path(path: &str) -> bool {
+    matches!(path.as_bytes(), [b'\\' | b'/', b'\\' | b'/', ..])
+}
+
 /// Checks every file command applies before touching `fs`.
 ///
-/// A path beginning with two separators is a UNC/network path (Windows treats
-/// `/` and `\` alike, so `//host/share` and `\\host\share` are the same thing).
-/// Merely opening one makes Windows contact that host over SMB and authenticate
-/// with an NTLM handshake, which hands the host a hash of the user's
-/// credentials. Nothing an attacker controls reaches these commands today —
-/// this is here so the next bug that influences a path cannot become that.
-fn validate_path(path: &str) -> Result<(), String> {
+/// Merely opening a UNC path makes Windows contact that host over SMB and
+/// authenticate with an NTLM handshake, which hands the host a hash of the
+/// user's credentials. Refusing by default means a path a document influenced
+/// cannot trigger that.
+///
+/// `allow_network` is the user's own decision, off unless they turn it on. Plenty
+/// of people keep documents on a file server and Monoleaf has to be able to open
+/// them; what the default buys is that this only ever happens because someone
+/// asked for it. It is a real reduction in protection while it is on, and the
+/// setting says so.
+///
+/// Note the frontend can set this flag, so it is not a defence against a
+/// compromised frontend — but a compromised frontend can already read every
+/// local file the user can. What the default protects is the credential hash,
+/// which is the one thing reachable without any local read at all.
+fn validate_path(path: &str, allow_network: bool) -> Result<(), String> {
     if path.contains('\0') {
         return Err("Invalid path".into());
     }
-    if matches!(path.as_bytes(), [b'\\' | b'/', b'\\' | b'/', ..]) {
-        return Err("Network paths are not supported".into());
+    if !allow_network && is_network_path(path) {
+        return Err(NETWORK_PATH_REFUSED.into());
     }
     Ok(())
 }
 
-fn validate_write_path(path: &str) -> Result<(), String> {
-    validate_path(path)?;
+fn validate_write_path(path: &str, allow_network: bool) -> Result<(), String> {
+    validate_path(path, allow_network)?;
     let ext = std::path::Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
@@ -324,16 +345,30 @@ fn validate_write_path(path: &str) -> Result<(), String> {
     }
 }
 
+/// Whether the user has opted into network paths. See [`validate_path`].
+///
+/// A process-wide flag rather than Tauri state on purpose: it keeps `read_file`
+/// and `write_file` as plain one- and two-argument functions, which is what lets
+/// the byte-exact round-trip test call them directly. The frontend owns the
+/// preference (it is a settings toggle) and pushes it here on startup and on
+/// every change, the same shape as the remote-image setting.
+static ALLOW_NETWORK_PATHS: AtomicBool = AtomicBool::new(false);
+
+#[tauri::command]
+fn set_allow_network_paths(allow: bool) {
+    ALLOW_NETWORK_PATHS.store(allow, Ordering::Relaxed);
+}
+
 #[tauri::command]
 fn read_file(path: String) -> Result<String, String> {
-    validate_path(&path)?;
+    validate_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
     let bytes = fs::read(&path).map_err(|e| format!("Failed to read {path}: {e}"))?;
     String::from_utf8(bytes).map_err(|_| format!("{path} is not valid UTF-8 text"))
 }
 
 #[tauri::command]
 fn write_file(path: String, contents: String) -> Result<(), String> {
-    validate_write_path(&path)?;
+    validate_write_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
     fs::write(&path, contents.as_bytes()).map_err(|e| format!("Failed to write {path}: {e}"))
 }
 
@@ -388,6 +423,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
+            set_allow_network_paths,
             import_pdf_as_markdown,
             spell_suggest,
             spell_add,
@@ -455,27 +491,28 @@ mod tests {
     #[test]
     fn write_file_only_accepts_document_extensions() {
         // Document types the app legitimately saves/exports.
-        assert!(validate_write_path("C:/Users/x/note.md").is_ok());
-        assert!(validate_write_path("/tmp/brief.markdown").is_ok());
-        assert!(validate_write_path("/tmp/export.html").is_ok());
-        assert!(validate_write_path("/tmp/notes.txt").is_ok());
+        assert!(validate_write_path("C:/Users/x/note.md", false).is_ok());
+        assert!(validate_write_path("/tmp/brief.markdown", false).is_ok());
+        assert!(validate_write_path("/tmp/export.html", false).is_ok());
+        assert!(validate_write_path("/tmp/notes.txt", false).is_ok());
         // Executable/script droppers and extensionless paths are refused.
-        assert!(validate_write_path("C:/Users/x/Startup/evil.bat").is_err());
-        assert!(validate_write_path("/tmp/evil.exe").is_err());
-        assert!(validate_write_path("/tmp/evil.lnk").is_err());
-        assert!(validate_write_path("/tmp/noextension").is_err());
+        assert!(validate_write_path("C:/Users/x/Startup/evil.bat", false).is_err());
+        assert!(validate_write_path("/tmp/evil.exe", false).is_err());
+        assert!(validate_write_path("/tmp/evil.lnk", false).is_err());
+        assert!(validate_write_path("/tmp/noextension", false).is_err());
         // And the command itself refuses to touch disk for a bad path.
         let bad = std::env::temp_dir().join("monoleaf_evil.bat");
         assert!(write_file(bad.to_string_lossy().into_owned(), "x".into()).is_err());
         assert!(!bad.exists());
     }
 
-    /// Both file commands refuse UNC/network paths. Asserted on the shared
-    /// validator, not by calling the commands: before this guard existed the
-    /// commands would reach `fs`, and on Windows that is precisely the SMB
-    /// handshake (and the multi-second timeout) the guard exists to prevent.
+    /// Both file commands refuse UNC/network paths *unless the user has opted
+    /// in*. Asserted on the shared validator, not by calling the commands:
+    /// before this guard existed the commands would reach `fs`, and on Windows
+    /// that is precisely the SMB handshake (and the multi-second timeout) the
+    /// guard exists to prevent.
     #[test]
-    fn file_commands_reject_network_paths() {
+    fn file_commands_reject_network_paths_unless_allowed() {
         for path in [
             r"\\attacker.test\share\note.md",
             "//attacker.test/share/note.md",
@@ -483,16 +520,32 @@ mod tests {
             r"/\attacker.test\share\note.md",
         ] {
             assert_eq!(
-                validate_path(path),
-                Err("Network paths are not supported".to_string()),
-                "not rejected: {path}"
+                validate_path(path, false),
+                Err(NETWORK_PATH_REFUSED.to_string()),
+                "not rejected with the setting off: {path}"
             );
             // write_file layers the extension check on top of the same guard.
-            assert!(validate_write_path(path).is_err(), "not rejected: {path}");
+            assert!(
+                validate_write_path(path, false).is_err(),
+                "not rejected: {path}"
+            );
+            // Opted in: the user's own network share has to be usable.
+            assert!(
+                validate_path(path, true).is_ok(),
+                "still rejected with the setting on: {path}"
+            );
+            assert!(
+                validate_write_path(path, true).is_ok(),
+                "still rejected with the setting on: {path}"
+            );
         }
         // A single leading separator is an ordinary absolute path.
-        assert!(validate_path("/tmp/note.md").is_ok());
-        assert!(validate_path(r"C:\Users\x\note.md").is_ok());
-        assert!(validate_path("note.md\0.bat").is_err());
+        assert!(validate_path("/tmp/note.md", false).is_ok());
+        assert!(validate_path(r"C:\Users\x\note.md", false).is_ok());
+        // A NUL is never a path, opted in or not.
+        assert!(validate_path("note.md\0.bat", false).is_err());
+        assert!(validate_path("note.md\0.bat", true).is_err());
+        // The extension allow-list still applies to an opted-in network path.
+        assert!(validate_write_path(r"\\host\share\evil.bat", true).is_err());
     }
 }

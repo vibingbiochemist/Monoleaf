@@ -88,9 +88,12 @@ First public release.
   scripts are refused outright and images are limited to what the reader's remote
   content setting allowed at the moment of export. Links that open a new tab now
   carry `rel="noopener noreferrer"`.
-- **Network paths are refused by the file commands.** On Windows, merely touching
-  a `\\host\share` path makes the system authenticate to that host and hand it a
-  hash of the user's credentials.
+- **Network paths need your permission** (Settings ▸ Allow network paths, off by
+  default). On Windows, merely opening a `\\server\share` path makes the system
+  sign in to that server and hand it a hash of your credentials, so a path
+  Monoleaf did not choose cannot reach a host you did not choose. Opening a file
+  on a share offers to switch the setting on and then retries, so it is one
+  click rather than a dead end; mapped drives (`Z:`) never needed it.
 - **A panic while importing a PDF cannot take the app down**, and cannot poison
   the locks that the rest of the session depends on.
 - Supply chain: CI runs on a least-privilege token with every third-party action
@@ -110,6 +113,15 @@ First public release.
   body size arrive as paragraphs, since relative type size is the only heading
   signal a PDF reliably carries. Images are dropped. Encrypted, damaged and
   oversized files each fail with a specific message.
+- **Embedded media is not rendered.** Raw `<video>`, `<audio>` and `<track>`
+  elements in a document are removed rather than displayed, in the editor and in
+  both exports. Monoleaf does not emit them, and allowing tags it never produces
+  only widens what an untrusted document can reach for. Images, math and tables
+  are unaffected.
+- **Page margins accept plain CSS lengths only** — one to four values in `mm`,
+  `cm`, `in`, `pt` or `px`, or a bare `0`. Anything else in a document's page
+  setup falls back to the default, because a margin travels with the file
+  straight into the printed page's style rule.
 - **The installer is not code-signed**, so Windows SmartScreen may warn about an
   unknown publisher.
 - **Windows is the tested and distributed platform.** macOS and Linux build from
