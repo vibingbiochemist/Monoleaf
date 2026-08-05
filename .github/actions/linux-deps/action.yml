@@ -1,0 +1,19 @@
+# The apt packages the Tauri crate needs to compile on Linux. Without them the
+# crate does not build at all, so anything that runs cargo on ubuntu needs this
+# first.
+#
+# Factored out because this list had reached three copies. It is used from
+# gate.yml's rust job and from build.yml's platform matrix, where it sits behind
+# an `if:` on the calling step — a composite works there because the condition
+# belongs to the step that uses it, not to anything inside.
+name: Linux build dependencies
+description: apt packages required to compile the Tauri crate on Linux.
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+          libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev

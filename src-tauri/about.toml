@@ -1,0 +1,20 @@
+# cargo-about configuration: the set of licenses we accept in the Rust
+# dependency tree. All permissive (or file-level weak-copyleft for MPL-2.0,
+# which requires attribution but does not affect our licensing options).
+# cargo-about fails the build of THIRD_PARTY_LICENSES.md if anything outside
+# this list (e.g. GPL) ever enters the tree — which is exactly the guard the
+# brief asks for.
+accepted = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "BSL-1.0",
+    "CC0-1.0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+]

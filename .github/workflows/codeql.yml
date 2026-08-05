@@ -1,0 +1,50 @@
+# Static analysis with CodeQL over the TypeScript frontend — the code that
+# handles this app's untrusted input: document HTML, clipboard content, and the
+# rendered markup that goes into the live DOM and into exported files.
+#
+# Code scanning is free on public repositories but needs GitHub Advanced Security
+# on private ones, so the job is guarded on visibility: while the repo is private
+# this workflow is a green no-op, and it starts scanning the moment the repo goes
+# public with no further setup. The Rust backend can be added as a second matrix
+# language once CodeQL's Rust support leaves preview.
+#
+# Contributed by Andrew Gockenbach.
+name: codeql
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    if: ${{ !github.event.repository.private }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload results to the Security tab
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [javascript-typescript]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: none
+          # The default suite plus lower-confidence security queries. This
+          # codebase renders untrusted HTML, so extra XSS and injection findings
+          # are worth triaging even at some false-positive cost.
+          queries: security-extended
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@c4dd10e44af883a891fe31ced449bcb4a6728b9b # v3.37.6
+        with:
+          category: "/language:${{ matrix.language }}"

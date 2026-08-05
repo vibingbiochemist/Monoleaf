@@ -1,0 +1,72 @@
+# The quality gate, called by build.yml (every push to main and every PR) and by
+# release.yml (every tag). One definition, two callers.
+#
+# It exists as a reusable workflow because release.yml had grown a near-copy of
+# build.yml's two gate jobs — fifteen steps including a third copy of the apt
+# list — and two copies of a gate drift apart exactly like two copies of a
+# suppression list do. The audit stayed a composite action (see
+# .github/actions/audit) because it slots into a job that already has checkout,
+# Node and cargo; a whole gate is jobs, not steps, so it has to be a workflow.
+#
+# TWO jobs, not one, deliberately: `fast` is well under a minute and `rust` is
+# minutes, they share nothing, and callers wait on both. Collapsing them would
+# serialise the slow half behind the quick half for no benefit.
+#
+# No secrets and no write access: nothing here talks to anything that needs
+# either, so callers must NOT pass `secrets: inherit`. A called workflow can
+# never hold more permission than its caller, and contents: read is the whole
+# requirement.
+#
+# Actions are pinned to full commit SHAs for the same reason as in the callers: a
+# tag is mutable. Local `./.github/...` references need no pin, being versioned
+# with the commit that uses them.
+name: gate
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  fast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm test
+
+  # The Rust unit tests (byte-exact file round-trip, write-path allow-list,
+  # launch-arg parsing) need the toolchain and a built frontend, since compiling
+  # the crate runs Tauri's generate_context! against ../dist.
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      # `toolchain: stable` is stated explicitly because the SHA pin means the
+      # ref no longer says which toolchain this is. The action defaults to
+      # stable, so this is documentation rather than a fix.
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
+        with:
+          toolchain: stable
+          components: clippy, rustfmt
+      - uses: ./.github/actions/linux-deps
+      - run: npm ci
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+      - run: npm run build # dist/ is needed for Tauri's generate_context!
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+      # npm + cargo advisory checks. The suppression list and the reasoning for
+      # it live in the action, once, so no caller can drift from another.
+      - uses: ./.github/actions/audit

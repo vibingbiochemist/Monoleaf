@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <g transform="translate(512 512) scale(1.6) translate(-512 -512)">
+    <path d="M512 236 C680 372 686 556 512 788 C338 556 344 372 512 236 Z" fill="#E8A33D"/>
+    <g stroke="#23252A" stroke-linecap="round" fill="none">
+      <line x1="512" y1="322" x2="512" y2="712" stroke-width="30"/>
+      <g stroke-width="22">
+        <line x1="512" y1="430" x2="430" y2="388"/>
+        <line x1="512" y1="430" x2="594" y2="388"/>
+        <line x1="512" y1="540" x2="416" y2="498"/>
+        <line x1="512" y1="540" x2="608" y2="498"/>
+        <line x1="512" y1="640" x2="438" y2="602"/>
+        <line x1="512" y1="640" x2="586" y2="602"/>
+      </g>
+    </g>
+  </g>
+</svg>

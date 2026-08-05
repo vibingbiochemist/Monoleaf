@@ -1,0 +1,1876 @@
+:root {
+  font-family: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light dark;
+
+  /* Brand palette — gold #E8A33D is the accent (highlights, switches, zoom,
+     focus, badges); ink #23252A and cream #F5F1E8 drive the dark surfaces.
+     Light mode keeps its clean paper-white document canvas. */
+  --accent: light-dark(#e8a33d, #e8a33d);
+  --accent-soft: light-dark(rgba(232, 163, 61, 0.16), rgba(232, 163, 61, 0.22));
+  --bg: light-dark(#f6f6f4, #191b1e);
+  --panel: light-dark(#fbfbfa, #23252a);
+  --border: light-dark(#e4e3df, #383b42);
+  --text: light-dark(#20201e, #f5f1e8);
+  --muted: light-dark(#6f6e69, #9b9a94);
+  --hover: light-dark(rgba(0, 0, 0, 0.055), rgba(255, 255, 255, 0.075));
+  --editor-bg: light-dark(#ffffff, #1e2024);
+
+  color: var(--text);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* The hidden attribute must always win, even over display:flex rules. */
+[hidden] {
+  display: none !important;
+}
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+}
+
+/* Thin, rounded scrollbars everywhere */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: light-dark(rgba(0, 0, 0, 0.22), rgba(255, 255, 255, 0.22));
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: light-dark(rgba(0, 0, 0, 0.38), rgba(255, 255, 255, 0.38));
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg);
+}
+
+/* --- Custom title bar (native decorations are off) --- */
+
+#titlebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 40px;
+  padding-left: 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+  user-select: none;
+}
+
+.titlebar-brand {
+  display: inline-flex;
+  align-items: center;
+  height: 100%;
+}
+
+/* Logo lockup adapts to the OS light/dark theme (same as light-dark() vars). */
+.brand-logo {
+  height: 20px;
+  width: auto;
+  display: block;
+  pointer-events: none; /* let clicks fall through to the drag region */
+}
+/* The logo variant follows the app theme (set on <html>), not the OS, so it
+   stays in sync with the manual Dark mode toggle. */
+.brand-dark {
+  display: none;
+}
+html.theme-dark .brand-light {
+  display: none;
+}
+html.theme-dark .brand-dark {
+  display: block;
+}
+
+.titlebar-controls {
+  display: inline-flex;
+  align-items: stretch;
+  height: 100%;
+}
+
+.win-btn {
+  width: 46px;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  padding: 0;
+}
+.win-btn svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.1;
+}
+.win-btn:hover {
+  background: var(--hover);
+}
+.win-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+.win-btn .ico-restore {
+  display: none;
+}
+.win-btn.maximized .ico-max {
+  display: none;
+}
+.win-btn.maximized .ico-restore {
+  display: inline;
+}
+
+/* --- Toolbar --- */
+
+#toolbar {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+  flex: none;
+}
+
+/* Row 1: File, the Edit/Insert/Review tab switch, and app tools.
+   Row 2: the tools of the selected tab. */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+}
+.toolbar-row + .toolbar-row {
+  border-top: 1px solid var(--border);
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  /* Keep groups at their natural width so the panel genuinely overflows when
+     narrow (rather than groups silently shrinking and clipping their buttons);
+     that overflow is what the chevron controller measures. */
+  flex: none;
+}
+
+/* Ribbon tabs: a segmented switch that toggles the toolbar row between the
+   Edit / Insert / Review tool sets. The pill track + raised active segment
+   signal "pick one of these" at a glance. */
+.ribbon-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  /* Kept close to the neighbouring .separator (20px) so the switch reads as
+     one more toolbar control instead of dominating the row, with just enough
+     extra height that the labels sit comfortably inside their pill. */
+  height: 24px;
+  padding: 1px;
+  background: light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.08));
+  border: 1px solid var(--border);
+  border-radius: 7px;
+}
+.ribbon-tab {
+  font: inherit;
+  font-size: 11px;
+  /* 20px = the 24px track minus its 1px border + 1px padding per side.
+     Centre the label with flex rather than line-height so it stays optically
+     inside the pill regardless of the inherited font's metrics. */
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  /* The extra 2px at the bottom optically centres the ink: the inherited
+     font reserves more empty space above its ascender than below its
+     baseline, so pure flex centring leaves these descender-less labels
+     sitting 1px low. */
+  padding: 0 11px 2px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+/* #toolbar-scoped to outrank the generic "#toolbar button { border-radius }". */
+#toolbar .ribbon-tab {
+  border-radius: 5px;
+}
+.ribbon-tab:hover {
+  color: var(--text);
+}
+/* #toolbar-scoped to outrank the generic "#toolbar button { background }". */
+#toolbar .ribbon-tab[aria-selected="true"] {
+  color: #23252a; /* brand ink on the gold fill — high contrast */
+  background: var(--accent);
+  font-weight: 600;
+}
+
+.ribbon-panel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  /* Take the remaining toolbar width and clip whatever doesn't fit; the
+     overflow chevron (pinned to the right of the row) reveals the rest. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Overflow chevron — shown only when tools were moved into the popover. */
+.toolbar-overflow-btn {
+  flex: none;
+}
+.toolbar-overflow-btn[hidden] {
+  /* Beat .icon-btn's display:inline-flex so the hidden attribute wins. */
+  display: none;
+}
+.ov-chevron {
+  font-size: 17px;
+  line-height: 1;
+}
+
+/* Popover holding the relocated tool groups, stacked as rows. */
+#overflow-menu {
+  min-width: 0;
+  width: max-content;
+}
+#overflow-menu:not([hidden]) {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+#overflow-menu .toolbar-group {
+  gap: 2px;
+}
+#overflow-menu .separator {
+  width: auto;
+  height: 1px;
+  margin: 3px 2px;
+}
+
+/* File is a compact menu button, not the wide style picker. */
+#btn-file {
+  min-width: 0;
+}
+
+.separator {
+  width: 1px;
+  height: 20px;
+  background: var(--border);
+  margin: 0 6px;
+  flex: none;
+}
+
+#toolbar button {
+  font: inherit;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+#toolbar button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+#toolbar button:active:not(:disabled) {
+  background: light-dark(rgba(0, 0, 0, 0.1), rgba(255, 255, 255, 0.13));
+}
+
+#toolbar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+#toolbar button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  flex: none;
+}
+
+.icon {
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.85;
+}
+
+.icon-btn.glyph {
+  font-size: 14.5px;
+  font-weight: 500;
+}
+
+/* Footnote badges in the live view. Literal gold — CSS vars don't resolve
+   inside .cm-content in WebView2. */
+.cm-footnote {
+  color: #e8a33d;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0 1px;
+}
+.cm-footnote-def {
+  margin-right: 0.35em;
+}
+
+/* Rendered math (KaTeX) in the live view */
+.cm-math {
+  cursor: default;
+}
+.cm-math-display {
+  display: block;
+  text-align: center;
+  /* Padding, not margin — measured by CodeMirror's height map (see
+     .ml-table-wrap / .cm-page-gap); a margin drifts click→line mapping. */
+  padding: 0.4em 0;
+}
+
+/* Live preview shown beside the raw source while a formula is being edited.
+   Literal gold (CSS vars don't resolve inside .cm-content in WebView2). */
+.cm-math-preview {
+  margin-left: 0.5em;
+  padding-left: 0.45em;
+  border-left: 2px solid #e8a33d;
+  opacity: 0.9;
+}
+.cm-math-preview-display {
+  display: inline-block;
+  margin: 0.15em 0 0.15em 0.5em;
+  padding-left: 0.6em;
+  border-left: 3px solid #e8a33d;
+}
+
+/* Subscript/superscript toolbar glyphs (x2 / x^2) */
+.script-glyph {
+  font-size: 13px;
+  line-height: 1;
+}
+/* "Aa" change-case glyph. */
+.case-glyph {
+  font-size: 13.5px;
+  letter-spacing: 0.5px;
+}
+.script-glyph sub,
+.script-glyph sup {
+  font-size: 0.68em;
+}
+/* The <span> is the flex item; vertical-align applies to the sub/sup inside
+   it (it would be ignored if they were direct flex children of the button). */
+.script-glyph sub {
+  vertical-align: sub;
+}
+.script-glyph sup {
+  vertical-align: super;
+}
+
+.style-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  min-width: 118px;
+  justify-content: space-between;
+}
+
+.style-btn .caret {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.icon-btn.glyph s {
+  text-decoration-thickness: 1.5px;
+}
+
+.icon-btn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.badge {
+  position: absolute;
+  top: 2px;
+  right: 1px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #23252a; /* brand ink — legible on gold */
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 14px;
+  text-align: center;
+}
+
+.pill {
+  font-size: 12.5px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  color: var(--muted);
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.pill {
+  border: 1px solid var(--border);
+}
+
+/* Pressed state: clearly on, but quiet — soft tint plus a status dot. */
+#toolbar .pill[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: light-dark(rgba(232, 163, 61, 0.4), rgba(232, 163, 61, 0.5));
+  font-weight: 600;
+}
+
+#toolbar .pill[aria-pressed="true"]::before {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  margin-right: 6px;
+  vertical-align: 1px;
+}
+
+/* --- Settings menu --- */
+
+.menu {
+  position: fixed;
+  top: 48px;
+  right: 44px;
+  z-index: 60;
+  min-width: 250px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.24);
+  padding: 6px;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  width: 100%;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.menu-row:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.menu-row:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 5px 8px;
+}
+
+.menu-hint {
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.switch {
+  width: 34px;
+  height: 18px;
+  border-radius: 9px;
+  background: light-dark(#c9c8c4, #55554f);
+  position: relative;
+  flex: none;
+  transition: background 0.15s ease;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: left 0.15s ease;
+}
+
+.menu-row[aria-pressed="true"] .switch {
+  background: var(--accent);
+}
+
+.menu-row[aria-pressed="true"] .switch::after {
+  left: 18px;
+}
+
+/* --- Table widget --- */
+
+.ml-table-wrap {
+  position: relative;
+  /* Padding, not margin: this is a live-view block widget, and CodeMirror
+     measures widgets by offsetHeight (excludes margins) — a vertical margin
+     here is invisible to its height map and drifts click→line mapping down
+     the document (worse the further you scroll). Same lesson as .cm-page-gap. */
+  padding: 10px 0;
+}
+
+.ml-table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.95em; /* relative so it scales with the zoomed page */
+}
+
+.ml-table th,
+.ml-table td {
+  border: 1px solid light-dark(#c9c8c4, #4a4a46);
+  padding: 6px 10px;
+  min-width: 48px;
+  outline: none;
+  vertical-align: top;
+}
+
+.ml-table th {
+  background: light-dark(#f3f3f1, #2b2b2a);
+  font-weight: 600;
+  text-align: left;
+}
+
+/* Inline HTML rendered inside cells (see tablecell.ts). The browser default for
+   <mark> is bright yellow; use the same warm amber as the editor highlighter
+   and the print rule in buildPrintCss, so cell and PDF agree. */
+.ml-table mark {
+  background: light-dark(rgba(250, 204, 84, 0.5), rgba(250, 204, 84, 0.34));
+  color: inherit;
+  border-radius: 2px;
+}
+
+.ml-table th:focus,
+.ml-table td:focus {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  background: light-dark(rgba(232, 163, 61, 0.08), rgba(232, 163, 61, 0.12));
+}
+
+.ml-table-bar {
+  position: absolute;
+  top: -30px;
+  left: 0;
+  display: none;
+  gap: 2px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+}
+
+.ml-table-wrap:hover .ml-table-bar,
+.ml-table-wrap:focus-within .ml-table-bar {
+  display: flex;
+}
+
+.ml-table-bar button {
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ml-table-bar button:hover {
+  background: var(--hover);
+}
+
+/* --- Table size picker --- */
+
+#table-picker {
+  right: auto;
+  min-width: 0;
+  padding: 10px;
+}
+
+#tp-grid {
+  display: grid;
+  grid-template-columns: repeat(10, 17px);
+  gap: 3px;
+  padding: 2px;
+}
+
+.tp-cell {
+  width: 17px;
+  height: 17px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--editor-bg);
+  cursor: pointer;
+}
+
+.tp-cell.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+#tp-label {
+  text-align: center;
+  padding: 6px 0 2px;
+}
+
+.tp-custom {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.tp-custom input {
+  width: 52px;
+  font: inherit;
+  font-size: 12.5px;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--editor-bg);
+  color: var(--text);
+}
+
+.tp-custom button {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 3px 12px;
+  border: none;
+  border-radius: 5px;
+  background: var(--accent);
+  color: #ffffff;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+/* --- Right-click context menu --- */
+
+.context-menu {
+  right: auto; /* positioned via inline left/top, unlike the settings menu */
+  top: auto;
+  min-width: 220px;
+}
+
+.context-format-row {
+  display: flex;
+  gap: 2px;
+  padding: 2px 4px;
+}
+
+.context-format-row .icon-btn {
+  border: none;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.context-format-row .icon-btn:hover {
+  background: var(--hover);
+}
+
+.context-note {
+  font-size: 11px;
+  color: var(--muted);
+  padding: 6px 10px 4px;
+}
+
+.menu .submenu {
+  position: absolute;
+  min-width: 190px;
+}
+
+.toolbar-spacer {
+  flex: 1;
+}
+
+/* --- Status bar (bottom, Word-style) --- */
+
+#statusbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: none;
+  height: 26px;
+  padding: 0 14px;
+  border-top: 1px solid var(--border);
+  background: var(--panel);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+#statusbar .status-spacer {
+  flex: 1;
+}
+
+#file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 60%;
+}
+
+#word-count,
+#page-indicator {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+#zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+#zoom-controls button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+#zoom-out,
+#zoom-in {
+  width: 18px;
+  height: 18px;
+  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+#zoom-pct {
+  min-width: 40px;
+  text-align: right;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding: 2px 4px;
+}
+
+#zoom-controls button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+#zoom-slider {
+  width: 90px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+#zoom-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+
+/* The display:flex below would defeat the hidden attribute's UA rule. */
+#error-bar[hidden] {
+  display: none;
+}
+
+#error-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: light-dark(#fde8e8, #4a2020);
+  color: light-dark(#8a1f1f, #f0b9b9);
+  border-top: 1px solid light-dark(#e5b5b5, #7a3838);
+  font-size: 12.5px;
+}
+
+#error-bar span {
+  flex: 1;
+  font-family: Consolas, monospace;
+}
+
+#error-bar button {
+  font: inherit;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  border-radius: 5px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+/* Hidden off-screen surface where Paged.js measures real page breaks.
+   display:none would break layout measurement, so it is moved off-screen. */
+#pagination-measure {
+  position: absolute;
+  top: 0;
+  left: -100000px;
+  width: 1200px;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Word-style page separation at the real (computed) break positions.
+   The gap band is wider than the page card so it paints over the card's
+   side borders and shadow, visually cutting it into separate pages. */
+.cm-page-gap {
+  /* Horizontal negative margin spans the page card's inner padding. The
+     vertical space MUST be padding, not margin: CodeMirror measures block
+     widgets by offsetHeight (which excludes margins), so a vertical margin
+     here is invisible to its height map and drifts click→position mapping
+     downward after every page break. */
+  margin: 0 -72px;
+  padding: 18px 0;
+}
+
+.cm-page-gap-bottom {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cm-page-num {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.cm-page-gap-space {
+  height: 30px;
+  margin: 0 -30px; /* beyond the card border and shadow */
+  background: var(--bg);
+  box-shadow:
+    inset 0 7px 7px -7px rgba(0, 0, 0, 0.28),
+    inset 0 -7px 7px -7px rgba(0, 0, 0, 0.28);
+}
+
+.cm-page-gap-top {
+  height: 58px;
+}
+
+/* The explicit <!--ml:pagebreak--> directive, shown as a clear page-break
+   divider (always rendered, atomic — never its raw comment). */
+.cm-pagebreak-directive {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+
+.cm-pagebreak-directive::before,
+.cm-pagebreak-directive::after {
+  content: "";
+  flex: 1;
+  border-top: 1px dashed light-dark(#b9b8b4, #565650);
+}
+
+/* --- Layout --- */
+
+#content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+#editor {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--editor-bg);
+}
+
+#editor .cm-editor {
+  height: 100%;
+  font-size: 15px; /* scaled live via CSSOM (applyPageVars) */
+}
+
+#editor .cm-editor.cm-focused {
+  outline: none;
+}
+
+/* Live view = a Word-like page: gray canvas + a centered fixed-width white
+   sheet. The #editor.live prefix outranks CodeMirror's base .cm-content
+   (which is flex-grow:2 and would otherwise fill the scroller). */
+#editor.live .cm-scroller {
+  background: light-dark(#d7d7d4, #141413);
+  padding: 26px 16px;
+}
+
+#editor.live .cm-content {
+  box-sizing: border-box;
+  /* flex:none (0 0 auto) + !important defeats CM base .cm-content flex-grow:2
+     so margin:auto can centre the fixed page width. These are the 100%
+     baseline sizes; applyPageVars (main.ts) injects zoom-scaled overrides. */
+  flex: none !important;
+  width: 794px !important; /* A4 baseline; scaled live by applyPageVars (CSSOM) */
+  min-height: 1123px;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  padding: 76px 76px 76px; /* 20mm baseline; set live by applyPageVars */
+  font-size: 14.67px; /* 11pt baseline; set live by applyPageVars */
+  line-height: 1.5; /* matches print leading */
+  text-align: var(--doc-align, left);
+  background: var(--editor-bg);
+  border: 1px solid light-dark(#c2c2bf, #3a3a38);
+  border-radius: 3px;
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.13);
+}
+
+#editor .cm-scroller {
+  font-family: Consolas, "Cascadia Mono", monospace;
+  line-height: 1.6;
+}
+
+#editor .cm-cursor {
+  border-left-width: 2px;
+}
+
+/* Dark mode: the default caret is nearly invisible on the dark canvas, so
+   tint it the brand gold. Literal color — CSS custom properties don't resolve
+   inside CodeMirror's content layer in WebView2. */
+html.theme-dark #editor .cm-cursor {
+  border-left-color: #e8a33d;
+}
+
+#editor .cm-selectionBackground,
+#editor .cm-content ::selection {
+  background: light-dark(
+    rgba(232, 163, 61, 0.22),
+    rgba(232, 163, 61, 0.32)
+  ) !important;
+}
+
+/* Raw ("source") view gutters, kept deliberately subtle */
+#editor .cm-gutters {
+  background: transparent;
+  border-right: 1px solid var(--border);
+  color: var(--muted);
+}
+
+#editor .cm-activeLineGutter {
+  background: var(--hover);
+}
+
+#editor .cm-activeLine {
+  background: light-dark(rgba(0, 0, 0, 0.03), rgba(255, 255, 255, 0.04));
+}
+
+/* --- Find & replace panel (CodeMirror search), restyled to match --- */
+#editor .cm-panels {
+  background: var(--panel);
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+  /* Query container for the search panel below, so its layout responds to the
+     editor's own width — the outline/comments sidebars change that
+     independently of the window width. */
+  container-type: inline-size;
+}
+#editor .cm-search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+}
+/* Chrome gives this <br> no box in a flex container, so it cannot act as the
+   row break CodeMirror intended — but it still occupies a zero-width flex item
+   one line-height tall, padding the panel out. The break is handled by
+   .cm-search::after in the container query below instead. */
+#editor .cm-search br {
+  display: none;
+}
+
+/* CodeMirror builds the Find/Replace inputs with class="cm-textfield" and NO
+   type attribute, so an input[type="text"] selector cannot match them — they
+   would silently fall back to the base theme's font-size:70% (~10px). Match
+   the class (the [type] half is kept only in case that ever changes). The
+   shared 30px height is what keeps them level with the panel's buttons. */
+#editor .cm-search input[type="text"],
+#editor .cm-search input.cm-textfield {
+  font: inherit;
+  font-size: 14px;
+  height: 30px;
+  padding: 0 10px;
+  /* CodeMirror's base theme margins the panel's fields; drop them so the flex
+     gap alone controls spacing (the button rule below already does this). */
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  color: var(--text);
+  min-width: 210px;
+}
+#editor .cm-search input[type="text"]:focus-visible,
+#editor .cm-search input.cm-textfield:focus-visible {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+#editor .cm-search button {
+  font: inherit;
+  font-size: 13.5px;
+  height: 30px;
+  padding: 0 12px;
+  margin: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+#editor .cm-search button:hover {
+  background: var(--hover);
+}
+#editor .cm-search label {
+  font-size: 13.5px;
+  color: var(--muted);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+#editor .cm-search label input {
+  accent-color: var(--accent);
+}
+/* Keep Find and Replace on one row while they fit, and move the whole replace
+   group (field + both buttons) down together when they don't — rather than
+   letting flex-wrap peel off one trailing button at a time.
+
+   CodeMirror emits a <br> ahead of the replace group for exactly this split,
+   but Chrome gives a <br> no sizable box even as a flex item (measured width
+   stays 0 however it is styled), so it cannot be turned into a line break.
+   Instead the container's own ::after is a real flex item: give it a full-width
+   basis to consume a whole flex line, and use `order` to park it between the
+   find controls and the replace controls. Everything fits on one row down to a
+   ~1108px container, so this engages just below that. */
+@container (max-width: 1130px) {
+  /* The zero-height break line collects a row gap on BOTH sides, so halve the
+     row gap to keep the two visible rows exactly one normal gap apart.
+     (Negative margins cannot do this — a flex line's cross size clamps at 0.) */
+  #editor .cm-search {
+    row-gap: 4px;
+  }
+  /* Find controls and the option checkboxes stay above the break. (The close
+     button needs no ordering — CodeMirror positions it absolutely, so it sits
+     at the panel's top-right corner outside the flex flow either way.) */
+  #editor .cm-search > * {
+    order: -1;
+  }
+  /* The replace group moves below the break as one unit. */
+  #editor .cm-search > input[name="replace"],
+  #editor .cm-search > button[name="replace"],
+  #editor .cm-search > button[name="replaceAll"] {
+    order: 1;
+  }
+  /* The break itself — order 0 places it between the two groups. */
+  #editor .cm-search::after {
+    content: "";
+    flex: 0 0 100%;
+    height: 0;
+  }
+}
+
+#editor .cm-search button[name="close"] {
+  border: none;
+  background: transparent;
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 6px;
+  color: var(--muted);
+}
+
+/* --- Live preview document styling --- */
+
+.cm-live-heading {
+  /* No top spacing on the heading line itself. Neither padding (caret renders
+     up in the empty band) nor margin (the band becomes a dead zone that clicks
+     resolve into unpredictably) behaves well. The blank markdown line that
+     precedes every heading already supplies the separation, and it is a real,
+     clickable line — so the caret always lands snug on the heading text, the
+     way Word draws it. Only a little breathing room below, before the body. */
+  padding-bottom: 0.15em;
+}
+
+.cm-live-bullet {
+  color: var(--muted);
+}
+
+.cm-live-checkbox {
+  vertical-align: middle;
+  margin: 0 2px 2px 0;
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.cm-live-hr {
+  display: inline-block;
+  width: 100%;
+  vertical-align: middle;
+  border-top: 2px solid var(--border);
+}
+
+.cm-live-quote {
+  border-left: 3px solid light-dark(#cfcecb, #55554f);
+  padding-left: 12px;
+  color: var(--muted);
+}
+
+.cm-live-codeblock {
+  background: light-dark(#f6f6f4, rgba(255, 255, 255, 0.05));
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 0.88em;
+}
+
+/* Leading YAML front matter shown as a muted, set-apart metadata block. */
+.cm-live-frontmatter {
+  background: light-dark(#faf7f0, rgba(232, 163, 61, 0.08));
+  border-left: 3px solid light-dark(#e8c58d, rgba(232, 163, 61, 0.5));
+  color: light-dark(#8a7a5c, #b7a988);
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 0.85em;
+}
+
+/* Admonitions / callouts (> [!NOTE] blockquotes). Stacked per-line borders +
+   background form the box; first/last lines round the corners. Literal colours
+   (CSS custom properties don't resolve inside .cm-content on WebView2). */
+.cm-live-adm {
+  border-left: 3px solid;
+  padding-left: 12px;
+  padding-right: 8px;
+}
+.cm-live-adm-first {
+  padding-top: 4px;
+  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
+}
+.cm-live-adm-last {
+  padding-bottom: 4px;
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
+}
+.cm-live-adm-note {
+  background: light-dark(#f1f7ff, rgba(9, 105, 218, 0.16));
+  border-left-color: #0969da;
+}
+.cm-live-adm-tip {
+  background: light-dark(#eefbf2, rgba(26, 127, 55, 0.16));
+  border-left-color: #1a7f37;
+}
+.cm-live-adm-important {
+  background: light-dark(#f7f2ff, rgba(130, 80, 223, 0.18));
+  border-left-color: #8250df;
+}
+.cm-live-adm-warning {
+  background: light-dark(#fff9e8, rgba(154, 103, 0, 0.18));
+  border-left-color: #9a6700;
+}
+.cm-live-adm-caution {
+  background: light-dark(#fff2f0, rgba(207, 34, 46, 0.16));
+  border-left-color: #cf222e;
+}
+.cm-live-adm-title {
+  font-weight: 600;
+}
+.cm-live-adm-title-note {
+  color: #0969da;
+}
+.cm-live-adm-title-tip {
+  color: light-dark(#1a7f37, #3fb950);
+}
+.cm-live-adm-title-important {
+  color: light-dark(#8250df, #a371f7);
+}
+.cm-live-adm-title-warning {
+  color: light-dark(#9a6700, #d29922);
+}
+.cm-live-adm-title-caution {
+  color: light-dark(#cf222e, #f85149);
+}
+
+.cm-live-sub {
+  vertical-align: sub;
+  font-size: 0.8em;
+}
+
+.cm-live-sup {
+  vertical-align: super;
+  font-size: 0.8em;
+}
+
+/* Bold / italic / strikethrough — applied via decorations in the walk (not the
+   syntax highlighter) so they can be suppressed inside CriticMarkup marks. */
+.cm-live-strong {
+  font-weight: 700;
+}
+.cm-live-em {
+  font-style: italic;
+}
+.cm-live-strike {
+  text-decoration: line-through;
+}
+
+/* Paragraph alignment blocks (<div align>) */
+.cm-align-center {
+  text-align: center;
+}
+.cm-align-right {
+  text-align: right;
+}
+.cm-align-justify {
+  text-align: justify;
+}
+.cm-align-left {
+  text-align: left;
+}
+
+.cm-live-underline {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+/* Highlighter — a warm amber from the brand family (lighter than the solid
+   #E8A33D accent, so it reads as a marker and stays distinct from the gold
+   selection background). */
+.cm-live-highlight {
+  background: light-dark(rgba(250, 204, 84, 0.5), rgba(250, 204, 84, 0.34));
+  border-radius: 2px;
+}
+
+.hl-glyph {
+  background: light-dark(rgba(250, 204, 84, 0.78), rgba(250, 204, 84, 0.5));
+  border-radius: 2px;
+  padding: 0 2px;
+  font-size: 12px;
+}
+
+.cm-image-wrap {
+  position: relative;
+  display: inline-block;
+  line-height: 0;
+}
+
+.cm-image-wrap:hover {
+  outline: 1.5px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.cm-live-image {
+  max-width: 100%;
+  height: auto;
+  vertical-align: bottom;
+  border-radius: 2px;
+}
+
+/* A remote image the reader has not opted into loading. A span, not an <img>,
+   so there is no broken-image glyph: it carries the alt text inside a dashed
+   frame, with a small camera glyph marking what it stands for. Deliberately
+   quiet rather than alarming — nothing is wrong, the image simply was not
+   fetched, and the tooltip says how to fetch it. */
+.cm-image-blocked {
+  display: inline-block;
+  padding: 0.15em 0.55em;
+  border: 1px dashed light-dark(#c9c8c4, #4a4a46);
+  border-radius: 3px;
+  background: light-dark(#faf9f7, #26262a);
+  color: light-dark(#7d8794, #9a9aa2);
+  font-size: 0.9em;
+  font-style: italic;
+  vertical-align: baseline;
+  cursor: help;
+}
+
+.cm-image-blocked::before {
+  content: "▢ ";
+  font-style: normal;
+}
+
+.cm-image-handle {
+  position: absolute;
+  right: -5px;
+  bottom: -5px;
+  width: 11px;
+  height: 11px;
+  background: var(--accent);
+  border: 1.5px solid #ffffff;
+  border-radius: 2px;
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.4);
+  cursor: nwse-resize;
+  opacity: 0;
+}
+
+.cm-image-wrap:hover .cm-image-handle {
+  opacity: 1;
+}
+
+.cm-live-link {
+  color: light-dark(#2a6db2, #6db3f2);
+  text-decoration: underline;
+  text-decoration-color: light-dark(
+    rgba(42, 109, 178, 0.4),
+    rgba(109, 179, 242, 0.4)
+  );
+  text-underline-offset: 3px;
+}
+
+/* Portability flag: outside portable CommonMark+GFM. A tinted chip rather
+   than an underline, to not read as spellcheck. */
+.cm-nonportable {
+  background: light-dark(rgba(220, 150, 0, 0.14), rgba(224, 160, 48, 0.18));
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px
+    light-dark(rgba(199, 125, 0, 0.3), rgba(224, 160, 48, 0.35));
+}
+
+/* Commented range in the editor */
+.cm-comment-range {
+  background: light-dark(rgba(255, 200, 40, 0.26), rgba(255, 200, 40, 0.2));
+  border-radius: 2px;
+}
+
+/* --- Tracked changes (CriticMarkup) --- */
+
+.cm-critic-ins {
+  color: light-dark(#1a7a2e, #6fd287);
+  background: light-dark(rgba(40, 170, 70, 0.09), rgba(111, 210, 135, 0.11));
+  text-decoration: underline;
+  text-decoration-color: light-dark(
+    rgba(26, 122, 46, 0.45),
+    rgba(111, 210, 135, 0.45)
+  );
+  text-underline-offset: 2px;
+}
+
+.cm-critic-del {
+  color: light-dark(#b02a2a, #e58c8c);
+  background: light-dark(rgba(200, 50, 50, 0.08), rgba(229, 140, 140, 0.11));
+  text-decoration: line-through;
+  text-decoration-color: light-dark(
+    rgba(176, 42, 42, 0.55),
+    rgba(229, 140, 140, 0.55)
+  );
+}
+
+.cm-critic-hl {
+  background: light-dark(rgba(255, 220, 0, 0.32), rgba(255, 220, 0, 0.22));
+}
+
+.cm-critic-comment {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.cm-critic-token {
+  color: light-dark(#b077c9, #c9a3dd);
+  opacity: 0.8;
+}
+
+/* --- Comments sidebar --- */
+
+#comments-sidebar {
+  width: 320px;
+  flex: none;
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  background: var(--panel);
+  padding: 12px;
+}
+
+/* Outline / document navigator (left panel) */
+#outline-sidebar {
+  width: 250px;
+  flex: none;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  padding: 12px 6px;
+}
+.outline-header {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+  padding: 2px 8px 8px;
+}
+.outline-empty {
+  font-size: 12px;
+  color: var(--muted);
+  padding: 4px 8px;
+}
+.outline-list {
+  display: flex;
+  flex-direction: column;
+}
+.outline-item {
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.outline-item:hover {
+  background: var(--hover);
+}
+.outline-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sidebar-author {
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-empty {
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.sidebar-section {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  margin: 18px 0 8px;
+}
+
+.comment-card {
+  border: 1px solid light-dark(#e8ddb8, #514831);
+  background: light-dark(#fffdf2, #2b281e);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  cursor: pointer;
+  font-size: 13px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.comment-card:hover {
+  border-color: light-dark(#d9c98f, #6a5f40);
+}
+
+.comment-card.resolved {
+  border-color: var(--border);
+  background: light-dark(#f6f6f4, #262625);
+  opacity: 0.75;
+}
+
+.comment-entry + .comment-entry {
+  border-top: 1px solid
+    light-dark(rgba(0, 0, 0, 0.07), rgba(255, 255, 255, 0.09));
+  margin-top: 7px;
+  padding-top: 7px;
+}
+
+.comment-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.comment-text {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+}
+
+.comment-warning {
+  font-size: 11px;
+  color: light-dark(#a05a00, #e0a030);
+  margin-top: 6px;
+}
+
+.comment-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+  align-items: flex-end;
+}
+
+.reply-input {
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  color: inherit;
+  resize: vertical;
+}
+
+.comment-btn {
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.comment-btn:hover {
+  background: var(--hover);
+}
+
+/* --- Dialogs --- */
+
+.ml-dialog {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  min-width: 400px;
+  background: var(--panel);
+  color: inherit;
+  box-shadow: 0 12px 44px rgba(0, 0, 0, 0.28);
+}
+
+.ml-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.35);
+}
+
+/* The confirm/alert dialog holds prose of unpredictable length: a caller's
+   message, or a raw error string with a long file path in it. A <dialog> sizes
+   to its content, so without a ceiling one long sentence stretches the box to
+   the full width of the window and reads as two enormous lines. Capping the
+   measure wraps it into a readable column instead, which also keeps the whole
+   dialog visible in a small window. Only this dialog: page setup and About have
+   their own deliberate layouts. */
+#confirm-dialog {
+  max-width: min(34rem, calc(100vw - 3rem));
+}
+
+/* Messages are set with textContent, which collapses newlines under the default
+   white-space. Callers that separate paragraphs with a blank line were silently
+   getting one run-on block. */
+#confirm-message {
+  white-space: pre-line;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
+.ml-dialog label {
+  display: block;
+  font-size: 13px;
+  margin-bottom: 6px;
+  color: var(--muted);
+}
+
+.ml-dialog input,
+.ml-dialog select,
+.ml-dialog textarea {
+  width: 100%;
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--editor-bg);
+  color: inherit;
+}
+
+.ml-dialog input:focus-visible,
+.ml-dialog select:focus-visible,
+.ml-dialog textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.ml-dialog textarea {
+  resize: vertical;
+}
+
+.ml-dialog .check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.ml-dialog input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+.ml-dialog input + label,
+.ml-dialog select + label,
+.ml-dialog textarea + label {
+  margin-top: 12px;
+}
+
+.ml-dialog menu {
+  display: flex;
+  flex-direction: row-reverse; /* OK first in DOM (Enter submits it), shown right */
+  gap: 8px;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.ml-dialog menu button {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.ml-dialog menu button:hover {
+  background: var(--hover);
+}
+
+.ml-dialog menu button[value="ok"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+/* --- About dialog --- */
+
+#about-dialog {
+  max-width: 720px;
+  width: 80vw;
+}
+
+#about-dialog h2 {
+  margin: 0 0 4px;
+  font-size: 18px;
+}
+
+#about-dialog h3 {
+  font-size: 13px;
+  margin: 14px 0 6px;
+}
+
+#about-blurb {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+}
+
+#about-copyright {
+  font-size: 12px;
+  color: var(--muted);
+  margin: 6px 0 0;
+}
+
+/* The only place the installed app tells a user the website exists. Clicks are
+   routed to the system browser by the document-level anchor handler, like every
+   other link — the window itself never navigates. */
+#about-links {
+  font-size: 12px;
+  margin: 2px 0 0;
+}
+
+#about-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+#about-links a:hover {
+  text-decoration: underline;
+}
+
+#about-licenses {
+  max-height: 50vh;
+  overflow: auto;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px;
+  background: var(--editor-bg);
+  margin: 0;
+}
+
+/* --- Print preview overlay --- */
+
+#print-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  overflow: auto;
+  background: light-dark(#83837f, #454543);
+}
+
+.preview-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 51;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+
+.preview-toolbar span {
+  flex: 1;
+  color: var(--muted);
+}
+
+.preview-toolbar button {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 16px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.preview-toolbar button:hover {
+  background: var(--hover);
+}
+
+.preview-toolbar #btn-print {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+#print-root {
+  color-scheme: light; /* the paginated pages are always paper-white */
+}
+
+#print-root .pagedjs_page {
+  background: #ffffff;
+  box-shadow: 0 3px 14px rgba(0, 0, 0, 0.35);
+  margin: 16px auto;
+}
+
+@media print {
+  #app,
+  .preview-toolbar {
+    display: none !important;
+  }
+  #print-preview {
+    position: static;
+    overflow: visible;
+    background: none;
+  }
+  #print-root .pagedjs_page {
+    box-shadow: none;
+    margin: 0;
+  }
+}

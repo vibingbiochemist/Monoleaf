@@ -1,0 +1,106 @@
+# Cross-platform installer builds (brief Stage 6). Tauri does not
+# cross-compile installers, so each platform builds on its own runner.
+# Windows (NSIS, per-user, no admin) is the primary target and must work;
+# macOS and Linux are wired up but secondary.
+#
+# NOTE macOS: distribution eventually needs a paid Apple Developer account
+# for code signing / notarization. Until then the .dmg is UNSIGNED — Gatekeeper
+# will warn, and users must right-click > Open. Do not ship broadly this way.
+name: build
+
+# Continuous integration: verify tests + that installers build on every push to
+# main and every PR. Tagged releases are handled by release.yml (which owns the
+# "v*" tags and publishes the GitHub Release), so they are intentionally NOT a
+# trigger here — that would double-build.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+  pull_request:
+
+# Nothing here writes to the repository. release.yml scopes contents: write to
+# the one job that publishes, which is where it belongs.
+permissions:
+  contents: read
+
+# Superseded runs on the same branch are pointless: pushing twice to a PR should
+# leave one run, not two. Never cancels a run on main, which is the one whose
+# result gets recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# Actions are pinned to full commit SHAs, not tags: a tag is mutable, so a
+# retagged action would run in CI with whatever permissions its job holds.
+# Refresh with, e.g.:
+#   gh api repos/actions/checkout/git/ref/tags/v4 --jq .object.sha
+jobs:
+  # The gate lives in gate.yml and release.yml calls the same one, so the two
+  # cannot drift. It is two jobs internally (fast checks and the Rust/cargo
+  # half); `needs: gate` below waits for both, exactly as `needs: [test,
+  # rust-test]` used to.
+  gate:
+    uses: ./.github/workflows/gate.yml
+
+  # Flags a PR that introduces a dependency with a known vulnerability or an
+  # incompatible licence, at review time rather than after merge. The API behind
+  # it is only available on public repos (or private with Advanced Security),
+  # hence the visibility guard — a no-op while this repo is private.
+  #
+  # Contributed by Andrew Gockenbach.
+  dependency-review:
+    if: github.event_name == 'pull_request' && !github.event.repository.private
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/dependency-review-action@2031cfc080254a8a887f58cffee85186f0e49e48 # v4 branch head, resolved 2026-08-04
+        with:
+          fail-on-severity: high
+
+  # Installers: windows-latest is NSIS (per-user, no admin), macos-latest is the
+  # .dmg (unsigned for now, see the note at the top), ubuntu-24.04 is the
+  # .AppImage (runs without admin rights).
+  #
+  # A pull request builds only Windows, the one platform that is actually
+  # distributed. On a private repository GitHub bills macOS minutes at 10x and
+  # Windows at 2x, so the full matrix is roughly 200 billed minutes per run —
+  # which a handful of Dependabot pull requests will spend a monthly allowance
+  # on, for three installers nobody downloads. Pushes to main build all three,
+  # and that happens immediately after a merge, so a dependency bump that breaks
+  # the macOS or Linux bundle still surfaces within minutes of landing.
+  build:
+    needs: gate
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: ${{ github.event_name == 'pull_request' && fromJSON('["windows-latest"]') || fromJSON('["windows-latest","macos-latest","ubuntu-24.04"]') }}
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
+        with:
+          toolchain: stable # the SHA pin hides which toolchain this is
+
+      - uses: ./.github/actions/linux-deps
+        if: startsWith(matrix.platform, 'ubuntu')
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: monoleaf-${{ matrix.platform }}
+          if-no-files-found: warn
+          path: |
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/appimage/*.AppImage

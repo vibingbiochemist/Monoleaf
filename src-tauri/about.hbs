@@ -1,0 +1,28 @@
+{{!--
+  Template for the Rust half of THIRD_PARTY_LICENSES.md (see
+  scripts/generate-licenses.mjs).
+
+  Every expression sits on the same line as the text it belongs to, and no line
+  is indented. That is deliberate: this file's output is Markdown, where leading
+  whitespace is significant — an indented line becomes a code block and a
+  heading whose text is on the following line renders as an empty heading.
+  Earlier versions of this template relied on the Handlebars renderer stripping
+  the indentation of standalone tags, which a later cargo-about stopped doing,
+  silently mangling the whole generated section. Keeping the layout explicit
+  means the output no longer depends on that behaviour.
+--}}
+# Rust dependencies
+
+{{#each licenses}}
+## {{name}}
+
+Used by:
+{{#each used_by}}
+- {{crate.name}} {{crate.version}}
+{{/each}}
+
+```
+{{{text}}}
+```
+
+{{/each}}
