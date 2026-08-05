@@ -28,53 +28,15 @@ permissions:
 # Refresh with, e.g.:
 #   gh api repos/actions/checkout/git/ref/tags/v4 --jq .object.sha
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-          cache: npm
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npm test
-      # The audits run in rust-test, which is the job that has both npm and
-      # cargo available. See .github/actions/audit.
-
-  # The Rust unit tests (byte-exact file round-trip, write-path allow-list,
-  # launch-arg parsing) need the toolchain + a built frontend, since compiling
-  # the crate runs Tauri's generate_context! against ../dist.
-  rust-test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: 22
-          cache: npm
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
-        with:
-          components: clippy, rustfmt
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-      - run: npm ci
-      - run: cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
-      - run: npm run build # dist/ is needed for Tauri's generate_context!
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
-      # npm + cargo advisory checks. The suppression list and the reasoning for
-      # it live in the action, once, so this workflow and release.yml cannot
-      # drift apart.
-      - uses: ./.github/actions/audit
+  # The gate lives in gate.yml and release.yml calls the same one, so the two
+  # cannot drift. It is two jobs internally (fast checks and the Rust/cargo
+  # half); `needs: gate` below waits for both, exactly as `needs: [test,
+  # rust-test]` used to.
+  gate:
+    uses: ./.github/workflows/gate.yml
 
   build:
-    needs: [test, rust-test]
+    needs: gate
     strategy:
       fail-fast: false
       matrix:
@@ -93,12 +55,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
 
-      - name: Install Linux build dependencies
+      - uses: ./.github/actions/linux-deps
         if: startsWith(matrix.platform, 'ubuntu')
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
 
       - run: npm ci
 

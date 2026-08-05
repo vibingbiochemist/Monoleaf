@@ -21,12 +21,11 @@ on:
 # with permission to publish. Refresh with, e.g.:
 #   gh api repos/actions/checkout/git/ref/tags/v4 --jq .object.sha
 jobs:
-  # This job is the release gate, so it runs the same checks build.yml does
-  # rather than a subset. The audits especially: an advisory matters most at the
-  # moment a binary is handed to someone, and a tag can point at a commit that
-  # never went through build.yml (or arrive via workflow_dispatch), so checking
-  # only on the path that publishes nothing was the wrong way round.
-  test:
+  # Tag-specific, so it is not part of the shared gate. Its own job rather than
+  # the first step of one: a reusable workflow can only be called as a job, and
+  # splitting this out means a seconds-long check runs beside the gate instead of
+  # holding thirteen minutes of work behind itself.
+  version:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -93,33 +92,19 @@ jobs:
           fi
           echo "tag $tag matches version $core in all three manifests"
 
-      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
-
-      # The crate does not compile on Linux without these, so the cargo test
-      # below needs them. Same list as build.yml's rust-test job.
-      - name: Install Linux build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
-            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
-
-      - run: npm ci
-      - run: npx tsc --noEmit
-      - run: npm run lint
-      - run: npm run format:check
-      - run: npm test
-
-      # read_write_round_trip_is_byte_identical guards the byte-exact file round
-      # trip, which is the property the whole app rests on, and nothing on the
-      # release path ran it. dist/ first, because generate_context! reads it.
-      - run: npm run build
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
-
-      # Same action, same suppression list, as build.yml.
-      - uses: ./.github/actions/audit
+  # The same gate build.yml runs, not a subset of it. The audits especially: an
+  # advisory matters most at the moment a binary is handed to someone, and a tag
+  # can point at a commit that never went through build.yml, or arrive via
+  # workflow_dispatch, so checking only on the path that publishes nothing was
+  # the wrong way round.
+  #
+  # No `secrets: inherit` — the gate needs none, and a called workflow cannot
+  # hold more permission than its caller regardless.
+  gate:
+    uses: ./.github/workflows/gate.yml
 
   release:
-    needs: test
+    needs: [version, gate]
     runs-on: windows-latest
     permissions:
       contents: write # create the GitHub Release and upload the installer
