@@ -14,12 +14,18 @@
 # the repository settings.
 #
 # Grouping contributed by Andrew Gockenbach.
+#
+# Every pull request Dependabot opens runs the full CI gate, so the open limits
+# below are a cost control, not tidiness: the default is five per ecosystem,
+# which on first enabling means fifteen simultaneous runs. Three at a time still
+# keeps updates flowing without a queue nobody asked for.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 3
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
@@ -28,6 +34,7 @@ updates:
     directory: /src-tauri
     schedule:
       interval: weekly
+    open-pull-requests-limit: 3
     groups:
       cargo-minor-and-patch:
         update-types: [minor, patch]
@@ -36,3 +43,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    open-pull-requests-limit: 3
+    # The seven pinned actions would otherwise arrive as seven separate pull
+    # requests, each running the whole gate.
+    groups:
+      actions-all:
+        patterns: ["*"]

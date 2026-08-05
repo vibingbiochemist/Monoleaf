@@ -23,6 +23,13 @@ on:
 permissions:
   contents: read
 
+# Superseded runs on the same branch are pointless: pushing twice to a PR should
+# leave one run, not two. Never cancels a run on main, which is the one whose
+# result gets recorded.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
 # Actions are pinned to full commit SHAs, not tags: a tag is mutable, so a
 # retagged action would run in CI with whatever permissions its job holds.
 # Refresh with, e.g.:
@@ -50,15 +57,23 @@ jobs:
         with:
           fail-on-severity: high
 
+  # Installers: windows-latest is NSIS (per-user, no admin), macos-latest is the
+  # .dmg (unsigned for now, see the note at the top), ubuntu-24.04 is the
+  # .AppImage (runs without admin rights).
+  #
+  # A pull request builds only Windows, the one platform that is actually
+  # distributed. On a private repository GitHub bills macOS minutes at 10x and
+  # Windows at 2x, so the full matrix is roughly 200 billed minutes per run —
+  # which a handful of Dependabot pull requests will spend a monthly allowance
+  # on, for three installers nobody downloads. Pushes to main build all three,
+  # and that happens immediately after a merge, so a dependency bump that breaks
+  # the macOS or Linux bundle still surfaces within minutes of landing.
   build:
     needs: gate
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: windows-latest # NSIS installer, per-user, no admin
-          - platform: macos-latest # .dmg (unsigned for now, see note above)
-          - platform: ubuntu-24.04 # .AppImage (runs without admin rights)
+        platform: ${{ github.event_name == 'pull_request' && fromJSON('["windows-latest"]') || fromJSON('["windows-latest","macos-latest","ubuntu-24.04"]') }}
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
