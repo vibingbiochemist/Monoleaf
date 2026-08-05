@@ -1681,6 +1681,20 @@ html.theme-dark #editor .cm-cursor {
   border-radius: 10px;
   padding: 20px;
   min-width: 400px;
+  /* A <dialog> is `width: fit-content`, so one holding prose stretches to
+     whatever its longest run of text wants. Measured in Chromium at a 1076px
+     viewport: the consent dialog rendered 1028px wide and the close prompt 684px
+     with a long filename, both reading as a couple of enormous lines. Capping the
+     measure wraps them into a readable column.
+     34rem rather than something tighter, because tighter would make a working
+     dialog worse: document properties legitimately renders 480px for its
+     "Store as YAML front matter" label, and every input dialog sits at the 400px
+     min-width above. At 34rem all of those are untouched and only the two
+     stretched ones move.
+     Padding is inside the cap: box-sizing is border-box globally (top of this
+     file). The 100vw term is belt-and-braces — the UA stylesheet already keeps a
+     modal inside the viewport — so it costs nothing and does not rely on that. */
+  max-width: min(34rem, calc(100vw - 3rem));
   background: var(--panel);
   color: inherit;
   box-shadow: 0 12px 44px rgba(0, 0, 0, 0.28);
@@ -1688,17 +1702,6 @@ html.theme-dark #editor .cm-cursor {
 
 .ml-dialog::backdrop {
   background: rgba(0, 0, 0, 0.35);
-}
-
-/* The confirm/alert dialog holds prose of unpredictable length: a caller's
-   message, or a raw error string with a long file path in it. A <dialog> sizes
-   to its content, so without a ceiling one long sentence stretches the box to
-   the full width of the window and reads as two enormous lines. Capping the
-   measure wraps it into a readable column instead, which also keeps the whole
-   dialog visible in a small window. Only this dialog: page setup and About have
-   their own deliberate layouts. */
-#confirm-dialog {
-  max-width: min(34rem, calc(100vw - 3rem));
 }
 
 /* Messages are set with textContent, which collapses newlines under the default

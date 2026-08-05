@@ -850,14 +850,14 @@
           aria-pressed="false"
           title="Ask github.com once at startup whether a newer version exists. Off means Monoleaf makes no network request of its own at all."
         >
-          <span>Check for updates</span><span class="switch"></span>
+          <span>Check for updates at startup</span><span class="switch"></span>
         </button>
         <div class="menu-sep"></div>
         <button id="btn-name" class="menu-row">
           <span>Your name…</span><span id="menu-name" class="menu-hint"></span>
         </button>
         <button id="btn-check-now" class="menu-row">
-          <span>Check for updates now…</span>
+          <span>Check for updates</span>
         </button>
       </div>
       <div id="overflow-menu" class="menu" hidden></div>
@@ -1057,12 +1057,11 @@
       <form method="dialog">
         <h2>Check for updates?</h2>
         <p>
-          Monoleaf can ask github.com whether a newer version exists, once each
-          time it starts. That is a single HTTPS request. It sends no
-          identifiers and nothing about you or your documents, and there is no
-          telemetry.
+          Monoleaf can ask github.com at startup whether a newer version exists.
+          That is one HTTPS request: it sends no identifiers, nothing about you
+          or your documents, and there is no telemetry.
         </p>
-        <p>Either answer can be changed later in Settings.</p>
+        <p>You can change this in Settings at any time.</p>
         <menu>
           <button id="consent-yes" value="yes" type="submit">
             Check for updates
