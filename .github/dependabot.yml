@@ -15,17 +15,26 @@
 #
 # Grouping contributed by Andrew Gockenbach.
 #
-# Every pull request Dependabot opens runs the full CI gate, so the open limits
-# below are a cost control, not tidiness: the default is five per ecosystem,
-# which on first enabling means fifteen simultaneous runs. Three at a time still
-# keeps updates flowing without a queue nobody asked for.
+# CURRENTLY DORMANT. `open-pull-requests-limit: 0` disables version-update pull
+# requests, which is GitHub's documented way to switch an ecosystem off from the
+# config rather than from a repository setting.
+#
+# It is off because Dependabot's first scan happens the moment this file lands on
+# a default branch — not on the weekly schedule — and the default limit is five
+# per ecosystem, so enabling all three at once opens up to fifteen pull requests
+# immediately. Each one runs the full CI gate, and on a private repository those
+# minutes are metered and billed at up to 10x for macOS.
+#
+# TO ACTIVATE, once the repository is public and Actions minutes are free:
+# change all three zeros to 3. Nothing else needs to change. Security updates are
+# not subject to this limit and arrive regardless once Dependabot alerts are on.
 version: 2
 updates:
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0 # dormant until public; see the note above
     groups:
       npm-minor-and-patch:
         update-types: [minor, patch]
@@ -34,7 +43,7 @@ updates:
     directory: /src-tauri
     schedule:
       interval: weekly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0 # dormant until public; see the note above
     groups:
       cargo-minor-and-patch:
         update-types: [minor, patch]
@@ -43,7 +52,7 @@ updates:
     directory: /
     schedule:
       interval: weekly
-    open-pull-requests-limit: 3
+    open-pull-requests-limit: 0 # dormant until public; see the note above
     # The seven pinned actions would otherwise arrive as seven separate pull
     # requests, each running the whole gate.
     groups:
