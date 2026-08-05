@@ -73,11 +73,47 @@ describe("page config block", () => {
   });
 
   it("accepts one to four plain CSS lengths", () => {
-    for (const margin of ["20mm", "25mm 18mm", "1in 0.75in 1in 0.75in"]) {
+    for (const margin of [
+      "20mm",
+      "25mm 18mm",
+      "1in 0.75in 1in 0.75in",
+      // Unitless zero is legal CSS and the natural way to ask for no margin.
+      "0",
+      "0 0",
+      "0 20mm 0 20mm",
+    ]) {
       expect(
         parsePageConfig(`<!--ml:page {"margin":${JSON.stringify(margin)}}-->`)
           .margin,
       ).toBe(margin);
+    }
+  });
+
+  it("rejects units the editor cannot measure", () => {
+    // Every accepted unit must round-trip through cssLengthToPx, or the editor's
+    // page layout and the printed @page rule silently disagree. `pc` was
+    // accepted by the grammar and measured as 0.
+    for (const margin of ["10pc", "2em", "5%", "10rem"]) {
+      expect(
+        parsePageConfig(`<!--ml:page {"margin":${JSON.stringify(margin)}}-->`)
+          .margin,
+        margin,
+      ).toBe(DEFAULT_PAGE_CONFIG.margin);
+    }
+  });
+
+  it("measures every unit the grammar accepts", () => {
+    // The guard for the class of bug above: a non-zero length must never
+    // measure as zero.
+    for (const unit of ["mm", "cm", "in", "pt", "px"]) {
+      const margin = `10${unit}`;
+      expect(
+        parsePageConfig(`<!--ml:page {"margin":${JSON.stringify(margin)}}-->`)
+          .margin,
+        margin,
+      ).toBe(margin);
+      expect(cssLengthToPx(margin), margin).toBeGreaterThan(0);
+      expect(marginToPx(margin).top, margin).toBeGreaterThan(0);
     }
   });
 

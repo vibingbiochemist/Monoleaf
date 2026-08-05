@@ -147,9 +147,15 @@ const PAGE_RE = /<!--ml:page (\{.*?\})-->/;
  * setting never sees), or hiding text so the exported PDF differs from what the
  * editor showed. That needs no Export and no user interaction: opening a file
  * schedules pagination, which builds the same stylesheet ~300ms later.
+ *
+ * Bare `0` is allowed because it is legal CSS and the obvious way to ask for no
+ * margin. The unit list is exactly what [`cssLengthToPx`] can measure, and must
+ * stay that way: `pc` used to be accepted here and measured as zero, so the
+ * editor's page layout and the printed `@page` rule disagreed about the same
+ * document.
  */
 export const MARGIN_RE =
-  /^(?:\d+(?:\.\d+)?(?:mm|cm|in|pt|pc|px)\s+){0,3}\d+(?:\.\d+)?(?:mm|cm|in|pt|pc|px)$/;
+  /^(?:(?:0|\d+(?:\.\d+)?(?:mm|cm|in|pt|px))\s+){0,3}(?:0|\d+(?:\.\d+)?(?:mm|cm|in|pt|px))$/;
 
 // The editor page mirrors these print values so what you see matches the PDF
 // (both render in the same WebView2/Chromium engine). 11pt body, 1.5 leading.
