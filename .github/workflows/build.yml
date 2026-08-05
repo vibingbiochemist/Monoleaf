@@ -41,9 +41,8 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm test
-      # Dev-only advisories do not ship, so this scopes to production deps. It
-      # exists to fail the day one lands in the bundle the user installs.
-      - run: npm audit --omit=dev --audit-level=high
+      # The audits run in rust-test, which is the job that has both npm and
+      # cargo available. See .github/actions/audit.
 
   # The Rust unit tests (byte-exact file round-trip, write-path allow-list,
   # launch-arg parsing) need the toolchain + a built frontend, since compiling
@@ -69,37 +68,10 @@ jobs:
       - run: npm run build # dist/ is needed for Tauri's generate_context!
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml
-      # The two ignored IDs are unreachable here. quick-xml 0.39.4 arrives solely
-      # through wayland-scanner, a Linux-only proc-macro that parses the vendored
-      # Wayland protocol XML at compile time, so it is never linked into the app;
-      # the XML parsing that does run (via plist) already uses the fixed 0.41.0.
-      # Both advisories are denial-of-service through hostile XML, which no
-      # document can reach. Upgrading is blocked upstream by wayland-scanner's
-      # "^0.39" requirement, five levels above us: revisit when wl-clipboard-rs
-      # and arboard bump their Wayland stack.
-      #
-      # Ignoring the two IDs rather than the crate keeps any *new* quick-xml
-      # advisory visible. Without them this step failed on every run, which left
-      # it unable to signal anything.
-      #
-      # Blocking, not advisory: ignoring two known-unreachable IDs only buys
-      # anything if a third advisory stops the build. Swallowing the exit code
-      # made the ignore list pointless — nothing could fail either way. A new
-      # *vulnerability* now fails this job.
-      #
-      # Deliberately NOT `--deny warnings`. In cargo-audit that means "any
-      # warning", which today is 19 findings: 17 unmaintained + 2 unsound,
-      # almost all in the GTK 3 stack Tauri pulls in on Linux (atk, gdk, gtk,
-      # glib, gdkx11 …) plus proc-macro-error, ttf-parser and the unic-* crates.
-      # None is a vulnerability and none is ours to fix, so denying warnings
-      # would put this step straight back to failing on every run — the exact
-      # state the ignore list above was introduced to get out of. Revisit if
-      # Tauri's Linux stack moves to GTK 4.
-      - name: Dependency security audit
-        run: |
-          cargo install cargo-audit --locked
-          cargo audit --file src-tauri/Cargo.lock \
-            --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+      # npm + cargo advisory checks. The suppression list and the reasoning for
+      # it live in the action, once, so this workflow and release.yml cannot
+      # drift apart.
+      - uses: ./.github/actions/audit
 
   build:
     needs: [test, rust-test]

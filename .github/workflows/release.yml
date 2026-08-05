@@ -21,6 +21,11 @@ on:
 # with permission to publish. Refresh with, e.g.:
 #   gh api repos/actions/checkout/git/ref/tags/v4 --jq .object.sha
 jobs:
+  # This job is the release gate, so it runs the same checks build.yml does
+  # rather than a subset. The audits especially: an advisory matters most at the
+  # moment a binary is handed to someone, and a tag can point at a commit that
+  # never went through build.yml (or arrive via workflow_dispatch), so checking
+  # only on the path that publishes nothing was the wrong way round.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -29,9 +34,59 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      # Fail before anything expensive. The release name comes from the tag and
+      # the installer name comes from tauri.conf.json, and nothing used to check
+      # they agree — so a tag could publish "Monoleaf v1.2.3" containing
+      # Monoleaf_0.9.0_x64-setup.exe.
+      #
+      # A pre-release suffix is allowed: everything from the first "-" is
+      # dropped, so v0.9.0-rc1 is a valid tag for tree version 0.9.0. Requiring
+      # the suffix in tauri.conf.json would mean editing the tree for every
+      # release candidate. The consequence is deliberate: a throwaway CI tag
+      # must carry the real version, so v0.9.0-ci-test passes and
+      # v0.0.0-ci-test does not. There is no bypass — an escape hatch here is a
+      # hole someone eventually ships through.
+      - name: Tag must match the version in the tree
+        run: |
+          tag="$GITHUB_REF_NAME"
+          core="${tag#v}"
+          core="${core%%-*}"
+          conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          pkg=$(node -p "require('./package.json').version")
+          if [ "$core" != "$conf" ] || [ "$core" != "$pkg" ]; then
+            echo "Tag does not match the version in the tree."
+            echo "  tag                       : $tag  (version part: $core)"
+            echo "  src-tauri/tauri.conf.json : $conf"
+            echo "  package.json              : $pkg"
+            exit 1
+          fi
+          echo "tag $tag matches version $conf in both manifests"
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
+
+      # The crate does not compile on Linux without these, so the cargo test
+      # below needs them. Same list as build.yml's rust-test job.
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file \
+            libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev
+
       - run: npm ci
       - run: npx tsc --noEmit
+      - run: npm run lint
+      - run: npm run format:check
       - run: npm test
+
+      # read_write_round_trip_is_byte_identical guards the byte-exact file round
+      # trip, which is the property the whole app rests on, and nothing on the
+      # release path ran it. dist/ first, because generate_context! reads it.
+      - run: npm run build
+      - run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      # Same action, same suppression list, as build.yml.
+      - uses: ./.github/actions/audit
 
   release:
     needs: test

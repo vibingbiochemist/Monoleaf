@@ -1,0 +1,64 @@
+# The dependency advisory gate. Both build.yml and release.yml call this, and
+# it exists as a composite action for one reason: the suppression list below
+# must live in exactly one place.
+#
+# Two copies of an --ignore list is worse than no list. When these advisories
+# are fixed upstream someone will delete one copy, and the other will go on
+# silently ignoring what may by then be a live finding. So the IDs and the
+# reasoning for them appear here and nowhere else in the repository.
+#
+# Contract for the caller: the job must already have run actions/checkout, have
+# node_modules installed (npm ci), and have cargo on PATH. This is a local
+# action, so it is versioned with the commit that uses it and needs no SHA pin.
+name: Dependency audit
+description: >
+  npm and cargo advisory checks, including the single cargo-audit suppression
+  list.
+
+runs:
+  using: composite
+  steps:
+    # Dev-only advisories do not ship, so this scopes to production
+    # dependencies. It exists to fail the day one lands in the bundle the user
+    # actually installs.
+    - name: npm audit (production dependencies)
+      shell: bash
+      run: npm audit --omit=dev --audit-level=high
+
+    # Blocking, not advisory. Ignoring two known-unreachable IDs only buys
+    # anything if a third advisory can stop the build; swallowing the exit code
+    # made the ignore list pointless, because nothing could fail either way.
+    #
+    # Why the two ignored IDs are unreachable: quick-xml 0.39.4 arrives solely
+    # through wayland-scanner, a Linux-only proc-macro that parses the vendored
+    # Wayland protocol XML at compile time, so it is never linked into the app;
+    # the XML parsing that does run (via plist) already uses the fixed 0.41.0.
+    # Both advisories are denial-of-service through hostile XML, which no
+    # document can reach. Upgrading is blocked upstream by wayland-scanner's
+    # "^0.39" requirement, five levels above us: revisit when wl-clipboard-rs
+    # and arboard bump their Wayland stack.
+    #
+    # Ignoring the two IDs rather than the crate keeps any *new* quick-xml
+    # advisory visible. Note these matter far more on ubuntu than on a Windows
+    # host: the Wayland stack that drags quick-xml in only exists in the Linux
+    # dependency graph.
+    #
+    # Deliberately NOT `--deny warnings`. In cargo-audit that means "any
+    # warning", which today is 19 findings: 17 unmaintained + 2 unsound, almost
+    # all in the GTK 3 stack Tauri pulls in on Linux (atk, gdk, gtk, glib,
+    # gdkx11 …) plus proc-macro-error, ttf-parser and the unic-* crates. None is
+    # a vulnerability and none is ours to fix, so denying warnings would put
+    # this step straight back to failing on every run — the exact state the
+    # ignore list was introduced to get out of. Revisit if Tauri's Linux stack
+    # moves to GTK 4.
+    #
+    # cargo-audit itself is version-pinned. `--locked` pins that tool's
+    # dependencies, not the tool, so an unpinned install fetches whatever is
+    # newest on every run: five actions pinned to SHAs and then an unpinned
+    # binary fetching itself would be inconsistent.
+    - name: cargo audit
+      shell: bash
+      run: |
+        cargo install cargo-audit --version 0.22.2 --locked
+        cargo audit --file src-tauri/Cargo.lock \
+          --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
