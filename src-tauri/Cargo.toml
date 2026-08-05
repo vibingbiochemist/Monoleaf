@@ -5,6 +5,9 @@ description = "Monoleaf - a portable, single-file markdown editor"
 authors = ["vibingbiochemist <info@monoleaf.org>"]
 license = "MIT"
 repository = "https://github.com/vibingbiochemist/Monoleaf"
+# Tauri's bundle config falls back to `homepage` and `license` from here, so the
+# installer metadata has one source rather than a second copy to drift.
+homepage = "https://monoleaf.org"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html

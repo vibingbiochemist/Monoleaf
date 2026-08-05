@@ -1750,6 +1750,23 @@ html.theme-dark #editor .cm-cursor {
   margin: 6px 0 0;
 }
 
+/* The only place the installed app tells a user the website exists. Clicks are
+   routed to the system browser by the document-level anchor handler, like every
+   other link — the window itself never navigates. */
+#about-links {
+  font-size: 12px;
+  margin: 2px 0 0;
+}
+
+#about-links a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+#about-links a:hover {
+  text-decoration: underline;
+}
+
 #about-licenses {
   max-height: 50vh;
   overflow: auto;

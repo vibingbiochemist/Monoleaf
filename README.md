@@ -15,6 +15,8 @@ What you write stays plain Markdown that any editor, GitHub, or an LLM can read.
 [![platform](https://img.shields.io/badge/platform-Windows-0078D6)](https://github.com/vibingbiochemist/Monoleaf/releases)
 [![built with Tauri](https://img.shields.io/badge/built%20with-Tauri%20%2B%20CodeMirror-24C8DB)](https://tauri.app)
 
+[**monoleaf.org**](https://monoleaf.org) · [Download](https://github.com/vibingbiochemist/Monoleaf/releases) · [Report an issue](https://github.com/vibingbiochemist/Monoleaf/issues)
+
 </div>
 
 <p align="center">

@@ -26,6 +26,10 @@
   },
   "bundle": {
     "active": true,
+    "publisher": "Monoleaf",
+    "copyright": "© 2026 vibingbiochemist",
+    "shortDescription": "A portable, single-file WYSIWYG Markdown editor",
+    "longDescription": "Monoleaf edits Markdown with formatting rendered in place, while the .md on disk stays the whole document and the only source of truth. Opening a file and saving it untouched reproduces it byte for byte.",
     "targets": ["nsis", "app", "dmg", "appimage"],
     "fileAssociations": [
       {
