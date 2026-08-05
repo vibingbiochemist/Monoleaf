@@ -5,7 +5,7 @@ All notable changes to Monoleaf are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-08-05
 
 ### Added
 
@@ -18,6 +18,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Installing an update closes and reopens Monoleaf. Before it does, every open
   window writes its unsaved work to the crash-recovery snapshot, and the
   restarted app offers those drafts back.
+
+### Fixed
+
+- **Recovering an unsaved draft no longer consumes the only copy of it.** The
+  snapshot used to be deleted at the moment it was offered back, and the next one
+  was over a second away and waiting on an edit that might never come, so a
+  document recovered and then left untouched existed nowhere but in memory. A
+  crash or a forced close in that window lost it — the exact failure recovery
+  exists to prevent. Each draft is now written straight back, under the key of
+  whichever window ends up holding it.
+
+### Changed
+
+- **Dialogs no longer stretch to the width of the window** when they hold a long
+  message. Their width is capped at a readable column, for every dialog rather
+  than only the ones where it had been noticed.
+- Em dashes in labels and messages give way to plainer punctuation — a colon, a
+  comma or parentheses. The window title keeps its dash, which is the
+  conventional form there.
 
 ## [0.9.0] - 2026-08-04
 
