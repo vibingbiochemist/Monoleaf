@@ -1936,10 +1936,11 @@ function toggleNetworkPaths() {
 async function offerNetworkPaths(err: unknown): Promise<boolean> {
   if (!String(err).includes("Network paths are not supported")) return false;
   const allow = await uiConfirm(
-    "This file is on a network share. Opening one makes Windows sign in to that " +
-      "server, which hands it a hash of your credentials — so Monoleaf does not " +
-      "do it unless you say so.\n\nAllow network paths from now on? You can turn " +
-      "this off again in the menu, and mapped drives (Z:) never needed it.",
+    "This file is on a network share.\n\n" +
+      "Opening it makes Windows sign in to that server, which hands it a hash " +
+      "of your credentials. Monoleaf does not do that without your say-so.\n\n" +
+      "You can switch this off again in Settings. Mapped drives (Z:) are " +
+      "unaffected.",
     {
       title: "Network path",
       okLabel: "Allow network paths",

@@ -1641,6 +1641,26 @@ html.theme-dark #editor .cm-cursor {
   background: rgba(0, 0, 0, 0.35);
 }
 
+/* The confirm/alert dialog holds prose of unpredictable length: a caller's
+   message, or a raw error string with a long file path in it. A <dialog> sizes
+   to its content, so without a ceiling one long sentence stretches the box to
+   the full width of the window and reads as two enormous lines. Capping the
+   measure wraps it into a readable column instead, which also keeps the whole
+   dialog visible in a small window. Only this dialog: page setup and About have
+   their own deliberate layouts. */
+#confirm-dialog {
+  max-width: min(34rem, calc(100vw - 3rem));
+}
+
+/* Messages are set with textContent, which collapses newlines under the default
+   white-space. Callers that separate paragraphs with a blank line were silently
+   getting one run-on block. */
+#confirm-message {
+  white-space: pre-line;
+  line-height: 1.5;
+  margin: 8px 0 0;
+}
+
 .ml-dialog label {
   display: block;
   font-size: 13px;
