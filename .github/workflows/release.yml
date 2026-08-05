@@ -47,21 +47,51 @@ jobs:
       # must carry the real version, so v0.9.0-ci-test passes and
       # v0.0.0-ci-test does not. There is no bypass — an escape hatch here is a
       # hole someone eventually ships through.
+      # Three manifests declare the version, not two. Cargo's reaches the
+      # binary's own metadata, so it can drift from the installer filename with
+      # nothing noticing.
+      #
+      # Cargo.toml is TOML, so it is read with awk scoped to the [package]
+      # section rather than a bare grep for a line starting "version": a future
+      # dependency table can legitimately put `version = ` at the start of a
+      # line, and matching that would compare the wrong value.
       - name: Tag must match the version in the tree
         run: |
           tag="$GITHUB_REF_NAME"
           core="${tag#v}"
           core="${core%%-*}"
-          conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
           pkg=$(node -p "require('./package.json').version")
-          if [ "$core" != "$conf" ] || [ "$core" != "$pkg" ]; then
-            echo "Tag does not match the version in the tree."
-            echo "  tag                       : $tag  (version part: $core)"
-            echo "  src-tauri/tauri.conf.json : $conf"
-            echo "  package.json              : $pkg"
+          conf=$(node -p "require('./src-tauri/tauri.conf.json').version")
+          cargo=$(awk '
+            /^[[:space:]]*\[/ { inpkg = ($0 ~ /^[[:space:]]*\[package\]/) }
+            inpkg && /^[[:space:]]*version[[:space:]]*=/ {
+              sub(/^[^=]*=[[:space:]]*/, "")
+              sub(/[[:space:]]*#.*$/, "")
+              gsub(/"/, "")
+              gsub(/[[:space:]]/, "")
+              print
+              exit
+            }
+          ' src-tauri/Cargo.toml)
+
+          # A failed extraction must not look like a mismatch, or someone will
+          # "fix" it by editing a manifest that was already correct.
+          if [ -z "$cargo" ]; then
+            echo "Could not extract a version from the [package] section of src-tauri/Cargo.toml."
+            echo "This is an EXTRACTION failure, not a version mismatch: the manifests may all"
+            echo "be correct. Fix the parsing in this workflow step, not the manifests."
             exit 1
           fi
-          echo "tag $tag matches version $conf in both manifests"
+
+          if [ "$core" != "$pkg" ] || [ "$core" != "$conf" ] || [ "$core" != "$cargo" ]; then
+            echo "Tag does not match the version in the tree."
+            echo "  tag                       : $tag  (version part: $core)"
+            echo "  package.json              : $pkg"
+            echo "  src-tauri/tauri.conf.json : $conf"
+            echo "  src-tauri/Cargo.toml      : $cargo"
+            exit 1
+          fi
+          echo "tag $tag matches version $core in all three manifests"
 
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
 
@@ -112,5 +142,16 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "Monoleaf ${{ github.ref_name }}"
           releaseBody: "See the assets below to download and install. The installer is unsigned (SmartScreen may warn: More info → Run anyway)."
+          # Draft is unconditional: it is the safety property, so nothing gets
+          # to make it depend on the tag.
           releaseDraft: true
-          prerelease: false
+          # A suffixed tag is a pre-release, and must not be labelled a full
+          # one. This was hardcoded false while the version gate above
+          # deliberately permits v0.9.0-rc1, so an rc published as final.
+          #
+          # COUPLED: "a '-' means pre-release" is the same rule the "Tag must
+          # match the version in the tree" step applies when it strips
+          # everything from the first "-". Change one and you must change the
+          # other; they cannot be expressed once because that step is shell and
+          # this is a workflow expression evaluated before any step runs.
+          prerelease: ${{ contains(github.ref_name, '-') }}
