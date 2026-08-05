@@ -83,10 +83,10 @@ const MAX_PDF_BYTES: u64 = 128 * 1024 * 1024;
 /// Shown when a PDF parses but yields no words — almost always a scan.
 const NO_TEXT_MESSAGE: &str = "No text could be extracted from this PDF. \
 It is most likely a scan or an image-only document. Monoleaf does not perform \
-OCR — convert it to a text PDF first, then import it.";
+OCR: convert it to a text PDF first, then import it.";
 
 const ENCRYPTED_MESSAGE: &str = "This PDF is password-protected. Monoleaf cannot \
-import encrypted PDFs — remove the password in a PDF reader, then import the copy.";
+import encrypted PDFs: remove the password in a PDF reader, then import the copy.";
 
 /// Convert `path` into Markdown.
 ///
@@ -108,7 +108,7 @@ pub fn import(path: &str) -> Result<PdfImport, String> {
             ));
         }
         Ok(meta) if meta.len() == 0 => {
-            return Err("This file is empty — there is nothing to import.".into());
+            return Err("This file is empty, so there is nothing to import.".into());
         }
         Err(e) => return Err(format!("Could not open {path}: {e}")),
         Ok(_) => {}

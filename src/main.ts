@@ -183,6 +183,12 @@ function refreshTitle() {
   const label = `${dirty ? "● " : ""}${fileLabel()}`;
   fileNameEl.textContent = label;
   fileNameEl.title = currentPath ?? "Unsaved document";
+  // The em dash here is deliberate, and it is the one em dash in the UI that
+  // stays. "<file> — Monoleaf" is the conventional window-title form, and
+  // e2e/harness.mjs normalises every dash before comparing titles precisely
+  // because of this string — see the note about console encoding there. Changing
+  // it rewrites every window title and taskbar entry, so it is a product
+  // decision, not a punctuation fix.
   getCurrentWindow()
     .setTitle(`${label} — Monoleaf`)
     .catch(() => {});

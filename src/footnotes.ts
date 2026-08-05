@@ -50,8 +50,8 @@ class FootnoteWidget extends WidgetType {
     );
     sup.title =
       this.kind === "ref"
-        ? `Footnote ${this.label} — Ctrl+click to jump to the note`
-        : `Note ${this.label} — Ctrl+click to jump back to the reference`;
+        ? `Footnote ${this.label}: Ctrl+click to jump to the note`
+        : `Note ${this.label}: Ctrl+click to jump back to the reference`;
     return sup;
   }
 
