@@ -844,9 +844,20 @@
         >
           <span>Reopen last file</span><span class="switch"></span>
         </button>
+        <button
+          id="btn-updates"
+          class="menu-row"
+          aria-pressed="false"
+          title="Ask github.com once at startup whether a newer version exists. Off means Monoleaf makes no network request of its own at all."
+        >
+          <span>Check for updates</span><span class="switch"></span>
+        </button>
         <div class="menu-sep"></div>
         <button id="btn-name" class="menu-row">
           <span>Your name…</span><span id="menu-name" class="menu-hint"></span>
+        </button>
+        <button id="btn-check-now" class="menu-row">
+          <span>Check for updates now…</span>
         </button>
       </div>
       <div id="overflow-menu" class="menu" hidden></div>
@@ -883,12 +894,20 @@
       <span id="error-text"></span>
       <button id="btn-dismiss-error">Dismiss</button>
     </div>
+    <!-- Update offer. Deliberately a bar and never a modal: an update is never
+         more urgent than whatever the user is typing. -->
+    <div id="update-bar" hidden>
+      <span id="update-text"></span>
+      <progress id="update-progress" hidden max="1000" value="0"></progress>
+      <button id="btn-update-action">Download</button>
+      <button id="btn-dismiss-update">Dismiss</button>
+    </div>
     <div id="pagination-measure" aria-hidden="true"></div>
     <div id="print-preview" hidden>
       <div class="preview-toolbar">
         <span
-          >Print preview: choose "Microsoft Print to PDF" or "Save as PDF" in the
-          print dialog</span
+          >Print preview: choose "Microsoft Print to PDF" or "Save as PDF" in
+          the print dialog</span
         >
         <button id="btn-print">Print / Save as PDF…</button>
         <button id="btn-close-preview">Close</button>
@@ -1027,6 +1046,28 @@
           <button value="save" type="submit">Save</button>
           <button value="discard" type="submit">Don't save</button>
           <button value="cancel" type="submit">Cancel</button>
+        </menu>
+      </form>
+    </dialog>
+    <!-- First-run consent. Two explicit answers and no Cancel on purpose: a
+         dismissible consent dialog either nags forever or silently counts as no,
+         and nothing afterwards can tell which of those happened. Escape is
+         blocked in main.ts for the same reason. -->
+    <dialog id="consent-dialog" class="ml-dialog">
+      <form method="dialog">
+        <h2>Check for updates?</h2>
+        <p>
+          Monoleaf can ask github.com whether a newer version exists, once each
+          time it starts. That is a single HTTPS request. It sends no
+          identifiers and nothing about you or your documents, and there is no
+          telemetry.
+        </p>
+        <p>Either answer can be changed later in Settings.</p>
+        <menu>
+          <button id="consent-yes" value="yes" type="submit">
+            Check for updates
+          </button>
+          <button id="consent-no" value="no" type="submit">Don't check</button>
         </menu>
       </form>
     </dialog>

@@ -17,4 +17,14 @@ accepted = [
     "MPL-2.0",
     "Unicode-3.0",
     "Unicode-DFS-2016",
+    # webpki-root-certs, reached via rustls-platform-verifier -> reqwest. The
+    # Community Data License Agreement is a *data* licence, which is what that
+    # crate ships: Mozilla's CA root certificates rather than code. Permissive —
+    # it requires attribution and imposes no condition on our own licensing.
+    #
+    # Deliberately accepted rather than scoped away. `cargo tree` shows this crate
+    # is in neither the Windows nor the Linux graph, so a `targets` key here would
+    # also silence it — but a scoping config that quietly stops covering a target
+    # under-discloses, and over-disclosing one licence costs nothing.
+    "CDLA-Permissive-2.0",
 ]

@@ -1,7 +1,8 @@
 import { EditorView, keymap } from "@codemirror/view";
 import { editorSetup, rawViewExtensions } from "./setup";
 import { Compartment, Prec, StateCommand } from "@codemirror/state";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -299,6 +300,80 @@ function promptClose(): Promise<"save" | "discard" | "cancel"> {
   });
 }
 
+/**
+ * Rust's name for "write your unsaved work to localStorage now".
+ *
+ * COUPLED: `FLUSH_RECOVERY_EVENT` in src-tauri/src/lib.rs. A rename on either
+ * side does not break anything loudly — it makes every install postpone itself,
+ * because Rust waits for an acknowledgement that can no longer arrive.
+ */
+const FLUSH_RECOVERY_EVENT = "flush-recovery";
+
+/**
+ * Answer Rust's pre-install request that this window secure its unsaved work.
+ *
+ * Rust installs an update only if *every* window acknowledges, so the one rule
+ * here is that every path answers. A clean window that stayed silent would abort
+ * every update the user ever tried to install.
+ *
+ * The snapshot is written synchronously, not scheduled: an acknowledgement has to
+ * mean the bytes are in storage. Rescheduling `scheduleAutosaveRecovery` would
+ * acknowledge an intention — and the process is about to be replaced by the
+ * installer, which is exactly the window in which an intention is worth nothing.
+ */
+function setupRecoveryFlush() {
+  void listen<number>(FLUSH_RECOVERY_EVENT, (event) => {
+    // The debounced snapshot is now redundant: this writes the same thing, and
+    // sooner. Cancelling it also stops it rewriting the key after the install
+    // has already read it.
+    window.clearTimeout(autosaveTimer);
+
+    // The user answered "Don't save" to this install's prompt in this window, so
+    // there is deliberately nothing to write. Acknowledged all the same, and Rust
+    // needs no notion of this: a suppressed window is indistinguishable from a
+    // clean one, and clean windows already acknowledge without writing.
+    if (flushSuppressedForInstall) {
+      void invoke("ack_recovery_flush", { round: event.payload }).catch(
+        () => {},
+      );
+      return;
+    }
+
+    // Wider than `dirty` alone as defence in depth, not because a gap is known:
+    // every current path that loads content with no file behind it — an imported
+    // PDF, a recovered draft — sets dirty on the next line. But `loadIntoEditor`
+    // assigns `dirty = false` itself, so a future caller that forgets to flip it
+    // would silently make this window's content invisible to an install, and
+    // "content with nowhere else to be" is the condition that actually matters.
+    const unsaved =
+      dirty || (currentPath === null && view.state.doc.length > 0);
+
+    if (unsaved) {
+      const stored = writeDraft(
+        RECOVERY_KEY,
+        currentPath,
+        serializeDocument(view.state),
+      );
+      // Storage refused it — over quota. Deliberately NOT acknowledged: a
+      // refused write means this document exists nowhere but in this window, and
+      // the install is about to end the process holding it. Withholding the
+      // acknowledgement costs a postponed update, which the user can retry after
+      // saving; acknowledging would cost the document. Rust names this window in
+      // the postponement message, so the cause is findable rather than mysterious.
+      if (!stored) return;
+    }
+
+    void invoke("ack_recovery_flush", { round: event.payload }).catch(() => {});
+  }).catch(() => {
+    // Registration failed, so this window can never acknowledge and every
+    // install will postpone. Nothing here can fix that, but a silent catch would
+    // hide it from whoever has to work out why updates never install.
+    console.error(
+      `Monoleaf: could not listen for ${FLUSH_RECOVERY_EVENT}; updates will not install.`,
+    );
+  });
+}
+
 function setupCloseGuard() {
   let handling = false;
   thisWindow
@@ -432,6 +507,10 @@ function refreshModeButtons() {
   document
     .getElementById("btn-reopen")!
     .setAttribute("aria-pressed", String(reopenLastEnabled));
+  // Off while consent is unset: nothing is being checked until it is "yes".
+  document
+    .getElementById("btn-updates")!
+    .setAttribute("aria-pressed", String(updateConsent() === "yes"));
   document.getElementById("menu-name")!.textContent =
     localStorage.getItem(AUTHOR_KEY)?.trim() ?? "";
 }
@@ -1976,6 +2055,270 @@ function toggleReopen() {
 // from a crashed/force-closed session: the user is asked once, then the first
 // draft (if the main window is otherwise free) restores here and any remaining
 // drafts each reopen in their own window — so no window's work is lost.
+// --- updates ----------------------------------------------------------------
+//
+// The webview cannot reach the updater plugin at all — its commands are ACL-gated
+// and no capability grants them. Everything here goes through our own commands;
+// see the block above the plugin registration in src-tauri/src/lib.rs for why the
+// configuration is split the way it is.
+
+/**
+ * Whether Monoleaf may check for updates. THREE states, not two: a missing value
+ * means the user has not been asked, which is not the same as having said no.
+ * Only the missing state offers the consent dialog, and only "yes" ever checks.
+ */
+const UPDATE_CONSENT_KEY = "monoleaf.update-checks";
+
+function updateConsent(): "yes" | "no" | "unset" {
+  const stored = localStorage.getItem(UPDATE_CONSENT_KEY);
+  return stored === "yes" || stored === "no" ? stored : "unset";
+}
+
+/** What `check_for_update` reports. */
+interface UpdateInfo {
+  version: string;
+  notes: string | null;
+}
+
+/** What `download_update` streams over the channel it is given. */
+interface DownloadProgress {
+  downloaded: number;
+  contentLength: number | null;
+  done: boolean;
+}
+
+const consentDialog = document.getElementById(
+  "consent-dialog",
+) as HTMLDialogElement;
+const consentYes = document.getElementById("consent-yes")!;
+const updateBar = document.getElementById("update-bar")!;
+const updateText = document.getElementById("update-text")!;
+const updateProgress = document.getElementById(
+  "update-progress",
+) as HTMLProgressElement;
+const updateAction = document.getElementById(
+  "btn-update-action",
+) as HTMLButtonElement;
+
+/** The offer on screen in THIS window, and how far it has got. */
+let offeredUpdate: UpdateInfo | null = null;
+let updateReadyToInstall = false;
+let updateBusy = false;
+
+/**
+ * Set for exactly one flush round when the user answers "Don't save" to the
+ * install prompt in this window. See `installOfferedUpdate` for why this exists
+ * instead of clearing `dirty`, and `setupRecoveryFlush` for what it does.
+ */
+let flushSuppressedForInstall = false;
+
+/**
+ * Ask once, on a first run, whether update checks are allowed.
+ *
+ * Two answers and no third way out. Escape is blocked because a consent dialog
+ * that can be dismissed is worse than useless: dismissal either has to nag again
+ * at every launch or be recorded as a silent no, and afterwards nothing can tell
+ * which of those the user meant.
+ */
+function askUpdateConsent(): Promise<"yes" | "no"> {
+  return new Promise((resolve) => {
+    const blockEscape = (e: Event) => e.preventDefault();
+    consentDialog.addEventListener("cancel", blockEscape);
+    consentDialog.returnValue = "";
+    consentDialog.addEventListener(
+      "close",
+      () => {
+        consentDialog.removeEventListener("cancel", blockEscape);
+        // Only the two buttons can close this, so anything else is a browser
+        // quirk rather than an answer; treat it as the conservative one.
+        resolve(consentDialog.returnValue === "yes" ? "yes" : "no");
+      },
+      { once: true },
+    );
+    consentDialog.showModal();
+    consentYes.focus();
+  });
+}
+
+function hideUpdateBar() {
+  updateBar.hidden = true;
+  updateProgress.hidden = true;
+  offeredUpdate = null;
+  updateReadyToInstall = false;
+}
+
+function showUpdateOffer(info: UpdateInfo) {
+  offeredUpdate = info;
+  updateReadyToInstall = false;
+  updateProgress.hidden = true;
+  updateText.textContent = `Monoleaf ${info.version} is available.`;
+  updateAction.textContent = "Download";
+  updateAction.disabled = false;
+  updateAction.hidden = false;
+  updateBar.hidden = false;
+}
+
+/**
+ * The one place a check happens. `userInitiated` decides who hears about
+ * failures: a click is owed an answer, including "nothing to install", while an
+ * automatic check that finds no network stays silent rather than teaching people
+ * to dismiss whatever Monoleaf says.
+ */
+async function checkForUpdate(userInitiated: boolean) {
+  try {
+    const info = await invoke<UpdateInfo | null>("check_for_update", {
+      userInitiated,
+    });
+    if (info !== null) showUpdateOffer(info);
+    else if (userInitiated) {
+      await uiAlert(`Monoleaf ${await getVersion()} is the latest version.`, {
+        title: "No update available",
+      });
+    }
+  } catch (err) {
+    if (userInitiated) await showError(err);
+  }
+}
+
+async function downloadOfferedUpdate() {
+  if (offeredUpdate === null || updateBusy) return;
+  const version = offeredUpdate.version;
+  updateBusy = true;
+  updateAction.disabled = true;
+  updateText.textContent = `Downloading Monoleaf ${version}…`;
+  updateProgress.hidden = false;
+  updateProgress.value = 0;
+
+  const progress = new Channel<DownloadProgress>();
+  progress.onmessage = (message) => {
+    if (message.contentLength !== null && message.contentLength > 0) {
+      updateProgress.max = message.contentLength;
+      updateProgress.value = message.downloaded;
+    } else {
+      // No Content-Length: an indeterminate bar is honest, a full one is not.
+      updateProgress.removeAttribute("value");
+    }
+  };
+
+  try {
+    await invoke("download_update", { onProgress: progress });
+    updateReadyToInstall = true;
+    updateProgress.hidden = true;
+    updateText.textContent = `Monoleaf ${version} is ready to install. Monoleaf will close and reopen.`;
+    updateAction.textContent = "Install and restart";
+  } catch (err) {
+    // Reported in the bar rather than a dialog: a failed download interrupts
+    // nothing and costs nothing to retry.
+    updateProgress.hidden = true;
+    updateText.textContent = `Monoleaf ${version} could not be downloaded: ${String(err)}`;
+    updateAction.textContent = "Try again";
+  } finally {
+    updateBusy = false;
+    updateAction.disabled = false;
+  }
+}
+
+async function installOfferedUpdate() {
+  if (offeredUpdate === null || !updateReadyToInstall || updateBusy) return;
+
+  // THIS window's unsaved work is the user's decision, and it is the same
+  // decision closing the window would present, so it uses the same prompt. Every
+  // other window is handled by the flush protocol in Rust and is deliberately
+  // not prompted: nothing is being asked of those windows, so there is nothing
+  // for their users to answer.
+  if (dirty) {
+    const choice = await promptClose();
+    if (choice === "cancel") return;
+    if (choice === "save" && !(await saveFile())) return;
+    if (choice === "discard") {
+      // "Don't save" applies to THIS install attempt, not to the document, so it
+      // suppresses one flush round and nothing else. `dirty` is deliberately left
+      // alone: clearing it would assert, the moment the install postpones, that a
+      // document whose content is nowhere on disk is saved — no title marker, no
+      // close guard, no snapshot. That is precisely the state this whole protocol
+      // exists to prevent, and it would have been created by the protocol itself.
+      // An install that does not happen must leave no trace.
+      discardDraft(RECOVERY_KEY);
+      flushSuppressedForInstall = true;
+    }
+  }
+
+  updateBusy = true;
+  updateAction.disabled = true;
+  updateText.textContent = "Installing…";
+  try {
+    await invoke("install_update");
+    // Not reached on success: the installer takes over and the process exits.
+  } catch (err) {
+    // The suppression covered one attempt, and that attempt is over. Put the
+    // snapshot back so the window ends up exactly as it was before the click: an
+    // unsaved document, marked unsaved, with a copy in storage.
+    if (flushSuppressedForInstall) {
+      flushSuppressedForInstall = false;
+      writeDraft(RECOVERY_KEY, currentPath, serializeDocument(view.state));
+    }
+    // Postponement is the expected failure, not an exception: some window could
+    // not confirm that its unsaved work is safe. Rust names the window; what the
+    // user needs on top of that is what to do about it. The bar stays exactly as
+    // it was, so retrying installs the bytes already downloaded.
+    updateText.textContent = `${String(err)} Save your work in that window, then try again.`;
+    updateAction.textContent = "Install and restart";
+  } finally {
+    updateBusy = false;
+    updateAction.disabled = false;
+  }
+}
+
+updateAction.addEventListener("click", () => {
+  if (updateReadyToInstall) void installOfferedUpdate();
+  else void downloadOfferedUpdate();
+});
+document
+  .getElementById("btn-dismiss-update")!
+  .addEventListener("click", hideUpdateBar);
+
+/**
+ * The settings toggle. Renders off while consent is unset, because nothing is
+ * being checked in that state.
+ */
+function toggleUpdateChecks() {
+  const next = updateConsent() === "yes" ? "no" : "yes";
+  localStorage.setItem(UPDATE_CONSENT_KEY, next);
+  refreshModeButtons();
+  if (next === "yes") {
+    // Checking straight away is the point: the next startup is too late to be
+    // evidence that the switch did anything, and a switch with no visible effect
+    // reads as broken.
+    void checkForUpdate(true);
+  } else {
+    // Rust has to forget any downloaded update too, or install-on-click stays
+    // armed for a feature the user has just switched off.
+    hideUpdateBar();
+    void invoke("discard_pending_update").catch(() => {});
+  }
+  view.focus();
+}
+
+/**
+ * First run consent, then the single startup check.
+ *
+ * MODAL ORDER. This runs only after the name prompt and the recovery prompt have
+ * both settled (see the startup chain at the end of this file), so the consent
+ * dialog can never be stacked on top of either. Consenting falls through to the
+ * check below rather than doing its own, which is what keeps the startup check to
+ * one call site.
+ */
+async function startupUpdateFlow() {
+  if (!isMainWindow) return; // one consent question per install, not per window
+  if (updateConsent() === "unset") {
+    const answer = await askUpdateConsent();
+    localStorage.setItem(UPDATE_CONSENT_KEY, answer);
+    refreshModeButtons();
+    view.focus();
+  }
+  if (updateConsent() === "yes") await checkForUpdate(false);
+}
+
 async function startupOpen() {
   const launched = await invoke<string | null>("take_launch_file").catch(
     () => null,
@@ -2372,6 +2715,15 @@ const formatButtons: Record<string, () => void> = {
   "remote-images": toggleRemoteImages,
   "network-paths": toggleNetworkPaths,
   reopen: toggleReopen,
+  updates: toggleUpdateChecks,
+  "check-now": () => {
+    toggleSettingsMenu(false);
+    // Explicitly user-initiated: this is a click, so it reports whatever it
+    // finds, including that there is nothing to install. It works even when the
+    // startup check is switched off — that switch governs what Monoleaf does on
+    // its own, and this is the user asking.
+    void checkForUpdate(true);
+  },
 };
 
 for (const [id, handler] of Object.entries(formatButtons)) {
@@ -2769,6 +3121,11 @@ window.addEventListener(
   { capture: true },
 );
 
+// First, and before either startup path runs: until this listener exists this
+// window cannot acknowledge a flush, and Rust declines to install while any
+// window is in that state. The registration is an IPC round trip, so the gap
+// cannot be closed entirely — only kept as short as possible.
+setupRecoveryFlush();
 setupWindowControls();
 setupCloseGuard();
 applyViewClass();
@@ -2783,19 +3140,40 @@ refreshWordCount();
 schedulePagination(500);
 view.focus();
 
-// First startup: ask for the name once; it signs all comments and replies.
-if (!localStorage.getItem(AUTHOR_KEY)?.trim()) {
-  void promptForName().then((name) => {
-    if (name !== null) {
-      localStorage.setItem(AUTHOR_KEY, name);
-      refreshComments();
-    }
-    view.focus();
-  });
-}
+// STARTUP MODALS, IN A DEFINED ORDER.
+//
+// Three things can raise a modal at startup: the name prompt, the recovery prompt
+// inside startupOpen, and the update-consent dialog. They use three different
+// <dialog> elements, so nothing stops them stacking — a second showModal() simply
+// opens on top of the first.
+//
+// The rule imposed here is that consent goes last, after both of the others have
+// settled. It is the only one of the three that is not about the document in front
+// of the user, so it is the one that must wait; and asking for permission to talk
+// to the network on top of "recover your unsaved work?" would be the worst of the
+// possible orders.
+//
+// `allSettled`, not `all`: a rejection in either of the first two must not swallow
+// the consent question. Deliberately NOT restructured into a single sequential
+// chain — the name prompt and startupOpen keep running concurrently exactly as
+// they did before, because making them sequential would quietly change existing
+// behaviour (see the note about their stacking in the step-5b report).
+const namePrompted: Promise<unknown> = localStorage.getItem(AUTHOR_KEY)?.trim()
+  ? Promise.resolve()
+  : // First startup: ask for the name once; it signs all comments and replies.
+    promptForName().then((name) => {
+      if (name !== null) {
+        localStorage.setItem(AUTHOR_KEY, name);
+        refreshComments();
+      }
+      view.focus();
+    });
 
 // Main window: offer to restore unsaved work from a crashed/forced-closed
 // session, then reopen the last document. Other windows: load whatever they
 // were opened for (a file, or a draft to recover).
-if (isMainWindow) void startupOpen();
-else void startupChild();
+const startupOpened: Promise<unknown> = isMainWindow
+  ? startupOpen()
+  : startupChild();
+
+void Promise.allSettled([namePrompted, startupOpened]).then(startupUpdateFlow);

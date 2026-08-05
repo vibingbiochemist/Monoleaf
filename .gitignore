@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# The local updater test override points builds at a throwaway repository. The
+# `*.local` rule above already covers it; it is named explicitly as well because
+# "a published build must never be able to point at a test update host" is worth
+# more than one line of defence, and a future rename of that glob must not
+# silently expose this.
+src-tauri/tauri.updatertest.conf.json5.local
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

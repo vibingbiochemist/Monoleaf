@@ -871,6 +871,55 @@ html.theme-dark .brand-dark {
   font-family: Consolas, monospace;
 }
 
+/* Same shape as the error bar, deliberately not the same colour: this one is an
+   offer, not a failure. It shares the same slot at the bottom and sits one below
+   it in z-order, so if both are showing the error wins the space — an uncaught
+   error matters more than an available update, and dismissing it reveals the
+   update offer again rather than losing it. */
+#update-bar[hidden] {
+  display: none;
+}
+
+#update-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 199;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 14px;
+  background: light-dark(#e8f0fd, #1f3350);
+  color: light-dark(#1f4a8a, #b9d3f0);
+  border-top: 1px solid light-dark(#b5cbe5, #38557a);
+  font-size: 12.5px;
+}
+
+#update-bar #update-text {
+  flex: 1;
+}
+
+#update-bar progress {
+  width: 140px;
+  height: 8px;
+}
+
+#update-bar button {
+  font: inherit;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  border-radius: 5px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+#update-bar button[disabled] {
+  opacity: 0.55;
+  cursor: default;
+}
+
 #error-bar button {
   font: inherit;
   border: 1px solid currentColor;

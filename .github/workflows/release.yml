@@ -12,7 +12,15 @@
 name: release
 
 on:
+  # A plain dispatch (the box unticked) is the normal release path, run by hand
+  # from a tagged commit. Ticking the box runs ONLY the rehearsal job at the
+  # bottom, which builds and signs the updater artifacts and creates no release.
   workflow_dispatch:
+    inputs:
+      updater_dry_run:
+        description: "Rehearse the updater artifacts: build and sign them, upload as workflow artifacts, publish nothing."
+        type: boolean
+        default: false
   push:
     tags: ["v*"]
 
@@ -34,6 +42,10 @@ jobs:
   # splitting this out means a seconds-long check runs beside the gate instead of
   # holding thirteen minutes of work behind itself.
   version:
+    # Every publishing job is switched off for the rehearsal, so a dry run cannot
+    # reach the code that creates a release even by accident. `inputs` is empty on
+    # a tag push, so this is true there.
+    if: ${{ !inputs.updater_dry_run }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -109,9 +121,11 @@ jobs:
   # No `secrets: inherit` — the gate needs none, and a called workflow cannot
   # hold more permission than its caller regardless.
   gate:
+    if: ${{ !inputs.updater_dry_run }}
     uses: ./.github/workflows/gate.yml
 
   release:
+    if: ${{ !inputs.updater_dry_run }}
     needs: [version, gate]
     runs-on: windows-latest
     permissions:
@@ -133,7 +147,25 @@ jobs:
       - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Required by the bundler as soon as createUpdaterArtifacts is on, which
+          # is exactly what the --config below turns on. The two are coupled: this
+          # step fails without either of them, and produces an unsigned release
+          # nobody can update to if the config is applied without the secrets.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          # The release path, and only the release path, produces updater
+          # artifacts. `createUpdaterArtifacts` deliberately lives in this
+          # override rather than tauri.conf.json, because in the base config it
+          # would make every pull-request build demand the signing secret — which
+          # a fork cannot have. See the header of the file itself.
+          #
+          # Absolute rather than repo-relative: the action runs `tauri build` with
+          # its own working directory (`root`, from projectPath), and a --config
+          # path is resolved against the process's cwd. Anchoring it to the
+          # workspace means the override cannot silently fail to be found, which
+          # would produce a release with no updater artifacts and no error.
+          args: --config ${{ github.workspace }}/src-tauri/tauri.release.conf.json5
           tagName: ${{ github.ref_name }}
           releaseName: "Monoleaf ${{ github.ref_name }}"
           releaseBody: "See the assets below to download and install. The installer is unsigned (SmartScreen may warn: More info → Run anyway)."
@@ -150,3 +182,70 @@ jobs:
           # other; they cannot be expressed once because that step is shell and
           # this is a workflow expression evaluated before any step runs.
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  # Rehearse the updater artifacts without publishing anything.
+  #
+  # WHY THIS EXISTS. build.yml never sets createUpdaterArtifacts, so until now no
+  # CI run had ever produced a signature. That left the signing path — the one
+  # step that needs a secret the maintainer cannot test locally without holding
+  # the private key in the environment — first exercised during a real release,
+  # which is the worst moment to discover a missing or malformed secret.
+  #
+  # HOW IT CANNOT PUBLISH. Three independent barriers, not one:
+  #
+  #   1. `permissions: contents: read`. The job's token is issued without write
+  #      access, so a call to the releases API is refused by GitHub regardless of
+  #      what the workflow asks for. This is the barrier that holds even if
+  #      someone later edits the step wrongly.
+  #   2. No `tagName` and no `releaseId`. tauri-action only creates or touches a
+  #      release inside `if (tagName && !releaseId)`; with neither it logs "No
+  #      releaseId or tagName provided, skipping all uploads..." and does nothing
+  #      but build. That is the same build-only shape build.yml already relies on.
+  #   3. No GITHUB_TOKEN in the step's environment at all, so there is no
+  #      credential for an API call to be made with.
+  #
+  # It is also mutually exclusive with the publishing path: the three jobs above
+  # are switched off by the same input that switches this one on, so one dispatch
+  # can never do both.
+  updater-dry-run:
+    if: ${{ inputs.updater_dry_run }}
+    runs-on: windows-latest
+    permissions:
+      contents: read # barrier 1: cannot create a release even if asked to
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
+        with:
+          toolchain: stable # the SHA pin hides which toolchain this is
+
+      - run: npm ci
+
+      - uses: tauri-apps/tauri-action@84b9d35b5fc46c1e45415bdb6144030364f7ebc5 # v0.6.2
+        env:
+          # Deliberately no GITHUB_TOKEN (barrier 3). The signing secrets ARE
+          # needed: the whole point is to prove they work before a release
+          # depends on them.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          # The same override the release path uses, so what is rehearsed is the
+          # real configuration rather than a copy of it.
+          args: --config ${{ github.workspace }}/src-tauri/tauri.release.conf.json5
+          # No tagName (barrier 2).
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: updater-dry-run
+          # `if-no-files-found: error`, unlike build.yml's `warn`: the signature is
+          # the artifact this job exists to produce, so its absence is the failure
+          # this job exists to detect.
+          if-no-files-found: error
+          path: |
+            src-tauri/target/release/bundle/nsis/*-setup.exe
+            src-tauri/target/release/bundle/nsis/*-setup.exe.sig

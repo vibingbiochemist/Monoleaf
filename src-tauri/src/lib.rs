@@ -1,8 +1,11 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Mutex;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::{Condvar, Mutex};
+use std::time::{Duration, Instant};
+use tauri::ipc::Channel;
+use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri_plugin_updater::Update;
 
 pub mod pdfimport;
 
@@ -392,6 +395,473 @@ async fn import_pdf_as_markdown(path: String) -> Result<pdfimport::PdfImport, St
         })
 }
 
+// ---------------------------------------------------------------------------
+// Updates
+//
+// The frontend is given NO updater permissions: the plugin's own commands
+// (`plugin:updater|check` and friends) are ACL-gated and nothing in
+// capabilities/default.json grants them, so the webview cannot reach them. What
+// it can call is the three commands below, which are ours and therefore not
+// ACL-gated at all. That is the whole point of the arrangement — the decision to
+// contact a remote host and run an installer stays in Rust, where document
+// content cannot influence it.
+//
+// The shape is check -> download -> install, as three separate calls rather than
+// the plugin's `download_and_install`, because a download must not begin until
+// the user has been told an update exists, and an install must not begin until
+// every window has flushed its recovery snapshot (see `flush_recovery_snapshots`).
+// ---------------------------------------------------------------------------
+
+/// How long the *manifest* request may take before the check is abandoned.
+///
+/// Applies only to fetching latest.json, not to downloading the installer:
+/// `Updater::check` deliberately constructs its `Update` with `timeout: None`
+/// (tauri-plugin-updater 2.10.1, updater.rs:553), so a short timeout here cannot
+/// cut off a slow download later. Twenty seconds is chosen for the case this has
+/// to survive rather than the happy path: a filtered corporate DNS or a proxy
+/// that blackholes the request fails by hanging, not by refusing, and the
+/// alternative to a bounded wait is a "Checking…" state that never resolves.
+///
+/// Gated to release builds because that is where the only use of it is; in a
+/// debug build the check is compiled out, and an unused const is a `dead_code`
+/// warning, which the gate treats as an error.
+#[cfg(not(debug_assertions))]
+const UPDATE_CHECK_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// Asks the receiving window to write its recovery snapshot NOW, bypassing the
+/// 1500 ms debounce in `scheduleAutosaveRecovery`. The payload is the round id,
+/// which the window must hand back to `ack_recovery_flush`.
+///
+/// COUPLED: `src/main.ts` listens for this and answers. A window that does not
+/// answer blocks the install (by design — see `flush_recovery_snapshots`), so
+/// renaming this event silently disables updating rather than breaking loudly.
+const FLUSH_RECOVERY_EVENT: &str = "flush-recovery";
+
+/// How long every window gets to acknowledge the flush before the install is
+/// abandoned.
+///
+/// No human is in this loop — nothing is being asked of the user — so this is
+/// bounded by machine speed, and the write itself is a synchronous
+/// `localStorage.setItem` of one document. What it actually has to absorb is a
+/// window whose main thread is busy: a Paged.js pagination pass over a long
+/// document is seconds of uninterruptible layout work in that window, and it
+/// cannot service the event until that finishes. Three seconds covers that on a
+/// slow machine while keeping the worst case — click Install, nothing visible
+/// happens, then "update postponed" — short enough to read as a hiccup.
+const FLUSH_ACK_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// The update that has been found, and its bytes once downloaded.
+///
+/// The bytes live here rather than being re-fetched at install time on purpose.
+/// `Update::install` needs them, so the alternative is a network round trip
+/// *between* "every window has snapshotted its unsaved work" and "the process is
+/// replaced" — which is the one place in this sequence where an unbounded wait
+/// must not be.
+struct PendingUpdate(Mutex<Option<PendingInstall>>);
+
+struct PendingInstall {
+    update: Update,
+    /// `None` until `download_update` has run. `install_update` refuses without it.
+    bytes: Option<Vec<u8>>,
+}
+
+/// Tracks one round of "every window, flush your recovery snapshot".
+///
+/// A `Condvar` rather than a channel because the interesting state is *which
+/// windows have not answered yet* — that is both the wait predicate and, on
+/// timeout, the diagnostic. A round id makes a late answer harmless: an
+/// acknowledgement for a round that has already been resolved is ignored instead
+/// of being counted towards the next one.
+struct FlushGate {
+    round: Mutex<Option<FlushRound>>,
+    acknowledged: Condvar,
+    next_round: AtomicU64,
+}
+
+struct FlushRound {
+    id: u64,
+    /// Labels still to answer. Empty means the round succeeded.
+    awaiting: HashSet<String>,
+}
+
+impl FlushGate {
+    fn new() -> Self {
+        Self {
+            round: Mutex::new(None),
+            acknowledged: Condvar::new(),
+            next_round: AtomicU64::new(1),
+        }
+    }
+}
+
+/// What the frontend is told about an available update.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInfo {
+    version: String,
+    notes: Option<String>,
+}
+
+/// Download progress, sent over an `ipc::Channel` the frontend supplies.
+///
+/// One flat shape rather than a tagged enum: `rename_all` on an enum renames its
+/// variants, not the fields inside them, so a tagged enum would hand the frontend
+/// `content_length` while every other field it receives is camelCase. A progress
+/// bar needs "how much of how many, and is it finished" and nothing else.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadProgress {
+    downloaded: u64,
+    /// `None` when the server sent no Content-Length — the bar has to go
+    /// indeterminate rather than pretend to know a total.
+    content_length: Option<u64>,
+    done: bool,
+}
+
+/// Look for an update. `Ok(None)` means "nothing to offer", including every
+/// failure of an automatic check.
+///
+/// `user_initiated` decides who hears about a failure. Someone who clicked
+/// "Check for updates" is owed an answer, even if it is "DNS lookup failed". An
+/// automatic check has no such contract: no network, a captive portal, a
+/// filtered DNS resolver and a 404 from a repository with no published release
+/// yet are all ordinary, all outside the user's control, and reporting them
+/// would train people to dismiss the one message that matters.
+///
+/// COMPILED OUT OF DEV BUILDS. In a `debug_assertions` build this returns
+/// `Ok(None)` without contacting anything, so `npm run tauri dev` can never
+/// offer — or install — a production release over a working tree. The command
+/// still exists in both profiles so the frontend needs no build-time awareness
+/// of which one it is running in. Note this also disables it for
+/// `tauri build --debug`, which is the right side to err on.
+#[tauri::command]
+async fn check_for_update(
+    app: AppHandle,
+    user_initiated: bool,
+) -> Result<Option<UpdateInfo>, String> {
+    #[cfg(debug_assertions)]
+    {
+        let _ = (&app, user_initiated);
+        Ok(None)
+    }
+
+    #[cfg(not(debug_assertions))]
+    {
+        // Imported here rather than at the top of the file: in a debug build the
+        // body below is compiled out and the trait would be an unused import.
+        use tauri_plugin_updater::UpdaterExt;
+
+        let checked = async {
+            let updater = app
+                .updater_builder()
+                .timeout(UPDATE_CHECK_TIMEOUT)
+                .build()?;
+            updater.check().await
+        }
+        .await;
+
+        match checked {
+            Ok(Some(update)) => {
+                let info = UpdateInfo {
+                    version: update.version.clone(),
+                    notes: update.body.clone(),
+                };
+                app.state::<PendingUpdate>()
+                    .0
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .replace(PendingInstall {
+                        update,
+                        bytes: None,
+                    });
+                Ok(Some(info))
+            }
+            Ok(None) => Ok(None),
+            // Deliberately swallowed for an automatic check. There is no logging
+            // in this binary to send it to, and inventing a channel for an error
+            // nobody is meant to see would be the wrong shape.
+            Err(_) if !user_initiated => Ok(None),
+            Err(e) => Err(e.to_string()),
+        }
+    }
+}
+
+/// Download the update found by `check_for_update`, reporting progress.
+#[tauri::command]
+async fn download_update(
+    app: AppHandle,
+    on_progress: Channel<DownloadProgress>,
+) -> Result<(), String> {
+    // Cloned out of the mutex, and the guard dropped, before the first await: a
+    // `std::sync::MutexGuard` is not `Send` and holding one across an await
+    // point would not compile — but more to the point, this download takes
+    // seconds and must not hold a lock the other commands need.
+    let update = {
+        let pending = app.state::<PendingUpdate>();
+        let guard = pending.0.lock().unwrap_or_else(|e| e.into_inner());
+        guard
+            .as_ref()
+            .map(|pending| pending.update.clone())
+            .ok_or("There is no update to download.")?
+    };
+
+    let mut downloaded: u64 = 0;
+    let bytes = update
+        .download(
+            |chunk_len, content_length| {
+                downloaded += chunk_len as u64;
+                let _ = on_progress.send(DownloadProgress {
+                    downloaded,
+                    content_length,
+                    done: false,
+                });
+            },
+            // Nothing here on purpose. `download` runs this callback *before* it
+            // verifies the signature, so reporting completion from it would tell
+            // the frontend the update was ready and then fail.
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+
+    // A second check could have replaced the pending update while this was in
+    // flight; attaching these bytes to a different version would install
+    // something nobody agreed to.
+    let state = app.state::<PendingUpdate>();
+    let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    match guard.as_mut() {
+        Some(pending) if pending.update.version == update.version => {
+            pending.bytes = Some(bytes);
+            // Signalled here rather than from the download callback: this is the
+            // first point at which the bytes are verified AND stored, which is
+            // what "ready to install" has to mean.
+            let _ = on_progress.send(DownloadProgress {
+                downloaded,
+                content_length: Some(downloaded),
+                done: true,
+            });
+            Ok(())
+        }
+        _ => Err("The pending update changed while it was downloading.".into()),
+    }
+}
+
+/// Forget whatever update has been checked for or downloaded.
+///
+/// Switching update checks off has to reach Rust, not just stop the next check:
+/// an update already sitting in `PendingUpdate` would otherwise keep
+/// `install_update` armed, so a banner left on screen — or a stale one in another
+/// window — could still install something the user has just declined.
+#[tauri::command]
+fn discard_pending_update(app: AppHandle) {
+    let state = app.state::<PendingUpdate>();
+    *state.0.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+/// Ask every window to flush its recovery snapshot, and wait for all of them.
+///
+/// Nothing is being asked of the user here, so there is no cancellation to
+/// detect and no negative answer to interpret: a window either acknowledges or
+/// it does not. Any window that does not is treated as a refusal and the install
+/// is abandoned, because the cost of guessing wrong in the other direction is
+/// somebody's unsaved document. A missed update is the safe failure.
+///
+/// Blocking, so callers must keep it off the main thread (see `install_update`).
+fn flush_recovery_snapshots(app: &AppHandle) -> Result<(), String> {
+    let gate = app.state::<FlushGate>();
+    let asked: HashSet<String> = app.webview_windows().keys().cloned().collect();
+    if asked.is_empty() {
+        return Ok(());
+    }
+
+    let id = gate.next_round.fetch_add(1, Ordering::Relaxed);
+    {
+        let mut round = gate.round.lock().unwrap_or_else(|e| e.into_inner());
+        *round = Some(FlushRound {
+            id,
+            awaiting: asked.clone(),
+        });
+    }
+
+    // Addressed per window rather than broadcast, so the set that is asked and
+    // the set that is awaited are the same set by construction.
+    for label in &asked {
+        let _ = app.emit_to(label.as_str(), FLUSH_RECOVERY_EVENT, id);
+    }
+
+    // Ok(labels) is the answer to "who had not answered when we stopped waiting";
+    // Err is "this round is not ours to answer for any more".
+    let waited: Result<Vec<String>, String> = {
+        let mut round = gate.round.lock().unwrap_or_else(|e| e.into_inner());
+        let deadline = Instant::now() + FLUSH_ACK_TIMEOUT;
+        loop {
+            // A round that was cleared or replaced is deliberately NOT treated as
+            // a success. Nothing can do that today — `install_update` takes the
+            // pending update before it gets here, so a second install finds
+            // nothing to install and never opens a round — but "someone else
+            // resolved this" must not be allowed to read as "every window
+            // confirmed", or a later second caller would install over unsaved work.
+            match round.as_ref() {
+                Some(current) if current.id == id => {}
+                _ => break Err("Update postponed: preparing to install was superseded.".into()),
+            }
+            if round
+                .as_ref()
+                .is_some_and(|current| current.awaiting.is_empty())
+            {
+                break Ok(Vec::new());
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                break Ok(round
+                    .as_ref()
+                    .map(|current| current.awaiting.iter().cloned().collect())
+                    .unwrap_or_default());
+            }
+            // wait_timeout, not a sleep-and-poll loop: an acknowledgement that
+            // arrives before the wait starts is not lost, because the predicate
+            // above is state rather than a signal.
+            let (guard, _) = gate
+                .acknowledged
+                .wait_timeout(round, remaining)
+                .unwrap_or_else(|e| e.into_inner());
+            round = guard;
+        }
+    };
+
+    // Cleared before the result is propagated, so an abandoned round never
+    // outlives the attempt that opened it.
+    {
+        let mut round = gate.round.lock().unwrap_or_else(|e| e.into_inner());
+        if round.as_ref().is_some_and(|current| current.id == id) {
+            *round = None;
+        }
+    }
+
+    let outstanding = waited?;
+    if !outstanding.is_empty() {
+        // Named by window title, not by label: "win-2" is an internal name and
+        // tells the user nothing, whereas the title is the document they are
+        // looking at. The most likely reason a window withholds its
+        // acknowledgement is that storage refused the write, which the user can
+        // only resolve in that specific window.
+        let named: Vec<String> = outstanding
+            .iter()
+            .map(|label| {
+                app.get_webview_window(label)
+                    .and_then(|window| window.title().ok())
+                    .unwrap_or_else(|| label.clone())
+            })
+            .collect();
+        return Err(format!(
+            "Update postponed: {} did not confirm saving its unsaved work.",
+            named.join(", ")
+        ));
+    }
+
+    // A window that appeared *during* the round was never asked, and one kind of
+    // late window is not safe to lose: a window opened to hold a recovered draft
+    // is marked unsaved while its localStorage snapshot has already been
+    // consumed by the startup sweep, so until the user types there is no copy of
+    // it anywhere but that window. A file opened by association is clean and
+    // would be harmless, but this cannot tell the two apart, so it declines.
+    let appeared: Vec<String> = app
+        .webview_windows()
+        .keys()
+        .filter(|label| !asked.contains(*label))
+        .cloned()
+        .collect();
+    if !appeared.is_empty() {
+        return Err(format!(
+            "Update postponed: {} opened while preparing to install.",
+            appeared.join(", ")
+        ));
+    }
+
+    Ok(())
+}
+
+/// A window reporting that it has written its recovery snapshot.
+///
+/// The label comes from the calling window, never from an argument — the same
+/// reasoning as `take_window_payload`, and here it also means no window can
+/// acknowledge on another's behalf and let the install proceed over an
+/// unsnapshotted document.
+#[tauri::command]
+fn ack_recovery_flush(window: tauri::WebviewWindow, state: tauri::State<FlushGate>, round: u64) {
+    {
+        let mut current = state.round.lock().unwrap_or_else(|e| e.into_inner());
+        match current.as_mut() {
+            Some(active) if active.id == round => {
+                active.awaiting.remove(window.label());
+            }
+            // A stale or unknown round: the install it belonged to has already
+            // been resolved one way or the other.
+            _ => return,
+        }
+    }
+    state.acknowledged.notify_all();
+}
+
+/// Install the downloaded update, after every window has secured its unsaved work.
+///
+/// No window is closed by this: the existing close guard owns that interaction,
+/// and the window the user clicked in has already dealt with its own unsaved
+/// state before invoking this. What happens instead is that the process is
+/// replaced — `Update::install` hands off to the NSIS installer and ends in
+/// `std::process::exit(0)` (updater.rs:865), so nothing after that call runs and
+/// anything that must happen first happens before it. The installer relaunches
+/// the app, which is intended: the restarted main window sweeps localStorage and
+/// offers back exactly the snapshots the flush below just wrote.
+#[tauri::command]
+async fn install_update(app: AppHandle) -> Result<(), String> {
+    let pending = {
+        let state = app.state::<PendingUpdate>();
+        let mut guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        guard.take().ok_or("There is no update to install.")?
+    };
+
+    // Taken out rather than borrowed, so put it back on every path that does not
+    // install: an abandoned install must be retryable without downloading again.
+    let restore = |pending: PendingInstall| {
+        app.state::<PendingUpdate>()
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .replace(pending);
+    };
+
+    if pending.bytes.is_none() {
+        restore(pending);
+        return Err("The update has not been downloaded yet.".into());
+    }
+
+    // Off the main thread: the wait below blocks for up to FLUSH_ACK_TIMEOUT, and
+    // the windows it is waiting on cannot answer while the event loop is stuck.
+    let flushing = app.clone();
+    let flushed = tauri::async_runtime::spawn_blocking(move || flush_recovery_snapshots(&flushing))
+        .await
+        .unwrap_or_else(|_| Err("Update postponed: preparing to install failed.".into()));
+    if let Err(e) = flushed {
+        restore(pending);
+        return Err(e);
+    }
+
+    // Borrowed for the duration of the call only, so `pending` can still be
+    // moved back into the mutex on the failure path below.
+    if let Err(e) = pending
+        .update
+        .install(pending.bytes.as_deref().unwrap_or_default())
+    {
+        // Reachable only if the handoff failed before the installer launched —
+        // on success the process is already gone.
+        let message = e.to_string();
+        restore(pending);
+        return Err(message);
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // The file this process was launched with (double-clicked .md), captured
@@ -417,9 +887,58 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // The updater. Its configuration lives in `plugins.updater` in
+        // tauri.conf.json, which is strict JSON and cannot hold comments, so the
+        // four things a reader needs to know about it are recorded here.
+        //
+        // COUPLED: everything below describes keys in tauri.conf.json. Change
+        // them there and this comment is what tells the next person why they
+        // were what they were.
+        //
+        // 1. WHY `pubkey` IS IN THE BASE CONFIG. The plugin's `Config` declares
+        //    `pubkey: String` with no serde default, and Tauri hands a plugin
+        //    `Value::Null` when its config key is absent — so a missing pubkey
+        //    fails plugin initialization, which fails `Builder::run`, which the
+        //    `.expect` at the bottom of this function turns into a panic. Not "a
+        //    working app with a dead updater": an app that does not start. It is
+        //    safe to keep here because a public key demands no signing secret;
+        //    only `bundle.createUpdaterArtifacts` does, which is why that one
+        //    key lives in tauri.release.conf.json5 and must never move here.
+        //
+        // 2. WHAT THE ENDPOINT RESOLVES TO. GitHub defines
+        //    /releases/latest/download/ as the most recent release that is
+        //    neither a draft nor a prerelease. Our release workflow opens every
+        //    release as a draft, and marks any tag containing "-" a prerelease,
+        //    so a draft and an rc serve nothing until deliberately published as
+        //    a full release. That is the intended safety property: nothing can
+        //    reach users because a tag was pushed.
+        //
+        // 3. WHY `installMode` IS PINNED TO "passive" RATHER THAN LEFT DEFAULT.
+        //    Passive is also the plugin's default, but it is stated explicitly
+        //    because the behaviour is user-visible: it skips every installer
+        //    page except the progress page, and passes NSIS `/R`, so the app is
+        //    relaunched after installing. THE RELAUNCH IS INTENDED — it is what
+        //    lets the restarted main window sweep localStorage and offer back
+        //    the recovery snapshots taken just before installing. Do not try to
+        //    suppress it: it cannot be suppressed at this version anyway
+        //    (`nsis_args()` prepends `/R` for passive and quiet, `installer_args`
+        //    only appends, and the mode that omits `/R` — basicUi — turns the
+        //    install into a full click-through wizard whose finish page reruns
+        //    the app from a pre-checked box).
+        //
+        // 4. THE TRAP WHEN EDITING OR TESTING. Endpoints are validated when the
+        //    plugin initializes, by a custom `Deserialize` (2.10.1 config.rs:
+        //    126-132 and 145-164). A non-https endpoint only warns in a debug
+        //    build; in a release build it is `Err(InsecureTransportProtocol)`,
+        //    so the app fails to start. A plain http test server is therefore
+        //    not an option, and `dangerousInsecureTransportProtocol` must never
+        //    be set to make one work.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(LaunchFile(Mutex::new(launch_file)))
         .manage(PendingPayloads(Mutex::new(HashMap::new())))
         .manage(WindowCounter(AtomicU32::new(1)))
+        .manage(PendingUpdate(Mutex::new(None)))
+        .manage(FlushGate::new())
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
@@ -429,7 +948,12 @@ pub fn run() {
             spell_add,
             take_launch_file,
             open_document_window,
-            take_window_payload
+            take_window_payload,
+            check_for_update,
+            download_update,
+            install_update,
+            discard_pending_update,
+            ack_recovery_flush
         ])
         // On Windows the OS foreground-lock policy can let the config-defined
         // "main" window open *behind* whatever already has focus. Explicitly

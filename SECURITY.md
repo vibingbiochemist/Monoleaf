@@ -34,13 +34,16 @@ released, we're happy to credit you unless you prefer to remain anonymous.
 Monoleaf is a **local, offline** desktop app:
 
 - Documents never leave your machine; there is no account, cloud, or telemetry.
+  The one network request Monoleaf can make on its own is the optional update
+  check described below, which is off until you turn it on and sends nothing
+  about you or your documents.
 - The app window **never navigates** — external links open in your system
   browser instead.
 - Untrusted input to consider is primarily the **content of `.md` files** you
   open and **clipboard HTML** you paste; reports about how those are parsed or
   rendered are in scope.
 
-Two consequences of that design are worth stating plainly, because they affect
+Three consequences of that design are worth stating plainly, because they affect
 anyone handling confidential documents and are not otherwise visible without
 reading the source:
 
@@ -50,9 +53,23 @@ reading the source:
   your user profile, unencrypted. The snapshot is discarded once the document is
   saved. If you open a confidential document, save it — an unsaved one has a copy
   outside the file you chose.
-- **Installers are unsigned and there is no auto-update.** Monoleaf never phones
-  home, which also means it will not tell you that a security fix exists. Updates
-  are a manual download and reinstall, so watch the
-  [releases page](https://github.com/vibingbiochemist/Monoleaf/releases) if that
-  matters to you. Windows SmartScreen and macOS Gatekeeper will warn about the
-  unsigned installer; code signing needs a paid developer account.
+- **Installers are unsigned, and update checks are optional and off by default.**
+  Monoleaf can ask `github.com` once per launch whether a newer version exists,
+  if you allow it on first run or in Settings. That is a single HTTPS request for
+  a small JSON file; it carries no identifiers and nothing about you or your
+  documents, though GitHub necessarily sees your IP address and the time of the
+  request, as it would for any download. With checks off, Monoleaf makes no
+  network request of its own. Updates are signed with a key held by the
+  maintainer and the signature is verified before anything is installed, but the
+  installer itself is unsigned, so Windows SmartScreen and macOS Gatekeeper will
+  still warn; code signing needs a paid developer account. If you leave checks
+  off, watch the
+  [releases page](https://github.com/vibingbiochemist/Monoleaf/releases) for
+  security fixes, because nothing will tell you.
+- **Installing an update writes your unsaved work to disk first.** Installing
+  replaces the running process, so before it happens every open window writes its
+  unsaved draft to the plaintext snapshot described above, and the restarted app
+  offers those drafts back. This is deliberate, and it is how an update avoids
+  losing work, but it means an update is a moment when unsaved confidential text
+  is written to your user profile unencrypted. If that matters, save your
+  documents before installing.

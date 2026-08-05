@@ -10,7 +10,7 @@
 One `.md` file is the whole document: no sidecars, no lock-in, no database.
 What you write stays plain Markdown that any editor, GitHub, or an LLM can read.
 
-[![version](https://img.shields.io/github/package-json/v/vibingbiochemist/Monoleaf?label=version&color=E8A33D)](https://github.com/vibingbiochemist/Monoleaf/releases)
+[![version](https://img.shields.io/github/v/release/vibingbiochemist/Monoleaf?label=version&color=E8A33D)](https://github.com/vibingbiochemist/Monoleaf/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 [![platform](https://img.shields.io/badge/platform-Windows-0078D6)](https://github.com/vibingbiochemist/Monoleaf/releases)
 [![built with Tauri](https://img.shields.io/badge/built%20with-Tauri%20%2B%20CodeMirror-24C8DB)](https://tauri.app)
@@ -53,7 +53,9 @@ writing docs, anyone who wants their work to still open cleanly in ten years.
   blockquotes or HTML comments, so the file still reads perfectly on GitHub or
   in any plain editor.
 - **Local and private.** No account, no cloud, no telemetry. Your files never
-  leave your machine.
+  leave your machine. Monoleaf can optionally check `github.com` for a new
+  version at startup; it is off until you turn it on, and it sends nothing but
+  the request itself.
 
 ## Features
 

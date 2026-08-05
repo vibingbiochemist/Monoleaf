@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Optional update checks.** Monoleaf can ask GitHub once per launch whether a
+  newer version exists, then download and install it on request. Off by default:
+  you are asked once on first run and can change the answer in Settings at any
+  time. The check is a single HTTPS request carrying no identifiers and nothing
+  about your documents. Updates are cryptographically signed and the signature is
+  verified before installation.
+- Installing an update closes and reopens Monoleaf. Before it does, every open
+  window writes its unsaved work to the crash-recovery snapshot, and the
+  restarted app offers those drafts back.
+
 ## [0.9.0] - 2026-08-04
 
 First public release.

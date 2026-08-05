@@ -1,0 +1,29 @@
+// Release-path override. Applied only by the workflow that publishes:
+//
+//     npm run tauri build -- --config src-tauri/tauri.release.conf.json5
+//
+// It carries exactly one key, and it must stay that way.
+//
+// WHY createUpdaterArtifacts IS HERE AND NEVER IN tauri.conf.json
+//
+// This key is what the bundler gates updater signing on — tauri-cli 2.11.4
+// (crates/tauri-cli/src/interface/rust.rs) enables the updater bundle only when
+// `create_updater_artifacts != Updater::Bool(false)`, and the default is
+// Bool(false) (tauri-utils 2.9.3, config.rs:1540). The moment it is true, the
+// bundler demands TAURI_SIGNING_PRIVATE_KEY. A pull request from a fork cannot
+// hold that secret, so this key in the base config would fail CI for every
+// outside contributor — build.yml builds installers on every PR. build.yml must
+// therefore never pass this file; only the release workflow does.
+//
+// The public key deliberately does NOT live here. It stays in tauri.conf.json,
+// because the updater plugin's config has `pubkey: String` with no serde
+// default: without it, plugin initialization fails and the app does not launch
+// at all. A pubkey alone demands no secret, so it costs fork builds nothing.
+//
+// JSON5 rather than JSON only so it can carry these comments — the CLI parses
+// JSON, JSON5 and TOML for --config.
+{
+  bundle: {
+    createUpdaterArtifacts: true,
+  },
+}
