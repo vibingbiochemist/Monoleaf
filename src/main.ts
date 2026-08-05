@@ -1714,17 +1714,22 @@ function isPristineBlank(): boolean {
 }
 
 /** Open a new editor window. `payload` seeds what it loads on startup:
- * {path} opens a file, {recover} restores an unsaved draft; blank otherwise. */
+ * {path} opens a file, {recover} restores an unsaved draft; blank otherwise.
+ *
+ * Returns the new window's label, or null if it could not be opened. Most callers
+ * have no use for it; recovery does, because a draft handed to a new window has
+ * to be written back under *that* window's key. */
 async function openWindow(payload?: {
   path?: string;
   recover?: { path: string | null; content: string };
-}): Promise<void> {
+}): Promise<string | null> {
   try {
-    await invoke("open_document_window", {
+    return await invoke<string>("open_document_window", {
       payload: payload ? JSON.stringify(payload) : null,
     });
   } catch (err) {
     await showError(err);
+    return null;
   }
 }
 
@@ -1989,6 +1994,12 @@ async function startupOpen() {
       },
     );
     // Consume the snapshots either way (recovered below, or discarded).
+    //
+    // The keys are removed here rather than after the drafts are loaded because a
+    // key from the previous session can be *this* window's key, and rewriting it
+    // below would then be undone by a later discard. Everything recovered is
+    // written straight back under the key of whichever window ends up holding it
+    // — see the `writeDraft` calls below.
     for (const d of drafts) discardDraft(d.key);
     if (!restore) drafts = [];
   }
@@ -1999,6 +2010,15 @@ async function startupOpen() {
     const first = drafts.shift()!;
     loadIntoEditor(first.content, first.path);
     setDirty(true); // still unsaved relative to disk
+    // Re-snapshot immediately, under this window's own key. Recovering used to
+    // *consume* the only copy: the snapshot was deleted here and the next one was
+    // 1500 ms away and debounced behind an edit that might never come, so a
+    // document recovered and then left untouched existed nowhere but in memory.
+    // A crash, a forced close or a pulled plug in that window lost it — the exact
+    // failure recovery exists to prevent, reintroduced by recovery itself. Not an
+    // updater problem; it just becomes reachable more often once installing an
+    // update ends the process on purpose.
+    writeDraft(RECOVERY_KEY, first.path, first.content);
   } else if (reopenLastEnabled) {
     const last = localStorage.getItem(LAST_FILE_KEY);
     if (last !== null) {
@@ -2030,7 +2050,15 @@ async function startupOpen() {
 
   // Any drafts the main window didn't take reopen in their own windows.
   for (const d of drafts) {
-    await openWindow({ recover: { path: d.path, content: d.content } });
+    const label = await openWindow({
+      recover: { path: d.path, content: d.content },
+    });
+    // Same reasoning as the re-snapshot above, one window along: write the draft
+    // back before its window has even finished loading, so it is never in flight
+    // with no copy on disk. Under the new window's key when there is one; if the
+    // window could not be opened, back under the key it came from, which is what
+    // makes it show up again at the next launch instead of vanishing.
+    writeDraft(label ? recoveryKey(label) : d.key, d.path, d.content);
   }
 }
 
