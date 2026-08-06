@@ -105,6 +105,7 @@ import {
   setPageBreaks,
 } from "./pagination";
 import { getVersion } from "@tauri-apps/api/app";
+import { releaseNotesText } from "./updates";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.md?raw";
 
 // Uncaught errors must be visible, not lost in an invisible console.
@@ -2077,6 +2078,8 @@ function updateConsent(): "yes" | "no" | "unset" {
 /** What `check_for_update` reports. */
 interface UpdateInfo {
   version: string;
+  /** The release body, as typed into GitHub — free text, not to be trusted as
+   * markup. `null` when the release was published without one. */
   notes: string | null;
 }
 
@@ -2099,6 +2102,10 @@ const updateProgress = document.getElementById(
 const updateAction = document.getElementById(
   "btn-update-action",
 ) as HTMLButtonElement;
+const updateNotes = document.getElementById(
+  "update-notes",
+) as HTMLDetailsElement;
+const updateNotesBody = document.getElementById("update-notes-body")!;
 
 /** The offer on screen in THIS window, and how far it has got. */
 let offeredUpdate: UpdateInfo | null = null;
@@ -2143,6 +2150,7 @@ function askUpdateConsent(): Promise<"yes" | "no"> {
 function hideUpdateBar() {
   updateBar.hidden = true;
   updateProgress.hidden = true;
+  updateNotes.hidden = true;
   offeredUpdate = null;
   updateReadyToInstall = false;
 }
@@ -2155,6 +2163,18 @@ function showUpdateOffer(info: UpdateInfo) {
   updateAction.textContent = "Download";
   updateAction.disabled = false;
   updateAction.hidden = false;
+
+  // `textContent`, never `innerHTML`: this string came off the network, and the
+  // one rule that keeps that harmless is that it is never parsed as markup.
+  // Re-collapsed on every offer rather than left as the user last had it: a
+  // disclosure opened for one version would otherwise still be open when a later
+  // check offers the next one, so the bar would arrive at whatever height that
+  // body happens to need instead of the one line it is supposed to start at.
+  const notes = releaseNotesText(info.notes);
+  updateNotesBody.textContent = notes ?? "";
+  updateNotes.open = false;
+  updateNotes.hidden = notes === null;
+
   updateBar.hidden = false;
 }
 
