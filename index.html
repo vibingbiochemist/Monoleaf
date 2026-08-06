@@ -900,6 +900,16 @@
       <span id="update-text"></span>
       <progress id="update-progress" hidden max="1000" value="0"></progress>
       <button id="btn-update-action">Download</button>
+      <!-- Two ways to say no, because they are two different answers: Dismiss
+           clears the bar and lets the next check offer this version again, Skip
+           records that this version was declined. Neither is a way to turn
+           update checks off — that stays in Settings. -->
+      <button
+        id="btn-skip-update"
+        title="Stop offering this version. A newer release will still be offered."
+      >
+        Skip this version
+      </button>
       <button id="btn-dismiss-update">Dismiss</button>
     </div>
     <div id="pagination-measure" aria-hidden="true"></div>

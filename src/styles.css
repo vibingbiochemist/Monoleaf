@@ -913,6 +913,10 @@ html.theme-dark .brand-dark {
   border-radius: 5px;
   padding: 3px 10px;
   cursor: pointer;
+  /* Three buttons now share the row, and #update-text is the only flexible
+     item; without this "Skip this version" wraps to two lines in a narrow
+     window and drags the bar's height with it. */
+  white-space: nowrap;
 }
 
 #update-bar button[disabled] {
