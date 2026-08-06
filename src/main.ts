@@ -2,7 +2,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { editorSetup, rawViewExtensions } from "./setup";
 import { Compartment, Prec, StateCommand } from "@codemirror/state";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -2140,6 +2140,29 @@ function askUpdateConsent(): Promise<"yes" | "no"> {
   });
 }
 
+/**
+ * How windows tell each other what the user has been offered and what they have
+ * done about it.
+ *
+ * The offer is app-global — Rust holds one `PendingUpdate` for the process — but
+ * the bar showing it was per-window, and only the main window ever checked. In a
+ * session with a document window open, which is the ordinary way this app gets
+ * used, the offer appeared in a window the user might not be looking at and the
+ * one they *were* in showed nothing.
+ *
+ * Every payload carries the label of the window that sent it, and every listener
+ * ignores its own: `emit` delivers to all webviews including the sender, so
+ * without that the deciding window would immediately re-render from its own
+ * broadcast.
+ */
+const UPDATE_OFFER_EVENT = "update-offer";
+const UPDATE_CLEARED_EVENT = "update-cleared";
+
+interface UpdateBroadcast {
+  source: string;
+  info: UpdateInfo;
+}
+
 function hideUpdateBar() {
   updateBar.hidden = true;
   updateProgress.hidden = true;
@@ -2147,6 +2170,12 @@ function hideUpdateBar() {
   updateReadyToInstall = false;
 }
 
+/**
+ * Put an offer on screen in THIS window. Display only — see
+ * `announceUpdateOffer` for the one that tells the other windows, and note that
+ * the listener below deliberately calls this one, which is what stops a
+ * broadcast from echoing.
+ */
 function showUpdateOffer(info: UpdateInfo) {
   offeredUpdate = info;
   updateReadyToInstall = false;
@@ -2156,6 +2185,75 @@ function showUpdateOffer(info: UpdateInfo) {
   updateAction.disabled = false;
   updateAction.hidden = false;
   updateBar.hidden = false;
+}
+
+/**
+ * Show an offer here and in every other window.
+ *
+ * Called only from the paths that have *decided* to offer, never from the
+ * listener. Keeping the decision on this side rather than broadcasting from Rust
+ * is what lets a policy that lives in the frontend — consent, and anything later
+ * that suppresses an offer — apply once, in the window that made the call,
+ * instead of having to be re-implemented in every listener.
+ */
+function announceUpdateOffer(info: UpdateInfo) {
+  showUpdateOffer(info);
+  const payload: UpdateBroadcast = { source: windowLabel, info };
+  // A failure here costs the other windows their banner and nothing else, so it
+  // must not take down the offer in the window that actually found it.
+  void emit(UPDATE_OFFER_EVENT, payload).catch(() => {});
+}
+
+/**
+ * Take the offer down here and in every other window.
+ *
+ * Dismiss means "not now" for the app, not for one window: the alternative is a
+ * bar the user has already dealt with waiting for them behind every other
+ * document they had open.
+ */
+function announceUpdateCleared() {
+  hideUpdateBar();
+  void emit(UPDATE_CLEARED_EVENT, { source: windowLabel }).catch(() => {});
+}
+
+/**
+ * Listen for what the other windows have decided.
+ *
+ * Runs in every window, including the main one — the main window is not
+ * privileged here, it is just the one that happens to run the startup check.
+ */
+function setupUpdateSync() {
+  void listen<UpdateBroadcast>(UPDATE_OFFER_EVENT, (event) => {
+    if (event.payload.source === windowLabel) return;
+    // Not while this window is mid-download or mid-install: its bar is showing
+    // progress that another window's offer would overwrite, and the offer is for
+    // the same update it is already busy installing.
+    if (updateBusy || updateReadyToInstall) return;
+    showUpdateOffer(event.payload.info);
+  }).catch(() => {});
+
+  void listen<{ source: string }>(UPDATE_CLEARED_EVENT, (event) => {
+    if (event.payload.source === windowLabel) return;
+    if (updateBusy || updateReadyToInstall) return;
+    hideUpdateBar();
+  }).catch(() => {});
+}
+
+/**
+ * Adopt an offer that was made before this window existed.
+ *
+ * The broadcast above only reaches windows that are already open, so a document
+ * window opened by double-clicking a `.md` an hour into the session would
+ * otherwise be the one window with no idea. This asks Rust what is already on
+ * offer; it contacts nothing, so a window opening can never cause a network
+ * request.
+ */
+async function adoptPendingUpdate() {
+  if (updateConsent() !== "yes") return;
+  const info = await invoke<UpdateInfo | null>("get_pending_update").catch(
+    () => null,
+  );
+  if (info !== null) showUpdateOffer(info);
 }
 
 /**
@@ -2169,7 +2267,7 @@ async function checkForUpdate(userInitiated: boolean) {
     const info = await invoke<UpdateInfo | null>("check_for_update", {
       userInitiated,
     });
-    if (info !== null) showUpdateOffer(info);
+    if (info !== null) announceUpdateOffer(info);
     else if (userInitiated) {
       await uiAlert(`Monoleaf ${await getVersion()} is the latest version.`, {
         title: "No update available",
@@ -2275,7 +2373,7 @@ updateAction.addEventListener("click", () => {
 });
 document
   .getElementById("btn-dismiss-update")!
-  .addEventListener("click", hideUpdateBar);
+  .addEventListener("click", announceUpdateCleared);
 
 /**
  * The settings toggle. Renders off while consent is unset, because nothing is
@@ -2292,8 +2390,10 @@ function toggleUpdateChecks() {
     void checkForUpdate(true);
   } else {
     // Rust has to forget any downloaded update too, or install-on-click stays
-    // armed for a feature the user has just switched off.
-    hideUpdateBar();
+    // armed for a feature the user has just switched off. Broadcast, because a
+    // bar left standing in another window would still be able to install the
+    // thing this switch just turned off.
+    announceUpdateCleared();
     void invoke("discard_pending_update").catch(() => {});
   }
   view.focus();
@@ -2309,7 +2409,13 @@ function toggleUpdateChecks() {
  * one call site.
  */
 async function startupUpdateFlow() {
-  if (!isMainWindow) return; // one consent question per install, not per window
+  if (!isMainWindow) {
+    // Still no consent question and still no check — those stay the main
+    // window's job, one per install. What this window does need is whatever is
+    // already on offer, which costs no network and no dialog.
+    await adoptPendingUpdate();
+    return;
+  }
   if (updateConsent() === "unset") {
     const answer = await askUpdateConsent();
     localStorage.setItem(UPDATE_CONSENT_KEY, answer);
@@ -3126,6 +3232,9 @@ window.addEventListener(
 // window is in that state. The registration is an IPC round trip, so the gap
 // cannot be closed entirely — only kept as short as possible.
 setupRecoveryFlush();
+// Before the startup chain, so a check that finishes quickly in the main window
+// cannot broadcast its offer into a window that is not listening yet.
+setupUpdateSync();
 setupWindowControls();
 setupCloseGuard();
 applyViewClass();
