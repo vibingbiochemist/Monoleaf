@@ -105,6 +105,7 @@ import {
   setPageBreaks,
 } from "./pagination";
 import { getVersion } from "@tauri-apps/api/app";
+import { RECHECK_POLL_MS, dueForRecheck } from "./updates";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.md?raw";
 
 // Uncaught errors must be visible, not lost in an invisible console.
@@ -2106,6 +2107,13 @@ let updateReadyToInstall = false;
 let updateBusy = false;
 
 /**
+ * When the last check was made, and the tick that decides whether to make
+ * another. `null` until the first check of the session.
+ */
+let lastUpdateCheckAt: number | null = null;
+let recheckTimer: number | undefined;
+
+/**
  * Set for exactly one flush round when the user answers "Don't save" to the
  * install prompt in this window. See `installOfferedUpdate` for why this exists
  * instead of clearing `dirty`, and `setupRecoveryFlush` for what it does.
@@ -2165,6 +2173,10 @@ function showUpdateOffer(info: UpdateInfo) {
  * to dismiss whatever Monoleaf says.
  */
 async function checkForUpdate(userInitiated: boolean) {
+  // Stamped before the request, not after: a check that hangs until the 20s
+  // manifest timeout has still been made, and stamping on the way out would let
+  // every failed check re-arm the next tick to fire immediately.
+  lastUpdateCheckAt = Date.now();
   try {
     const info = await invoke<UpdateInfo | null>("check_for_update", {
       userInitiated,
@@ -2278,6 +2290,41 @@ document
   .addEventListener("click", hideUpdateBar);
 
 /**
+ * Keep checking while the app stays open.
+ *
+ * Monoleaf is left running for days, and one check at startup meant a long
+ * session got one check on the day it began — so the people who had said yes to
+ * being told were the ones least likely to hear anything.
+ *
+ * The tick is short and the interval is long, deliberately: see `RECHECK_POLL_MS`
+ * for why a `setInterval` of a day is the wrong instrument. What arrives here
+ * every half hour is a comparison of two numbers that almost always returns.
+ *
+ * ONE TIMER PER APP, in the main window, matching where the startup check runs.
+ * A per-window timer would multiply one app-global question by however many
+ * documents happened to be open.
+ */
+function startPeriodicUpdateChecks() {
+  if (!isMainWindow || recheckTimer !== undefined) return;
+  recheckTimer = window.setInterval(() => {
+    // Re-read rather than captured: consent can be switched off in another
+    // window, and this timer would otherwise outlive the permission it needs.
+    if (updateConsent() !== "yes") return;
+    // Nothing to gain and a race to lose: a check landing mid-download would
+    // replace the PendingUpdate the download is about to attach bytes to, and
+    // re-offering something already on screen just redraws the bar.
+    if (updateBusy || offeredUpdate !== null) return;
+    if (!dueForRecheck(Date.now(), lastUpdateCheckAt)) return;
+    void checkForUpdate(false);
+  }, RECHECK_POLL_MS);
+}
+
+function stopPeriodicUpdateChecks() {
+  window.clearInterval(recheckTimer);
+  recheckTimer = undefined;
+}
+
+/**
  * The settings toggle. Renders off while consent is unset, because nothing is
  * being checked in that state.
  */
@@ -2290,11 +2337,16 @@ function toggleUpdateChecks() {
     // evidence that the switch did anything, and a switch with no visible effect
     // reads as broken.
     void checkForUpdate(true);
+    startPeriodicUpdateChecks();
   } else {
     // Rust has to forget any downloaded update too, or install-on-click stays
     // armed for a feature the user has just switched off.
     hideUpdateBar();
     void invoke("discard_pending_update").catch(() => {});
+    // Stopped, not left ticking on a consent test. "Off means Monoleaf makes no
+    // network request of its own at all" is a promise in the toggle's own
+    // tooltip, and the cheapest way to keep it is to have nothing running.
+    stopPeriodicUpdateChecks();
   }
   view.focus();
 }
@@ -2316,7 +2368,10 @@ async function startupUpdateFlow() {
     refreshModeButtons();
     view.focus();
   }
-  if (updateConsent() === "yes") await checkForUpdate(false);
+  if (updateConsent() === "yes") {
+    await checkForUpdate(false);
+    startPeriodicUpdateChecks();
+  }
 }
 
 async function startupOpen() {
