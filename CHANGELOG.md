@@ -5,6 +5,26 @@ All notable changes to Monoleaf are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-08-07
+
+### Added
+
+- **Release notes in the update bar.** When an update is available, a collapsed
+  "What's new" disclosure under the offer shows the release notes, instead of
+  just a bare version number.
+- **Skip a specific update version.** A "Skip this version" button lets you
+  decline one release without turning update checks off entirely — a later
+  "Check for updates" still offers it, and the next release is unaffected.
+- **Periodic update rechecks.** Monoleaf now checks for updates roughly once a
+  day while it stays open, not only at startup, so a long-running session
+  doesn't miss a release.
+
+### Fixed
+
+- **The update offer now reaches every open window**, not just the one that
+  happened to check. Dismissing or skipping an update in one window now clears
+  it everywhere, instead of leaving other windows showing a stale offer.
+
 ## [1.0.0] - 2026-08-05
 
 ### Added
