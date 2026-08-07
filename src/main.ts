@@ -105,6 +105,12 @@ import {
   setPageBreaks,
 } from "./pagination";
 import { getVersion } from "@tauri-apps/api/app";
+import {
+  clearSkippedVersion,
+  isVersionSkipped,
+  releaseNotesText,
+  skipVersion,
+} from "./updates";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.md?raw";
 
 // Uncaught errors must be visible, not lost in an invisible console.
@@ -2077,6 +2083,8 @@ function updateConsent(): "yes" | "no" | "unset" {
 /** What `check_for_update` reports. */
 interface UpdateInfo {
   version: string;
+  /** The release body, as typed into GitHub — free text, not to be trusted as
+   * markup. `null` when the release was published without one. */
   notes: string | null;
 }
 
@@ -2099,6 +2107,10 @@ const updateProgress = document.getElementById(
 const updateAction = document.getElementById(
   "btn-update-action",
 ) as HTMLButtonElement;
+const updateNotes = document.getElementById(
+  "update-notes",
+) as HTMLDetailsElement;
+const updateNotesBody = document.getElementById("update-notes-body")!;
 
 /** The offer on screen in THIS window, and how far it has got. */
 let offeredUpdate: UpdateInfo | null = null;
@@ -2166,6 +2178,7 @@ interface UpdateBroadcast {
 function hideUpdateBar() {
   updateBar.hidden = true;
   updateProgress.hidden = true;
+  updateNotes.hidden = true;
   offeredUpdate = null;
   updateReadyToInstall = false;
 }
@@ -2184,6 +2197,18 @@ function showUpdateOffer(info: UpdateInfo) {
   updateAction.textContent = "Download";
   updateAction.disabled = false;
   updateAction.hidden = false;
+
+  // `textContent`, never `innerHTML`: this string came off the network, and the
+  // one rule that keeps that harmless is that it is never parsed as markup.
+  // Re-collapsed on every offer rather than left as the user last had it: a
+  // disclosure opened for one version would otherwise still be open when a later
+  // check offers the next one, so the bar would arrive at whatever height that
+  // body happens to need instead of the one line it is supposed to start at.
+  const notes = releaseNotesText(info.notes);
+  updateNotesBody.textContent = notes ?? "";
+  updateNotes.open = false;
+  updateNotes.hidden = notes === null;
+
   updateBar.hidden = false;
 }
 
@@ -2261,14 +2286,33 @@ async function adoptPendingUpdate() {
  * failures: a click is owed an answer, including "nothing to install", while an
  * automatic check that finds no network stays silent rather than teaching people
  * to dismiss whatever Monoleaf says.
+ *
+ * It now also decides whether a skipped version is honoured. An automatic check
+ * respects the skip, because that is what the user asked for. A click does not:
+ * "Check for updates" is a question about right now, and answering "you are up
+ * to date" when an update exists and is merely declined would be a lie — the one
+ * thing this bar cannot afford to be.
  */
 async function checkForUpdate(userInitiated: boolean) {
   try {
     const info = await invoke<UpdateInfo | null>("check_for_update", {
       userInitiated,
     });
-    if (info !== null) announceUpdateOffer(info);
-    else if (userInitiated) {
+    if (info !== null) {
+      if (!userInitiated && isVersionSkipped(info.version)) {
+        // check_for_update just repopulated PendingUpdate in Rust regardless of
+        // the skip, so it has to be discarded again here — otherwise a window
+        // opened after this point would adopt it via get_pending_update with no
+        // skip check of its own, and the declined version would reappear.
+        void invoke("discard_pending_update").catch(() => {});
+        return;
+      }
+      // Cleared before showing, never after: once this version is in the bar,
+      // storage saying it was declined would contradict the screen, and the next
+      // automatic check would hide it again with nothing to explain why.
+      clearSkippedVersion();
+      announceUpdateOffer(info);
+    } else if (userInitiated) {
       await uiAlert(`Monoleaf ${await getVersion()} is the latest version.`, {
         title: "No update available",
       });
@@ -2374,6 +2418,33 @@ updateAction.addEventListener("click", () => {
 document
   .getElementById("btn-dismiss-update")!
   .addEventListener("click", announceUpdateCleared);
+
+/**
+ * "Not this version" — the answer the bar previously had no way to express.
+ *
+ * Without it the only lasting way to decline a specific version was to switch
+ * update checks off, which declines every future version too and says nothing
+ * about having done so. Dismiss stays what it was, a hide until the next check.
+ *
+ * Rust is told as well, for the same reason `toggleUpdateChecks` tells it: an
+ * update left sitting in `PendingUpdate` keeps `install_update` armed, so a
+ * declined version could still be installed from a stale bar in another window.
+ */
+function skipOfferedVersion() {
+  // Read before `announceUpdateCleared`, which clears `offeredUpdate`.
+  const version = offeredUpdate?.version;
+  if (version !== undefined) skipVersion(version);
+  // Broadcast, not just local: another window may be showing this same offer
+  // (via announceUpdateOffer), and skipping here discards it in Rust too — left
+  // as a local-only hide, that window would keep a "Download" button wired to an
+  // update that no longer exists.
+  announceUpdateCleared();
+  void invoke("discard_pending_update").catch(() => {});
+}
+
+document
+  .getElementById("btn-skip-update")!
+  .addEventListener("click", skipOfferedVersion);
 
 /**
  * The settings toggle. Renders off while consent is unset, because nothing is
