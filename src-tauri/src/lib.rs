@@ -586,6 +586,26 @@ async fn check_for_update(
     }
 }
 
+/// What is currently on offer, for a window that was not open when the check
+/// happened.
+///
+/// Read-only, and deliberately so: it contacts nothing and decides nothing, it
+/// reports the state `check_for_update` already put there. That is what makes it
+/// safe to call from every window at startup — a window opening cannot cause a
+/// network request, which is the property the consent switch is protecting.
+///
+/// `None` in a debug build, because `check_for_update` never populates the state
+/// there. No `cfg` needed to arrange that; it falls out.
+#[tauri::command]
+fn get_pending_update(app: AppHandle) -> Option<UpdateInfo> {
+    let state = app.state::<PendingUpdate>();
+    let guard = state.0.lock().unwrap_or_else(|e| e.into_inner());
+    guard.as_ref().map(|pending| UpdateInfo {
+        version: pending.update.version.clone(),
+        notes: pending.update.body.clone(),
+    })
+}
+
 /// Download the update found by `check_for_update`, reporting progress.
 #[tauri::command]
 async fn download_update(
@@ -950,6 +970,7 @@ pub fn run() {
             open_document_window,
             take_window_payload,
             check_for_update,
+            get_pending_update,
             download_update,
             install_update,
             discard_pending_update,
