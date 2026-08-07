@@ -88,8 +88,12 @@ jobs:
       # THIRD_PARTY_LICENSES.md. This runs the same generator on every push/PR,
       # against a throwaway output path: the check is the exit code, not the
       # file. Version-pinned with --locked for the same reason cargo-audit is
-      # below.
-      - run: cargo install cargo-about --version 0.9.1 --locked
+      # below. `--features cli` is required, not optional: the crate ships its
+      # binary behind that feature, so a plain `cargo install cargo-about`
+      # compiles successfully and installs nothing, and `cargo about generate`
+      # then fails with "no such command: about" — this broke every PR's gate
+      # the moment it landed, caught within minutes via the first Dependabot PRs.
+      - run: cargo install cargo-about --version 0.9.1 --locked --features cli
       - run: cargo about generate --manifest-path src-tauri/Cargo.toml
           -o "$RUNNER_TEMP/third-party-licenses.md" src-tauri/about.hbs
       # npm + cargo advisory checks. The suppression list and the reasoning for
