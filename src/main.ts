@@ -2,7 +2,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { editorSetup, rawViewExtensions } from "./setup";
 import { Compartment, Prec, StateCommand } from "@codemirror/state";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -105,7 +105,14 @@ import {
   setPageBreaks,
 } from "./pagination";
 import { getVersion } from "@tauri-apps/api/app";
-import { RECHECK_POLL_MS, dueForRecheck } from "./updates";
+import {
+  clearSkippedVersion,
+  dueForRecheck,
+  isVersionSkipped,
+  RECHECK_POLL_MS,
+  releaseNotesText,
+  skipVersion,
+} from "./updates";
 import thirdPartyLicenses from "../THIRD_PARTY_LICENSES.md?raw";
 
 // Uncaught errors must be visible, not lost in an invisible console.
@@ -2078,6 +2085,8 @@ function updateConsent(): "yes" | "no" | "unset" {
 /** What `check_for_update` reports. */
 interface UpdateInfo {
   version: string;
+  /** The release body, as typed into GitHub — free text, not to be trusted as
+   * markup. `null` when the release was published without one. */
   notes: string | null;
 }
 
@@ -2100,6 +2109,10 @@ const updateProgress = document.getElementById(
 const updateAction = document.getElementById(
   "btn-update-action",
 ) as HTMLButtonElement;
+const updateNotes = document.getElementById(
+  "update-notes",
+) as HTMLDetailsElement;
+const updateNotesBody = document.getElementById("update-notes-body")!;
 
 /** The offer on screen in THIS window, and how far it has got. */
 let offeredUpdate: UpdateInfo | null = null;
@@ -2148,13 +2161,43 @@ function askUpdateConsent(): Promise<"yes" | "no"> {
   });
 }
 
+/**
+ * How windows tell each other what the user has been offered and what they have
+ * done about it.
+ *
+ * The offer is app-global — Rust holds one `PendingUpdate` for the process — but
+ * the bar showing it was per-window, and only the main window ever checked. In a
+ * session with a document window open, which is the ordinary way this app gets
+ * used, the offer appeared in a window the user might not be looking at and the
+ * one they *were* in showed nothing.
+ *
+ * Every payload carries the label of the window that sent it, and every listener
+ * ignores its own: `emit` delivers to all webviews including the sender, so
+ * without that the deciding window would immediately re-render from its own
+ * broadcast.
+ */
+const UPDATE_OFFER_EVENT = "update-offer";
+const UPDATE_CLEARED_EVENT = "update-cleared";
+
+interface UpdateBroadcast {
+  source: string;
+  info: UpdateInfo;
+}
+
 function hideUpdateBar() {
   updateBar.hidden = true;
   updateProgress.hidden = true;
+  updateNotes.hidden = true;
   offeredUpdate = null;
   updateReadyToInstall = false;
 }
 
+/**
+ * Put an offer on screen in THIS window. Display only — see
+ * `announceUpdateOffer` for the one that tells the other windows, and note that
+ * the listener below deliberately calls this one, which is what stops a
+ * broadcast from echoing.
+ */
 function showUpdateOffer(info: UpdateInfo) {
   offeredUpdate = info;
   updateReadyToInstall = false;
@@ -2163,7 +2206,88 @@ function showUpdateOffer(info: UpdateInfo) {
   updateAction.textContent = "Download";
   updateAction.disabled = false;
   updateAction.hidden = false;
+
+  // `textContent`, never `innerHTML`: this string came off the network, and the
+  // one rule that keeps that harmless is that it is never parsed as markup.
+  // Re-collapsed on every offer rather than left as the user last had it: a
+  // disclosure opened for one version would otherwise still be open when a later
+  // check offers the next one, so the bar would arrive at whatever height that
+  // body happens to need instead of the one line it is supposed to start at.
+  const notes = releaseNotesText(info.notes);
+  updateNotesBody.textContent = notes ?? "";
+  updateNotes.open = false;
+  updateNotes.hidden = notes === null;
+
   updateBar.hidden = false;
+}
+
+/**
+ * Show an offer here and in every other window.
+ *
+ * Called only from the paths that have *decided* to offer, never from the
+ * listener. Keeping the decision on this side rather than broadcasting from Rust
+ * is what lets a policy that lives in the frontend — consent, and anything later
+ * that suppresses an offer — apply once, in the window that made the call,
+ * instead of having to be re-implemented in every listener.
+ */
+function announceUpdateOffer(info: UpdateInfo) {
+  showUpdateOffer(info);
+  const payload: UpdateBroadcast = { source: windowLabel, info };
+  // A failure here costs the other windows their banner and nothing else, so it
+  // must not take down the offer in the window that actually found it.
+  void emit(UPDATE_OFFER_EVENT, payload).catch(() => {});
+}
+
+/**
+ * Take the offer down here and in every other window.
+ *
+ * Dismiss means "not now" for the app, not for one window: the alternative is a
+ * bar the user has already dealt with waiting for them behind every other
+ * document they had open.
+ */
+function announceUpdateCleared() {
+  hideUpdateBar();
+  void emit(UPDATE_CLEARED_EVENT, { source: windowLabel }).catch(() => {});
+}
+
+/**
+ * Listen for what the other windows have decided.
+ *
+ * Runs in every window, including the main one — the main window is not
+ * privileged here, it is just the one that happens to run the startup check.
+ */
+function setupUpdateSync() {
+  void listen<UpdateBroadcast>(UPDATE_OFFER_EVENT, (event) => {
+    if (event.payload.source === windowLabel) return;
+    // Not while this window is mid-download or mid-install: its bar is showing
+    // progress that another window's offer would overwrite, and the offer is for
+    // the same update it is already busy installing.
+    if (updateBusy || updateReadyToInstall) return;
+    showUpdateOffer(event.payload.info);
+  }).catch(() => {});
+
+  void listen<{ source: string }>(UPDATE_CLEARED_EVENT, (event) => {
+    if (event.payload.source === windowLabel) return;
+    if (updateBusy || updateReadyToInstall) return;
+    hideUpdateBar();
+  }).catch(() => {});
+}
+
+/**
+ * Adopt an offer that was made before this window existed.
+ *
+ * The broadcast above only reaches windows that are already open, so a document
+ * window opened by double-clicking a `.md` an hour into the session would
+ * otherwise be the one window with no idea. This asks Rust what is already on
+ * offer; it contacts nothing, so a window opening can never cause a network
+ * request.
+ */
+async function adoptPendingUpdate() {
+  if (updateConsent() !== "yes") return;
+  const info = await invoke<UpdateInfo | null>("get_pending_update").catch(
+    () => null,
+  );
+  if (info !== null) showUpdateOffer(info);
 }
 
 /**
@@ -2171,6 +2295,12 @@ function showUpdateOffer(info: UpdateInfo) {
  * failures: a click is owed an answer, including "nothing to install", while an
  * automatic check that finds no network stays silent rather than teaching people
  * to dismiss whatever Monoleaf says.
+ *
+ * It now also decides whether a skipped version is honoured. An automatic check
+ * respects the skip, because that is what the user asked for. A click does not:
+ * "Check for updates" is a question about right now, and answering "you are up
+ * to date" when an update exists and is merely declined would be a lie — the one
+ * thing this bar cannot afford to be.
  */
 async function checkForUpdate(userInitiated: boolean) {
   // Stamped before the request, not after: a check that hangs until the 20s
@@ -2181,8 +2311,21 @@ async function checkForUpdate(userInitiated: boolean) {
     const info = await invoke<UpdateInfo | null>("check_for_update", {
       userInitiated,
     });
-    if (info !== null) showUpdateOffer(info);
-    else if (userInitiated) {
+    if (info !== null) {
+      if (!userInitiated && isVersionSkipped(info.version)) {
+        // check_for_update just repopulated PendingUpdate in Rust regardless of
+        // the skip, so it has to be discarded again here — otherwise a window
+        // opened after this point would adopt it via get_pending_update with no
+        // skip check of its own, and the declined version would reappear.
+        void invoke("discard_pending_update").catch(() => {});
+        return;
+      }
+      // Cleared before showing, never after: once this version is in the bar,
+      // storage saying it was declined would contradict the screen, and the next
+      // automatic check would hide it again with nothing to explain why.
+      clearSkippedVersion();
+      announceUpdateOffer(info);
+    } else if (userInitiated) {
       await uiAlert(`Monoleaf ${await getVersion()} is the latest version.`, {
         title: "No update available",
       });
@@ -2287,7 +2430,34 @@ updateAction.addEventListener("click", () => {
 });
 document
   .getElementById("btn-dismiss-update")!
-  .addEventListener("click", hideUpdateBar);
+  .addEventListener("click", announceUpdateCleared);
+
+/**
+ * "Not this version" — the answer the bar previously had no way to express.
+ *
+ * Without it the only lasting way to decline a specific version was to switch
+ * update checks off, which declines every future version too and says nothing
+ * about having done so. Dismiss stays what it was, a hide until the next check.
+ *
+ * Rust is told as well, for the same reason `toggleUpdateChecks` tells it: an
+ * update left sitting in `PendingUpdate` keeps `install_update` armed, so a
+ * declined version could still be installed from a stale bar in another window.
+ */
+function skipOfferedVersion() {
+  // Read before `announceUpdateCleared`, which clears `offeredUpdate`.
+  const version = offeredUpdate?.version;
+  if (version !== undefined) skipVersion(version);
+  // Broadcast, not just local: another window may be showing this same offer
+  // (via announceUpdateOffer), and skipping here discards it in Rust too — left
+  // as a local-only hide, that window would keep a "Download" button wired to an
+  // update that no longer exists.
+  announceUpdateCleared();
+  void invoke("discard_pending_update").catch(() => {});
+}
+
+document
+  .getElementById("btn-skip-update")!
+  .addEventListener("click", skipOfferedVersion);
 
 /**
  * Keep checking while the app stays open.
@@ -2340,8 +2510,10 @@ function toggleUpdateChecks() {
     startPeriodicUpdateChecks();
   } else {
     // Rust has to forget any downloaded update too, or install-on-click stays
-    // armed for a feature the user has just switched off.
-    hideUpdateBar();
+    // armed for a feature the user has just switched off. Broadcast, because a
+    // bar left standing in another window would still be able to install the
+    // thing this switch just turned off.
+    announceUpdateCleared();
     void invoke("discard_pending_update").catch(() => {});
     // Stopped, not left ticking on a consent test. "Off means Monoleaf makes no
     // network request of its own at all" is a promise in the toggle's own
@@ -2361,7 +2533,13 @@ function toggleUpdateChecks() {
  * one call site.
  */
 async function startupUpdateFlow() {
-  if (!isMainWindow) return; // one consent question per install, not per window
+  if (!isMainWindow) {
+    // Still no consent question and still no check — those stay the main
+    // window's job, one per install. What this window does need is whatever is
+    // already on offer, which costs no network and no dialog.
+    await adoptPendingUpdate();
+    return;
+  }
   if (updateConsent() === "unset") {
     const answer = await askUpdateConsent();
     localStorage.setItem(UPDATE_CONSENT_KEY, answer);
@@ -3181,6 +3359,9 @@ window.addEventListener(
 // window is in that state. The registration is an IPC round trip, so the gap
 // cannot be closed entirely — only kept as short as possible.
 setupRecoveryFlush();
+// Before the startup chain, so a check that finishes quickly in the main window
+// cannot broadcast its offer into a window that is not listening yet.
+setupUpdateSync();
 setupWindowControls();
 setupCloseGuard();
 applyViewClass();

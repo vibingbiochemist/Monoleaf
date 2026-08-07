@@ -887,6 +887,9 @@ html.theme-dark .brand-dark {
   right: 0;
   z-index: 199;
   display: flex;
+  /* So the release notes can take a row of their own without disturbing the
+     controls; nothing else in the bar is wide enough to wrap on its own. */
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 8px 14px;
@@ -898,6 +901,34 @@ html.theme-dark .brand-dark {
 
 #update-bar #update-text {
   flex: 1;
+}
+
+#update-bar #update-notes[hidden] {
+  display: none;
+}
+
+/* A full-width row of its own, below the controls. */
+#update-bar #update-notes {
+  flex: 0 0 100%;
+}
+
+#update-bar #update-notes summary {
+  cursor: pointer;
+  /* The disclosure is a control among buttons; underlining says so without
+     giving it a border and the visual weight of one. */
+  text-decoration: underline;
+}
+
+/* Capped rather than truncated: a long release body scrolls here instead of
+   pushing the editor up, and nothing is withheld from the user. */
+#update-bar #update-notes-body {
+  max-height: 8.5em;
+  overflow-y: auto;
+  margin-top: 6px;
+  /* The body is displayed as the plain text it is — deliberately not run
+     through markdown-it, which is reserved for document content. */
+  white-space: pre-wrap;
+  font-family: Consolas, monospace;
 }
 
 #update-bar progress {
@@ -913,6 +944,10 @@ html.theme-dark .brand-dark {
   border-radius: 5px;
   padding: 3px 10px;
   cursor: pointer;
+  /* Three buttons now share the row, and #update-text is the only flexible
+     item; without this "Skip this version" wraps to two lines in a narrow
+     window and drags the bar's height with it. */
+  white-space: nowrap;
 }
 
 #update-bar button[disabled] {
