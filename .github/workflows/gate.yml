@@ -53,7 +53,8 @@ jobs:
       # Python-2.0 (argparse). A new dependency outside this list fails the build
       # rather than silently entering it; adding to the list is a deliberate,
       # reviewable change, same as adding to about.toml's `accepted`.
-      - run: npx license-checker-rseidelsohn --production --excludePrivatePackages
+      - run:
+          npx license-checker-rseidelsohn --production --excludePrivatePackages
           --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;MPL-2.0;Python-2.0"
 
   # The Rust unit tests (byte-exact file round-trip, write-path allow-list,
