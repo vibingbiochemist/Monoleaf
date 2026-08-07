@@ -42,6 +42,19 @@ jobs:
       - run: npm run lint
       - run: npm run format:check
       - run: npm test
+      # JS-side license gate. The Rust tree already has one (src-tauri/about.toml,
+      # enforced below) but nothing stopped a GPL/AGPL package from entering the
+      # JS tree — license-checker-rseidelsohn was only ever used to generate
+      # THIRD_PARTY_LICENSES.md text, never to fail on anything. --onlyAllow is a
+      # positive list, matching about.toml's own approach, built from what is
+      # actually in the tree today (`npx license-checker-rseidelsohn --production
+      # --excludePrivatePackages --summary`): MIT, Apache-2.0, BSD-2/3-Clause,
+      # ISC, CC0-1.0, MPL-2.0 (dompurify's OR-alternative to Apache-2.0) and
+      # Python-2.0 (argparse). A new dependency outside this list fails the build
+      # rather than silently entering it; adding to the list is a deliberate,
+      # reviewable change, same as adding to about.toml's `accepted`.
+      - run: npx license-checker-rseidelsohn --production --excludePrivatePackages
+          --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;MPL-2.0;Python-2.0"
 
   # The Rust unit tests (byte-exact file round-trip, write-path allow-list,
   # launch-arg parsing) need the toolchain and a built frontend, since compiling
@@ -67,6 +80,18 @@ jobs:
       - run: npm run build # dist/ is needed for Tauri's generate_context!
       - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
       - run: cargo test --manifest-path src-tauri/Cargo.toml
+      # Rust-side license gate. src-tauri/about.toml's `accepted` list already
+      # makes cargo-about fail on anything outside it (e.g. GPL) — but until now
+      # the only thing that ever ran cargo-about was `npm run licenses`, a manual
+      # step during release prep, so a disallowed license landing between
+      # releases would not be caught until someone remembered to regenerate
+      # THIRD_PARTY_LICENSES.md. This runs the same generator on every push/PR,
+      # against a throwaway output path: the check is the exit code, not the
+      # file. Version-pinned with --locked for the same reason cargo-audit is
+      # below.
+      - run: cargo install cargo-about --version 0.9.1 --locked
+      - run: cargo about generate --manifest-path src-tauri/Cargo.toml
+          -o "$RUNNER_TEMP/third-party-licenses.md" src-tauri/about.hbs
       # npm + cargo advisory checks. The suppression list and the reasoning for
       # it live in the action, once, so no caller can drift from another.
       - uses: ./.github/actions/audit
