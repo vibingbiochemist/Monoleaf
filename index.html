@@ -911,6 +911,12 @@
         Skip this version
       </button>
       <button id="btn-dismiss-update">Dismiss</button>
+      <!-- Last in the DOM so the controls keep the first row and the notes wrap
+           onto their own; collapsed by default so the bar keeps its height. -->
+      <details id="update-notes" hidden>
+        <summary>What's new</summary>
+        <div id="update-notes-body"></div>
+      </details>
     </div>
     <div id="pagination-measure" aria-hidden="true"></div>
     <div id="print-preview" hidden>
