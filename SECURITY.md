@@ -6,8 +6,8 @@ Security fixes are applied to the latest released version.
 
 | Version | Supported |
 | ------- | --------- |
-| 0.9.x   | ✅        |
-| < 0.9   | ❌        |
+| 1.0.x   | ✅        |
+| < 1.0   | ❌        |
 
 ## Reporting a vulnerability
 
