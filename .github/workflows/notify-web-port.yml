@@ -1,0 +1,130 @@
+# Monoleaf_web keeps its own copy of the editor core (src/*.ts) rather than
+# depending on this repo, but as of 2026-08-13 that copy is byte-identical to
+# this one for every file in SHARED_FILES below. This workflow notices when a
+# push to main touches one of those files and tells Monoleaf_web about it, so
+# a human doesn't have to remember to port the change by hand.
+#
+# It does not push code anywhere itself. It sends a repository_dispatch to
+# Monoleaf_web; that repo's own upstream-sync.yml workflow does the actual
+# copying and opens a PR there, gated by Monoleaf_web's normal CI. Splitting
+# it this way means this repo never needs write access to anything but its
+# own dispatch call.
+#
+# SHARED_FILES is a hand-maintained list, not derived, because there is no way
+# to share a file across two repos here. Monoleaf_web's upstream-sync.yml
+# keeps the matching copy. If a new file is added to src/ and it's meant to
+# stay a verbatim copy in the web port, add it to BOTH lists — otherwise it
+# silently never syncs.
+name: notify-web-port
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+
+      # main.ts and styles.css are deliberately excluded: they differ today
+      # (Tauri bootstrap vs browser bootstrap) and are expected to keep
+      # differing. Anything under src-tauri/ has no web equivalent at all.
+      - name: Check whether this push touched a shared file
+        id: diff
+        run: |
+          SHARED_FILES="$(cat <<'EOF'
+          src/admonitions.ts
+          src/admonitions.test.ts
+          src/commands.ts
+          src/commands.test.ts
+          src/commands.edge.test.ts
+          src/commands.repro.test.ts
+          src/comments.ts
+          src/comments.test.ts
+          src/contextmenu.ts
+          src/critic.ts
+          src/critic.test.ts
+          src/document.ts
+          src/document.test.ts
+          src/export.ts
+          src/export.test.ts
+          src/footnotes.ts
+          src/footnotes.test.ts
+          src/htmlcomment.ts
+          src/htmlcomment.test.ts
+          src/livepreview.ts
+          src/livepreview.test.ts
+          src/math.ts
+          src/math.test.ts
+          src/meta.ts
+          src/meta.test.ts
+          src/outline.ts
+          src/pagination.ts
+          src/pagination.test.ts
+          src/paste.ts
+          src/paste.test.ts
+          src/portability.ts
+          src/portability.test.ts
+          src/ranges.ts
+          src/ranges.test.ts
+          src/recovery.ts
+          src/recovery.test.ts
+          src/remoteimages.ts
+          src/remoteimages.test.ts
+          src/repro.test.ts
+          src/sanitize.ts
+          src/sanitize.test.ts
+          src/setup.ts
+          src/shims.d.ts
+          src/sidebar.ts
+          src/table.ts
+          src/table.test.ts
+          src/tablecell.ts
+          src/tablecell.test.ts
+          src/tablewidget.ts
+          src/tablewidget.test.ts
+          src/toc.test.ts
+          src/wordcount.ts
+          src/wordcount.test.ts
+          EOF
+          )"
+
+          CHANGED="$(git diff --name-only "${{ github.event.before }}" "${{ github.event.after }}")"
+          MATCHED="$(comm -12 <(echo "$SHARED_FILES" | sort) <(echo "$CHANGED" | sort))"
+
+          if [ -z "$MATCHED" ]; then
+            echo "matched=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "matched=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "files<<FILES_EOF"
+              echo "$MATCHED"
+              echo "FILES_EOF"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      # WEB_PORT_DISPATCH_TOKEN: a fine-grained PAT scoped to ONLY
+      # vibingbiochemist/Monoleaf_web, with Contents: read/write. The default
+      # GITHUB_TOKEN can't be used because a workflow's own token cannot
+      # trigger anything in a different repository.
+      - name: Dispatch to Monoleaf_web
+        if: steps.diff.outputs.matched == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.WEB_PORT_DISPATCH_TOKEN }}
+        run: |
+          jq -n \
+            --arg sha "${{ github.sha }}" \
+            --arg files "${{ steps.diff.outputs.files }}" \
+            '{event_type: "upstream-shared-file-change",
+              client_payload: {sha: $sha, files: ($files | split("\n") | map(select(length > 0)))}}' \
+          | gh api repos/vibingbiochemist/Monoleaf_web/dispatches --input -
