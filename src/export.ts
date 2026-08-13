@@ -1,4 +1,4 @@
-import MarkdownIt from "markdown-it";
+import MarkdownIt, { type StateCore } from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import sub from "markdown-it-sub";
 import sup from "markdown-it-sup";
@@ -273,8 +273,8 @@ const STRIP_RES = [
  * that must survive fragmentation has to live on the element (same lesson as
  * the table borders and code highlighting).
  */
-function installAdmonitions(md: MarkdownIt): void {
-  md.core.ruler.after("block", "ml_admonitions", (state) => {
+function installAdmonitions(md: InstanceType<typeof MarkdownIt>): void {
+  md.core.ruler.after("block", "ml_admonitions", (state: StateCore) => {
     const tokens = state.tokens;
     const TokenCtor = tokens.length > 0 ? tokens[0].constructor : null;
     if (TokenCtor === null) return;
@@ -394,7 +394,7 @@ export function renderDocumentHtml(
     md.renderer.rules.image ??
     ((tokens, idx, opts, _env, self) => self.renderToken(tokens, idx, opts));
   md.renderer.rules.image = (tokens, idx, opts, env, self) => {
-    const src = tokens[idx].attrGet("src") ?? "";
+    const src = String(tokens[idx].attrGet("src") ?? "");
     if (isRemoteUrl(src) && !remoteImagesAllowed()) {
       return tokens[idx].content ?? "";
     }
