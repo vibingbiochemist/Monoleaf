@@ -2552,13 +2552,17 @@ async function startupUpdateFlow() {
   }
 }
 
-async function startupOpen() {
+async function startupOpen(nameSettled: Promise<unknown>) {
   const launched = await invoke<string | null>("take_launch_file").catch(
     () => null,
   );
 
   let drafts = collectRecoveryDrafts();
   if (drafts.length > 0) {
+    // Wait for a pending name prompt to close before raising this one — otherwise
+    // it stacks on top of an unanswered name dialog. Everything above (the launch
+    // file lookup, collecting drafts) still runs without waiting.
+    await nameSettled;
     const restore = await uiConfirm(
       drafts.length === 1
         ? `Monoleaf has unsaved changes from your last session (${draftName(drafts[0].path)}). Recover them?`
@@ -2598,6 +2602,8 @@ async function startupOpen() {
   } else if (reopenLastEnabled) {
     const last = localStorage.getItem(LAST_FILE_KEY);
     if (last !== null) {
+      // Same reasoning as the recovery prompt above: don't stack on the name dialog.
+      await nameSettled;
       const reopen = await uiConfirm(
         `Reopen your last document (${draftName(last)})?`,
         {
@@ -3380,20 +3386,24 @@ view.focus();
 //
 // Three things can raise a modal at startup: the name prompt, the recovery prompt
 // inside startupOpen, and the update-consent dialog. They use three different
-// <dialog> elements, so nothing stops them stacking — a second showModal() simply
-// opens on top of the first.
+// <dialog> elements, so nothing stops them stacking at the DOM level — a second
+// showModal() simply opens on top of the first. Ordering is imposed here instead.
 //
-// The rule imposed here is that consent goes last, after both of the others have
-// settled. It is the only one of the three that is not about the document in front
-// of the user, so it is the one that must wait; and asking for permission to talk
-// to the network on top of "recover your unsaved work?" would be the worst of the
-// possible orders.
+// The name prompt goes first: promptForName's showModal() runs synchronously
+// (before startupOpen's first await), so if a name prompt is needed it is already
+// open by the time anything else could raise a dialog. startupOpen is still free
+// to run its own non-modal work (take_launch_file, collecting recovery drafts,
+// loading a launched file) concurrently with it — only its own showModal() calls
+// wait on nameSettled, so a pending name prompt never gets a recovery or
+// reopen-last prompt stacked on top of it.
+//
+// Consent goes last, after both of the others have settled. It is the only one
+// of the three that is not about the document in front of the user, so it is the
+// one that must wait; and asking for permission to talk to the network on top of
+// "recover your unsaved work?" would be the worst of the possible orders.
 //
 // `allSettled`, not `all`: a rejection in either of the first two must not swallow
-// the consent question. Deliberately NOT restructured into a single sequential
-// chain — the name prompt and startupOpen keep running concurrently exactly as
-// they did before, because making them sequential would quietly change existing
-// behaviour (see the note about their stacking in the step-5b report).
+// the consent question.
 const namePrompted: Promise<unknown> = localStorage.getItem(AUTHOR_KEY)?.trim()
   ? Promise.resolve()
   : // First startup: ask for the name once; it signs all comments and replies.
@@ -3409,7 +3419,7 @@ const namePrompted: Promise<unknown> = localStorage.getItem(AUTHOR_KEY)?.trim()
 // session, then reopen the last document. Other windows: load whatever they
 // were opened for (a file, or a draft to recover).
 const startupOpened: Promise<unknown> = isMainWindow
-  ? startupOpen()
+  ? startupOpen(namePrompted)
   : startupChild();
 
 void Promise.allSettled([namePrompted, startupOpened]).then(startupUpdateFlow);
