@@ -774,7 +774,7 @@ fn flush_recovery_snapshots(app: &AppHandle) -> Result<(), String> {
             })
             .collect();
         return Err(format!(
-            "Update postponed: {} did not confirm saving its unsaved work.",
+            "Update postponed: {} hasn't confirmed saving its unsaved work yet.",
             named.join(", ")
         ));
     }
