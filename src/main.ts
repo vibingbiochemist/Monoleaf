@@ -2400,7 +2400,14 @@ async function installOfferedUpdate() {
 
   updateBusy = true;
   updateAction.disabled = true;
-  updateText.textContent = "Installing…";
+  // Named for the phase that is actually visible: install_update spends its
+  // observable time waiting on every window's flush acknowledgement (up to
+  // FLUSH_ACK_TIMEOUT), and the native install + relaunch after that is
+  // effectively instantaneous — the process is gone before this could update
+  // again. "Installing…" during the wait misread as progress, making the
+  // eventual postponement read as an unexplained failure rather than a wait
+  // that ran out.
+  updateText.textContent = "Saving unsaved windows…";
   try {
     await invoke("install_update");
     // Not reached on success: the installer takes over and the process exits.
