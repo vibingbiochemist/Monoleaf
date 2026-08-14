@@ -1,4 +1,10 @@
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import {
+  defaultKeymap,
+  history,
+  historyKeymap,
+  indentLess,
+  insertTab,
+} from "@codemirror/commands";
 import {
   bracketMatching,
   defaultHighlightStyle,
@@ -51,6 +57,15 @@ export const editorSetup: Extension = [
     ...searchKeymap,
     ...historyKeymap,
     ...foldKeymap,
+    // defaultKeymap has no Tab binding at all (CodeMirror leaves it free for
+    // browser focus navigation by default), which is why Tab was landing on
+    // the toolbar instead of the document. insertTab puts a tab character at
+    // the cursor, or indents every selected line when there's a selection —
+    // the same split codemirror.net's own examples use, and it matches what a
+    // Word-like editor's users expect from the key. This doesn't trap
+    // keyboard focus: CodeMirror's core view already treats Escape as "let
+    // the next Tab through to the browser" independent of this keymap.
+    { key: "Tab", run: insertTab, shift: indentLess },
   ]),
 ];
 
