@@ -12,7 +12,7 @@ What you write stays plain Markdown that any editor, GitHub, or an LLM can read.
 
 [![version](https://img.shields.io/github/v/release/vibingbiochemist/Monoleaf?label=version&color=E8A33D)](https://github.com/vibingbiochemist/Monoleaf/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-Windows-0078D6)](https://github.com/vibingbiochemist/Monoleaf/releases)
+[![platform](https://img.shields.io/badge/platform-Windows_%26_Linux-0078D6)](https://github.com/vibingbiochemist/Monoleaf/releases)
 [![built with Tauri](https://img.shields.io/badge/built%20with-Tauri%20%2B%20CodeMirror-24C8DB)](https://tauri.app)
 
 [**monoleaf.org**](https://monoleaf.org) · [Download](https://github.com/vibingbiochemist/Monoleaf/releases) · [Report an issue](https://github.com/vibingbiochemist/Monoleaf/issues)
@@ -119,10 +119,14 @@ writing docs, anyone who wants their work to still open cleanly in ten years.
   references, which tells whoever wrote it when and from where you opened it.
   A blocked image shows as its alt text instead
 
-## Download & install (Windows)
+## Download & install
 
-Grab the latest installer from the
-[**Releases**](https://github.com/vibingbiochemist/Monoleaf/releases) page and run it.
+Grab the latest release from the
+[**Releases**](https://github.com/vibingbiochemist/Monoleaf/releases) page.
+
+### Windows
+
+Run the installer.
 
 - Installs **per-user**, with **no administrator rights** required.
 - If your machine lacks the Microsoft **WebView2** runtime, the installer
@@ -133,6 +137,21 @@ Grab the latest installer from the
 > paying a commercial certificate authority every year, which is hard to justify for
 > a free tool with one maintainer, so it is **not planned** rather than pending. If
 > you would rather not run an unsigned binary, build it yourself: see below.
+
+### Linux
+
+Download the `.AppImage`, make it executable, and run it:
+
+```bash
+chmod +x Monoleaf_*.AppImage
+./Monoleaf_*.AppImage
+```
+
+> **Note:** the Linux build is **community-tested, best-effort** — it isn't
+> exercised as broadly as Windows, so please
+> [file an issue](https://github.com/vibingbiochemist/Monoleaf/issues) if you
+> hit a problem with it. Unlike Windows, there is no OS-level signing prompt to
+> click through: AppImage runs directly, with no publisher warning.
 
 ## Build from source
 
@@ -146,22 +165,25 @@ npm run tauri build    # build the installer → src-tauri/target/release/bundle
 
 ### Platform support
 
-**Windows is the tested and distributed target.** Monoleaf is a Tauri app, so the
-same source builds on macOS and Linux, and `npm run tauri build` produces a
-`.dmg` or `.AppImage`. But be aware of what that does and does not mean:
+**Windows and Linux are distributed; Windows is the more thoroughly tested of
+the two.** Monoleaf is a Tauri app, so the same source also builds on macOS,
+and `npm run tauri build` produces a `.dmg` there. Where each platform stands:
 
-- They **do compile**: CI builds all three platforms on every push, so a break
-  would be caught. What is missing is human testing. Nobody has run the `.dmg` or
-  the `.AppImage` and checked that the editor behaves, so treat them as untested
-  rather than broken.
-- They are **not distributed**. Only the Windows installer is published, and the
-  macOS and Linux bundles would be unsigned too.
+- **Windows**: primary target, most exercised.
+- **Linux**: shipped as an AppImage, but community-tested rather than
+  exercised as broadly as Windows — see the note in the download section
+  above.
+- **macOS**: **not distributed**. CI builds the `.dmg` on every push, so a
+  compile break would be caught, but nobody has run it and checked that the
+  editor behaves, and an unsigned/unnotarized `.dmg` hits Gatekeeper hard
+  enough (not a simple click-through, unlike Windows or Linux) that shipping
+  it well needs a paid Apple Developer account first.
 - Everything the editor does is portable in principle. Native spell-checking is
   the one Windows-specific feature, and it is compiled out elsewhere rather than
   breaking the build.
 
-If you build on macOS or Linux, reports either way are welcome: that is the
-fastest route to making them supported rather than incidental.
+If you build on macOS, or hit anything on Linux, reports either way are
+welcome — that is the fastest route to making both fully supported.
 
 ## Keyboard shortcuts
 
