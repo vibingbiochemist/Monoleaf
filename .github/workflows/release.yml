@@ -2,13 +2,17 @@
 #
 #     git tag v1.0.0 && git push origin v1.0.0
 #
-# It runs the tests, builds the Windows installer, and creates a DRAFT GitHub
-# Release with the installer attached — you review and click "Publish" so
-# nothing goes public by accident. (Can also be run manually from the Actions
-# tab via workflow_dispatch, from a tagged commit.)
+# It runs the tests, builds the Windows installer and the Linux AppImage, and
+# creates a DRAFT GitHub Release with both attached — you review and click
+# "Publish" so nothing goes public by accident. (Can also be run manually from
+# the Actions tab via workflow_dispatch, from a tagged commit.)
 #
-# Windows-only for now: it is the tested, primary target. macOS/Linux are built
-# for verification by build.yml but not shipped until they can be tested/signed.
+# Windows is the tested, primary target. Linux ships too, labeled best-effort in
+# the release body below — it is community-tested (works on at least one real
+# machine outside CI), not exercised as broadly as Windows. macOS stays
+# verification-only in build.yml: unlike the other two, an unsigned/unnotarized
+# .dmg is a hard Gatekeeper block for most users rather than a click-through
+# warning, so shipping it needs a paid Apple Developer account first.
 name: release
 
 on:
@@ -127,7 +131,19 @@ jobs:
   release:
     if: ${{ !inputs.updater_dry_run }}
     needs: [version, gate]
-    runs-on: windows-latest
+    # Two platforms, one release: both legs target the same tagName, and
+    # tauri-action's own find-or-create-by-tag logic (not a separate
+    # create-release job) is what upstream's own multi-platform example relies
+    # on, so this follows that rather than inventing a second pattern.
+    # fail-fast: false, matching build.yml — a Linux bundle failure must not
+    # cancel the Windows upload that was already in flight, and the draft
+    # state is what makes an incomplete pair of assets safe to notice and fix
+    # before publishing rather than something that ships silently.
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest, ubuntu-24.04]
+    runs-on: ${{ matrix.platform }}
     permissions:
       contents: write # create the GitHub Release and upload the installer
     steps:
@@ -141,6 +157,9 @@ jobs:
       - uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable branch @ 2026-07-16
         with:
           toolchain: stable # the SHA pin hides which toolchain this is
+
+      - uses: ./.github/actions/linux-deps
+        if: startsWith(matrix.platform, 'ubuntu')
 
       - run: npm ci
 
@@ -168,7 +187,11 @@ jobs:
           args: --config ${{ github.workspace }}/src-tauri/tauri.release.conf.json5
           tagName: ${{ github.ref_name }}
           releaseName: "Monoleaf ${{ github.ref_name }}"
-          releaseBody: "See the assets below to download and install. The installer is unsigned (SmartScreen may warn: More info → Run anyway)."
+          releaseBody: >-
+            See the assets below to download and install. The Windows installer
+            is unsigned (SmartScreen may warn: More info → Run anyway). The
+            Linux AppImage is community-tested, best-effort — please file an
+            issue if you hit a problem with it.
           # Draft is unconditional: it is the safety property, so nothing gets
           # to make it depend on the tag.
           releaseDraft: true
