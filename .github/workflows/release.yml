@@ -142,7 +142,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: [windows-latest, ubuntu-24.04]
+        platform: [windows-latest, ubuntu-22.04]
     runs-on: ${{ matrix.platform }}
     permissions:
       contents: write # create the GitHub Release and upload the installer
