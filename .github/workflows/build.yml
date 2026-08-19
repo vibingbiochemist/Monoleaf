@@ -58,8 +58,10 @@ jobs:
           fail-on-severity: high
 
   # Installers: windows-latest is NSIS (per-user, no admin), macos-latest is the
-  # .dmg (unsigned for now, see the note at the top), ubuntu-24.04 is the
-  # .AppImage (runs without admin rights).
+  # .dmg (unsigned for now, see the note at the top), ubuntu-22.04 is the
+  # .AppImage (runs without admin rights). Pinned below 24.04 deliberately: glibc
+  # is forward-compatible only, so the build host's glibc becomes the artifact's
+  # minimum. 22.04 is the oldest GA runner and still has WebKitGTK 4.1.
   #
   # A pull request builds only Windows, the one platform that is actually
   # distributed. On a private repository GitHub bills macOS minutes at 10x and
@@ -73,7 +75,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        platform: ${{ github.event_name == 'pull_request' && fromJSON('["windows-latest"]') || fromJSON('["windows-latest","macos-latest","ubuntu-24.04"]') }}
+        platform: ${{ github.event_name == 'pull_request' && fromJSON('["windows-latest"]') || fromJSON('["windows-latest","macos-latest","ubuntu-22.04"]') }}
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
