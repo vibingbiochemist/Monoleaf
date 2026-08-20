@@ -73,7 +73,7 @@
     "eslint-config-prettier": "^10.1.8",
     "globals": "^17.11.0",
     "happy-dom": "^20.11.2",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.1",
     "license-checker-rseidelsohn": "^5.0.1",
     "patch-package": "^8.0.1",
     "postinstall-postinstall": "^2.1.0",
