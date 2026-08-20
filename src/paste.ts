@@ -126,10 +126,15 @@ function service(): TurndownService {
       (node as HTMLElement).getAttribute("alt") ?? "",
   });
 
-  // Word/HTML paragraph alignment -> our <div align> blocks.
+  // Word/HTML paragraph alignment -> our <div align> blocks. Checked before
+  // msoFakeList below (turndown's Rules.add() unshifts, so the rule added
+  // *last* wins) — this filter only matches non-list paragraphs anyway, since
+  // msoListInfo's own class/style check excludes it, but the ordering keeps
+  // that explicit rather than relying on the exclusion alone.
   td.addRule("alignment", {
     filter: (node) => {
       if (!/^(P|DIV|H[1-6])$/.test(node.nodeName)) return false;
+      if (msoListInfo(node as Element) !== null) return false;
       return alignmentOf(node as HTMLElement) !== null;
     },
     replacement: (content, node) => {
@@ -140,7 +145,122 @@ function service(): TurndownService {
     },
   });
 
+  // Word's fake lists: a flat run of <p class=MsoListParagraph> (or the <div>
+  // form), each carrying its list id/level in style="mso-list:l1 level1 ..."
+  // and a throwaway marker glyph in a <span style="mso-list:Ignore"> child —
+  // there is no real <ul>/<ol>/<li> anywhere. This rule regroups consecutive
+  // siblings that share a list id+level into one logical list, numbering
+  // ordered items by position in the run (Word's own marker text is only used
+  // to tell ordered from unordered) and dropping the marker span entirely.
+  // Added last (see the ordering note on "alignment" above) so a justified or
+  // centered list item — Word applies paragraph alignment independently of
+  // list membership — still converts to a real list item instead of being
+  // caught by the alignment rule and wrapped in a <div align> block.
+  td.addRule("msoFakeList", {
+    filter: (node) => msoListInfo(node as Element) !== null,
+    replacement: (_content, node) => {
+      const el = node as HTMLElement;
+      const info = msoListInfo(el)!;
+
+      const clone = el.cloneNode(true) as HTMLElement;
+      const marker = Array.from(clone.querySelectorAll("span")).find((s) =>
+        /mso-list:\s*ignore/i.test(s.getAttribute("style") ?? ""),
+      );
+      const markerText = marker?.textContent?.trim() ?? "";
+      marker?.remove();
+
+      const text = td.turndown(clone.innerHTML).trim();
+      if (text === "") return "";
+
+      const indent = "  ".repeat(info.level - 1);
+      const ordinal = msoListOrdinal(el, info);
+      const prefix = isOrderedMsoMarker(markerText)
+        ? `${ordinal}. `
+        : `${td.options.bulletListMarker} `;
+
+      const isFirst = !msoListSibling(el, info, "previous");
+      const isLast = !msoListSibling(el, info, "next");
+      return (
+        (isFirst ? "\n\n" : "") +
+        indent +
+        prefix +
+        text.replace(/\n/g, `\n${indent}  `) +
+        "\n" +
+        (isLast ? "\n" : "")
+      );
+    },
+  });
+
   return td;
+}
+
+interface MsoListInfo {
+  id: string;
+  level: number;
+}
+
+// Word glues a continuation suffix directly onto the class name with no
+// separator — MsoListParagraphCxSpFirst/Middle/Last, no word boundary in
+// between — for consecutive list paragraphs it treats as "connected" (to
+// suppress extra spacing between them). It's a paragraph-spacing optimization
+// unrelated to list structure: the mso-list style and marker span underneath
+// are identical to the plain MsoListParagraph form.
+const MSO_LIST_PARAGRAPH_CLASS =
+  /\bMsoListParagraph(?:CxSpFirst|CxSpMiddle|CxSpLast)?\b/i;
+
+/** Reads style="mso-list:l1 level2 lfo3" off a Word fake-list paragraph. */
+function msoListInfo(el: Element): MsoListInfo | null {
+  if (!/^(P|DIV)$/.test(el.nodeName)) return null;
+  if (!MSO_LIST_PARAGRAPH_CLASS.test(el.getAttribute("class") ?? "")) {
+    return null;
+  }
+  const style = el.getAttribute("style") ?? "";
+  const m = /mso-list:\s*(\S+)\s+level(\d+)/i.exec(style);
+  return m === null ? null : { id: m[1], level: Number(m[2]) };
+}
+
+// KNOWN LIMITATION: requiring the exact same level means a nested sub-list
+// item breaks its parent level's run — e.g. "1. / (sub-item) / 2." sees the
+// top-level "2." as starting a brand-new list (previousElementSibling is the
+// level-2 item, not level-1), resetting its ordinal to "1" instead of
+// continuing the sequence. Fixing this properly means walking past — not just
+// rejecting — deeper-level siblings when computing adjacency/ordinal for a
+// shallower level. Flat single-level Word lists (by far the common case) are
+// unaffected; nested/outline lists may renumber incorrectly.
+
+/** The adjacent sibling in the same direction, if it belongs to the same list. */
+function msoListSibling(
+  el: Element,
+  info: MsoListInfo,
+  direction: "previous" | "next",
+): Element | null {
+  const sib =
+    direction === "previous"
+      ? el.previousElementSibling
+      : el.nextElementSibling;
+  const sibInfo = sib === null ? null : msoListInfo(sib);
+  return sibInfo !== null &&
+    sibInfo.id === info.id &&
+    sibInfo.level === info.level
+    ? sib
+    : null;
+}
+
+/** 1-based position of `el` within its run of same-list-id-and-level siblings. */
+function msoListOrdinal(el: Element, info: MsoListInfo): number {
+  let ordinal = 1;
+  let sib = msoListSibling(el, info, "previous");
+  while (sib !== null) {
+    ordinal++;
+    sib = msoListSibling(sib, info, "previous");
+  }
+  return ordinal;
+}
+
+// Word's marker glyph tells ordered from unordered: "1.", "a)", "iv." are
+// ordered; a bare symbol (•, o, §, -, ▪ …) with no alphanumeric is a bullet.
+function isOrderedMsoMarker(marker: string): boolean {
+  return /^[0-9]+[.)]$|^[a-zA-Z][.)]$|^[ivxlcdm]+[.)]$/i.test(marker);
 }
 
 function alignmentOf(el: HTMLElement): string | null {
@@ -155,11 +275,21 @@ function alignmentOf(el: HTMLElement): string | null {
 
 /** Strip Word's clipboard scaffolding before conversion. */
 function cleanWordHtml(html: string): string {
-  return html
-    .replace(/<!--\[if [\s\S]*?<!\[endif\]-->/gi, "")
-    .replace(/<\/?o:p[^>]*>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<xml[\s\S]*?<\/xml>/gi, "");
+  return (
+    html
+      // Downlevel-hidden conditional comments (<!--[if ...]>...<![endif]-->):
+      // this data (Word's XML/VML payloads) is never meant to render, so the
+      // whole block is removed.
+      .replace(/<!--\[if [\s\S]*?<!\[endif\]-->/gi, "")
+      // Downlevel-revealed conditional comments (<![if ...]>...<![endif]>, no
+      // <!--/--> wrapper): unlike the hidden form, this content DOES render —
+      // it's how Word marks its fake-list bullet/number spans — so only the
+      // marker tags themselves are stripped, never what's between them.
+      .replace(/<!\[(?:if\b[^\]]*|endif)\]>/gi, "")
+      .replace(/<\/?o:p[^>]*>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<xml[\s\S]*?<\/xml>/gi, "")
+  );
 }
 
 export function htmlToMarkdown(html: string): string {
@@ -209,13 +339,20 @@ export function htmlHasRichFormatting(html: string): boolean {
  * so it still gets converted. And text with no markdown characters is unaffected
  * by turndown's escaping anyway, so this only ever needs to catch the cases
  * where escaping would do harm.
+ *
+ * Word is one exception: its plain-text flavor renders list items as
+ * "•\titem" / "1.\titem" — a literal tab after the marker, which happens to
+ * satisfy CommonMark's list-marker grammar too. A human typing markdown by
+ * hand uses a space there, never a tab, so the list checks require one to
+ * avoid mistaking a Word list dump for markdown source and skipping its (very
+ * real) HTML conversion.
  */
 export function looksLikeMarkdown(text: string): boolean {
   return (
     /^ {0,3}#{1,6}\s/m.test(text) || // ATX heading
     /^ {0,3}>[ \t]/m.test(text) || // blockquote
-    /^ {0,3}[-*+][ \t]\S/m.test(text) || // bullet list
-    /^ {0,3}\d+[.)][ \t]\S/m.test(text) || // ordered list
+    /^ {0,3}[-*+] \S/m.test(text) || // bullet list
+    /^ {0,3}\d+[.)] \S/m.test(text) || // ordered list
     /^ {0,3}(?:```|~~~)/m.test(text) || // fenced code
     /\*\*[^\s*][^*]*\*\*|__[^\s_][^_]*__/.test(text) || // bold
     /\[[^\]\n]+\]\([^)\s]+\)/.test(text) || // link

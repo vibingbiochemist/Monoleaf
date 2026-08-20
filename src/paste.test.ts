@@ -37,6 +37,17 @@ describe("looksLikeMarkdown (paste raw markdown verbatim)", () => {
       true,
     );
   });
+
+  it("does not mistake Word's tab-separated plain-text list markers for markdown", () => {
+    // Word's plain-text clipboard flavor writes list items as "•\titem" /
+    // "1.\titem" — a literal tab, which a human typing markdown never uses.
+    // Misfiring here means the (genuinely rich) HTML flavor never gets
+    // converted at all.
+    expect(looksLikeMarkdown("1.\t1915: General relativity")).toBe(false);
+    expect(looksLikeMarkdown("•\tThe photoelectric effect")).toBe(false);
+    // A real space still counts.
+    expect(looksLikeMarkdown("1. General relativity")).toBe(true);
+  });
 });
 
 describe("htmlHasRichFormatting (markdown-source vs rich paste)", () => {
@@ -215,5 +226,221 @@ describe("htmlToMarkdown (paste with formatting)", () => {
   it("collapses blank-line pileups", () => {
     const md = htmlToMarkdown("<div><div><p>a</p></div></div><p>b</p>");
     expect(md).toBe("a\n\nb");
+  });
+
+  // Captured verbatim from a real Word 15 clipboard paste (via the
+  // monoleaf-paste-debug.html dump), trimmed of the ~700 lines of unrelated
+  // <w:LsdException> style-registry noise. Keeps both conditional-comment
+  // forms Word emits: the downlevel-hidden <!--[if gte mso 9]>...<![endif]-->
+  // wrapping the XML payload, and the downlevel-revealed <![if
+  // !supportLists]>...<![endif]> (no <!--/--> wrapper) wrapping each fake
+  // list item's throwaway marker span.
+  const WORD_PASTE_HTML = `<html xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=utf-8">
+<meta name=ProgId content=Word.Document>
+<!--[if gte mso 9]><xml>
+ <w:WordDocument>
+  <w:View>Normal</w:View>
+  <w:Zoom>0</w:Zoom>
+ </w:WordDocument>
+</xml><![endif]-->
+<style>
+<!--
+ p.MsoNormal, li.MsoNormal, div.MsoNormal
+	{margin:0in;
+	font-size:10.0pt;
+	font-family:"Times New Roman",serif;}
+p.MsoListParagraph, li.MsoListParagraph, div.MsoListParagraph
+	{margin:0in;
+	font-size:10.0pt;
+	font-family:"Times New Roman",serif;}
+-->
+</style>
+</head>
+<body lang=EN-US style='tab-interval:.5in;word-wrap:break-word'>
+<!--StartFragment-->
+
+<h1>Albert Einstein<o:p></o:p></h1>
+
+<p class=MsoNormal>Albert Einstein (1879–1955) was a <b>German-born theoretical
+physicist</b> widely regarded as one of the most influential scientists of the
+twentieth century. He is best known for developing the <i>theory of relativity</i>,
+one of the two pillars of modern physics alongside quantum mechanics.<o:p></o:p></p>
+
+<h2>The Annus Mirabilis papers<o:p></o:p></h2>
+
+<p class=MsoNormal>In 1905, often called his &quot;miracle year,&quot; Einstein
+published four papers that transformed physics:<o:p></o:p></p>
+
+<p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;
+mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>•<span
+style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+</span></span><![endif]>The photoelectric effect, explaining light as discrete
+quanta of energy<o:p></o:p></p>
+
+<p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;
+mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>•<span
+style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+</span></span><![endif]>Brownian motion, providing strong evidence for the
+existence of atoms<o:p></o:p></p>
+
+<p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;
+mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>•<span
+style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+</span></span><![endif]>Special relativity, redefining space and time for
+objects in relative motion<o:p></o:p></p>
+
+<p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;
+mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>•<span
+style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+</span></span><![endif]>Mass–energy equivalence, expressed in the equation E =
+mc²<o:p></o:p></p>
+
+<h2>Later career<o:p></o:p></h2>
+
+<p class=MsoNormal>Key milestones after 1905 include:<o:p></o:p></p>
+
+<p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;
+mso-list:l0 level1 lfo2'><![if !supportLists]><span style='mso-list:Ignore'>1.<span
+style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></span><![endif]>1915:
+Publication of the general theory of relativity<o:p></o:p></p>
+
+<p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;
+mso-list:l0 level1 lfo2'><![if !supportLists]><span style='mso-list:Ignore'>2.<span
+style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></span><![endif]>1919:
+Solar eclipse observations by Eddington confirm light bending predicted by
+general relativity<o:p></o:p></p>
+
+<p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;
+mso-list:l0 level1 lfo2'><![if !supportLists]><span style='mso-list:Ignore'>3.<span
+style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></span><![endif]>1921:
+Awarded the Nobel Prize in Physics for the photoelectric effect<o:p></o:p></p>
+
+<p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;
+mso-list:l0 level1 lfo2'><![if !supportLists]><span style='mso-list:Ignore'>4.<span
+style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; </span></span><![endif]>1933:
+Emigrates to the United States, joining the Institute for Advanced Study in
+Princeton<o:p></o:p></p>
+
+<h2>Further reading<o:p></o:p></h2>
+
+<p class=MsoNormal>Nobel Prize biography: <a
+href="https://www.nobelprize.org/prizes/physics/1921/einstein/biographical/">nobelprize.org/prizes/physics/1921/einstein</a><o:p></o:p></p>
+
+<h2>Key dates at a glance<o:p></o:p></h2>
+
+<table class=MsoNormalTable border=1 cellspacing=0 cellpadding=0 width=632
+ style='width:474.0pt;border-collapse:collapse;border:none'>
+ <tr style='mso-yfti-irow:0;mso-yfti-firstrow:yes'>
+  <td width=160 valign=top style='width:120.0pt;border:solid windowtext 1.0pt;
+  background:#D9E2F3'>
+  <p class=MsoNormal><b><span style='color:black'>Year</span></b><o:p></o:p></p>
+  </td>
+  <td width=472 valign=top style='width:354.0pt;border:solid windowtext 1.0pt;
+  background:#D9E2F3'>
+  <p class=MsoNormal><b><span style='color:black'>Event</span></b><o:p></o:p></p>
+  </td>
+ </tr>
+ <tr style='mso-yfti-irow:1'>
+  <td width=160 valign=top style='border:solid windowtext 1.0pt'>
+  <p class=MsoNormal>1879<o:p></o:p></p>
+  </td>
+  <td width=472 valign=top style='border:solid windowtext 1.0pt'>
+  <p class=MsoNormal>Born in Ulm, Germany<o:p></o:p></p>
+  </td>
+ </tr>
+</table>
+
+<p class=MsoNormal><o:p>&nbsp;</o:p></p>
+
+<!--EndFragment-->
+</body>
+
+</html>`;
+
+  describe("Word fake lists (MsoListParagraph)", () => {
+    const md = htmlToMarkdown(WORD_PASTE_HTML);
+
+    it("converts the bullet list to a real GFM unordered list", () => {
+      expect(md).toContain(
+        "- The photoelectric effect, explaining light as discrete quanta of energy\n" +
+          "- Brownian motion, providing strong evidence for the existence of atoms\n" +
+          "- Special relativity, redefining space and time for objects in relative motion\n" +
+          "- Mass–energy equivalence, expressed in the equation E = mc²",
+      );
+    });
+
+    it("converts the numbered list to a real GFM ordered list", () => {
+      expect(md).toContain(
+        "1. 1915: Publication of the general theory of relativity\n" +
+          "2. 1919: Solar eclipse observations by Eddington confirm light bending predicted by general relativity\n" +
+          "3. 1921: Awarded the Nobel Prize in Physics for the photoelectric effect\n" +
+          "4. 1933: Emigrates to the United States, joining the Institute for Advanced Study in Princeton",
+      );
+    });
+
+    it("leaves no MsoListParagraph/marker debris behind", () => {
+      expect(md).not.toContain("MsoListParagraph");
+      expect(md).not.toContain("mso-list");
+      expect(md).not.toContain("supportLists");
+    });
+
+    it("still converts headings, bold/italic, the link, and the table unchanged", () => {
+      expect(md).toContain("# Albert Einstein");
+      expect(md).toContain("## The Annus Mirabilis papers");
+      expect(md).toContain("**German-born theoretical physicist**");
+      expect(md).toContain("*theory of relativity*");
+      expect(md).toContain(
+        "[nobelprize.org/prizes/physics/1921/einstein](https://www.nobelprize.org/prizes/physics/1921/einstein/biographical/)",
+      );
+      expect(md).toContain("| **Year** | **Event** |");
+      expect(md).toContain("| --- | --- |");
+      expect(md).toContain("| 1879 | Born in Ulm, Germany |");
+    });
+
+    it("converts a list item that also carries paragraph alignment", () => {
+      // Word applies alignment independently of list membership; a justified
+      // or centered list item must still become a real list item, not get
+      // caught by the alignment rule and wrapped in a <div align> block.
+      const justified = `
+        <p class=MsoListParagraph style='text-align:justify;margin-left:.5in;text-indent:-.25in;mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>&#8226;<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>First item<o:p></o:p></p>
+        <p class=MsoListParagraph style='text-align:justify;margin-left:.5in;text-indent:-.25in;mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>&#8226;<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Second item<o:p></o:p></p>`;
+      expect(htmlToMarkdown(justified)).toBe("- First item\n- Second item");
+      // A genuinely non-list justified paragraph is unaffected.
+      expect(
+        htmlToMarkdown('<p style="text-align:justify">Just a paragraph.</p>'),
+      ).toBe('<div align="justify">\n\nJust a paragraph.\n\n</div>');
+    });
+
+    it("converts Word's CxSpFirst/CxSpMiddle/CxSpLast continuation classes", () => {
+      // Word glues these directly onto the class name (no separator) for
+      // consecutive list paragraphs it treats as "connected" — a paragraph-
+      // spacing optimization unrelated to list structure.
+      const cxsp = `
+        <p class=MsoListParagraphCxSpFirst style='margin-left:.5in;text-indent:-.25in;mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>&#8226;<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>First item<o:p></o:p></p>
+        <p class=MsoListParagraphCxSpMiddle style='margin-left:.5in;text-indent:-.25in;mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>&#8226;<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Second item<o:p></o:p></p>
+        <p class=MsoListParagraphCxSpLast style='margin-left:.5in;text-indent:-.25in;mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>&#8226;<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Third item<o:p></o:p></p>`;
+      expect(htmlToMarkdown(cxsp)).toBe(
+        "- First item\n- Second item\n- Third item",
+      );
+    });
+
+    it("KNOWN LIMITATION: a nested sub-item resets the parent level's ordinal", () => {
+      // Documented at msoListSibling: adjacency requires an exact level
+      // match, so a level-2 item between two level-1 items breaks the
+      // level-1 run — the second "1." should read "2.". Pinned here so a
+      // future fix (or regression) shows up as an intentional test change,
+      // not a silent behavior drift.
+      const nested = `
+        <p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;mso-list:l0 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>1.<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Top item one<o:p></o:p></p>
+        <p class=MsoListParagraph style='margin-left:1in;text-indent:-.25in;mso-list:l0 level2 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>a.<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Sub item<o:p></o:p></p>
+        <p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;mso-list:l0 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>2.<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Top item two<o:p></o:p></p>`;
+      expect(htmlToMarkdown(nested)).toBe(
+        "1. Top item one\n\n  1. Sub item\n\n1. Top item two",
+      );
+    });
   });
 });
