@@ -1127,9 +1127,44 @@ const pageMargin = document.getElementById("page-margin") as HTMLInputElement;
 const pageHeader = document.getElementById("page-header") as HTMLInputElement;
 const pageFooter = document.getElementById("page-footer") as HTMLInputElement;
 
+// Each Paged.js page keeps a ResizeObserver alive after `preview()` resolves
+// (it's how Paged.js re-paginates on reflow). Wiping a preview container's
+// innerHTML directly — without running Chunker#removePages() first, which is
+// what disconnects it — leaves that observer attached to nodes that no
+// longer exist; its callback still fires (via requestAnimationFrame) and
+// throws "Cannot read properties of null (reading 'nextSibling')" from deep
+// inside Paged.js's own layout code (matched by PAGEDJS_NULL_READ above).
+// Tearing down through the previewer instead of past it avoids the crash
+// rather than merely swallowing it — and, since a mid-pagination crash is
+// what leaves the live page indicator stuck on stale breaks (see
+// runPagination's catch below), this is also what keeps it in sync with a
+// real PDF export.
+function teardownPreview(root: HTMLElement, previewer: Previewer | null) {
+  try {
+    previewer?.chunker.removePages();
+  } catch {
+    // Best-effort: pagination tooling is never allowed to block on cleanup.
+  }
+  root.innerHTML = "";
+}
+
+let printPreviewer: Previewer | null = null;
+// True for the entire duration of previewer.preview() in exportPdf(). Paged.js's
+// chunker is still actively creating/laying out Page objects during that
+// window (its render loop isn't cancelled just because our await is pending),
+// so tearing down through teardownPreview() then — e.g. Escape or the close
+// button firing mid-render — would call chunker.removePages(), which nulls
+// out each page's element/wrapper while the chunker's own loop is still
+// using them. That's a *different*, worse crash than the one teardownPreview
+// exists to prevent, and one that may not match PAGEDJS_NULL_READ. Guarding
+// here mirrors how runPagination() already refuses to overlap itself.
+let printPreviewRendering = false;
+
 function closePreview() {
+  if (printPreviewRendering) return;
   printPreview.hidden = true;
-  printRoot.innerHTML = "";
+  teardownPreview(printRoot, printPreviewer);
+  printPreviewer = null;
   // Drop the stylesheets Paged.js injected into the document head.
   document
     .querySelectorAll("style[data-pagedjs-inserted-styles]")
@@ -1139,6 +1174,10 @@ function closePreview() {
 }
 
 async function exportPdf() {
+  // A previous call's Paged.js render may still be in flight (its own loop
+  // isn't cancelled just because that earlier await settled our caller) —
+  // never tear down or re-render over it.
+  if (printPreviewRendering) return;
   // Never run two Paged.js layouts at once: cancel pending measurements and
   // wait out a running one before taking over the pipeline.
   window.clearTimeout(paginationTimer);
@@ -1159,20 +1198,21 @@ async function exportPdf() {
       meta.author.trim() || (localStorage.getItem(AUTHOR_KEY)?.trim() ?? ""),
     date: meta.date.trim() || new Date().toLocaleDateString(),
   });
-  printRoot.innerHTML = "";
+  teardownPreview(printRoot, printPreviewer);
   printPreview.hidden = false;
   const source = document.createElement("div");
   source.innerHTML = html;
+  const previewer = new Previewer();
+  printPreviewer = previewer;
+  printPreviewRendering = true;
   try {
-    await new Previewer().preview(
-      source,
-      [{ "monoleaf-print": css }],
-      printRoot,
-    );
+    await previewer.preview(source, [{ "monoleaf-print": css }], printRoot);
+    printPreviewRendering = false;
     printRoot.querySelectorAll("a[href]").forEach((a) => {
       a.setAttribute("title", "Opens in your default browser");
     });
   } catch (err) {
+    printPreviewRendering = false;
     closePreview();
     await showError(err);
   }
@@ -1391,6 +1431,7 @@ let paginationTimer: number | undefined;
 let paginationRunning = false;
 let paginationQueued = false;
 let lastMeasureKey = "";
+let paginationPreviewer: Previewer | null = null;
 
 function refreshPageIndicator() {
   if (
@@ -1452,10 +1493,18 @@ async function runPagination() {
       { title: "", author: "", date: "" },
       "#pagination-measure",
     );
+    // paginationPreviewer is always null here — every path out of this
+    // function (including an early return above) goes through the finally
+    // block below, which tears the previous instance down and resets it.
+    // measureRoot is therefore already empty; this is just insurance.
     measureRoot.innerHTML = "";
     const source = document.createElement("div");
     source.innerHTML = html;
+    // Tracked immediately (not just after a successful preview) so the
+    // finally block below can always tear this instance down properly, even
+    // if preview() itself is what throws.
     const previewer = new Previewer();
+    paginationPreviewer = previewer;
     await previewer.preview(source, [{ "monoleaf-measure": css }], measureRoot);
     const { breaks, pages } = extractPageBreaks(measureRoot, view.state);
     knownBreaks = breaks;
@@ -1479,7 +1528,8 @@ async function runPagination() {
       pageIndicator.textContent = "";
     }
   } finally {
-    measureRoot.innerHTML = "";
+    teardownPreview(measureRoot, paginationPreviewer);
+    paginationPreviewer = null;
     document
       .querySelectorAll("style[data-pagedjs-inserted-styles]")
       .forEach((s) => s.remove());
