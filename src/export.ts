@@ -3,7 +3,7 @@ import taskLists from "markdown-it-task-lists";
 import sub from "markdown-it-sub";
 import sup from "markdown-it-sup";
 import footnotePlugin from "markdown-it-footnote";
-import katexPlugin from "@vscode/markdown-it-katex";
+import katexPluginImport from "@vscode/markdown-it-katex";
 import hljs from "highlight.js/lib/core";
 import javascript from "highlight.js/lib/languages/javascript";
 import typescript from "highlight.js/lib/languages/typescript";
@@ -20,6 +20,19 @@ import { PortabilityMode } from "./portability";
 import { ADMONITIONS, admonitionKind } from "./admonitions";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
 import { escapeDashes } from "./htmlcomment";
+
+// Vite's dependency pre-bundler has, at least once, mis-handled this
+// package's CJS default export — handing back the whole
+// `{ __esModule, default }` exports object instead of unwrapping to the
+// plugin function itself, so `md.use(katexPlugin, ...)` threw "plugin.apply
+// is not a function" in the dev server (never in Vitest, which doesn't go
+// through that bundling path). Normalizing here is robust to the bundler's
+// interop rather than depending on it.
+const katexPlugin: typeof katexPluginImport =
+  typeof katexPluginImport === "function"
+    ? katexPluginImport
+    : (katexPluginImport as unknown as { default: typeof katexPluginImport })
+        .default;
 
 // Curated language set for fenced-code highlighting in the PDF (core + these
 // keeps the bundle lean). registerLanguage also registers each language's
