@@ -235,9 +235,13 @@ function msoListSibling(
   direction: "previous" | "next",
 ): Element | null {
   const sib =
-    direction === "previous" ? el.previousElementSibling : el.nextElementSibling;
+    direction === "previous"
+      ? el.previousElementSibling
+      : el.nextElementSibling;
   const sibInfo = sib === null ? null : msoListInfo(sib);
-  return sibInfo !== null && sibInfo.id === info.id && sibInfo.level === info.level
+  return sibInfo !== null &&
+    sibInfo.id === info.id &&
+    sibInfo.level === info.level
     ? sib
     : null;
 }
@@ -271,19 +275,21 @@ function alignmentOf(el: HTMLElement): string | null {
 
 /** Strip Word's clipboard scaffolding before conversion. */
 function cleanWordHtml(html: string): string {
-  return html
-    // Downlevel-hidden conditional comments (<!--[if ...]>...<![endif]-->):
-    // this data (Word's XML/VML payloads) is never meant to render, so the
-    // whole block is removed.
-    .replace(/<!--\[if [\s\S]*?<!\[endif\]-->/gi, "")
-    // Downlevel-revealed conditional comments (<![if ...]>...<![endif]>, no
-    // <!--/--> wrapper): unlike the hidden form, this content DOES render —
-    // it's how Word marks its fake-list bullet/number spans — so only the
-    // marker tags themselves are stripped, never what's between them.
-    .replace(/<!\[(?:if\b[^\]]*|endif)\]>/gi, "")
-    .replace(/<\/?o:p[^>]*>/gi, "")
-    .replace(/<style[\s\S]*?<\/style>/gi, "")
-    .replace(/<xml[\s\S]*?<\/xml>/gi, "");
+  return (
+    html
+      // Downlevel-hidden conditional comments (<!--[if ...]>...<![endif]-->):
+      // this data (Word's XML/VML payloads) is never meant to render, so the
+      // whole block is removed.
+      .replace(/<!--\[if [\s\S]*?<!\[endif\]-->/gi, "")
+      // Downlevel-revealed conditional comments (<![if ...]>...<![endif]>, no
+      // <!--/--> wrapper): unlike the hidden form, this content DOES render —
+      // it's how Word marks its fake-list bullet/number spans — so only the
+      // marker tags themselves are stripped, never what's between them.
+      .replace(/<!\[(?:if\b[^\]]*|endif)\]>/gi, "")
+      .replace(/<\/?o:p[^>]*>/gi, "")
+      .replace(/<style[\s\S]*?<\/style>/gi, "")
+      .replace(/<xml[\s\S]*?<\/xml>/gi, "")
+  );
 }
 
 export function htmlToMarkdown(html: string): string {
