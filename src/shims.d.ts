@@ -36,6 +36,12 @@ declare module "pagedjs" {
   export class Previewer {
     constructor(options?: unknown);
     polisher: { destroy(): void };
+    // Each rendered page keeps a ResizeObserver alive (for reflow-triggered
+    // re-pagination) until Chunker#removePages() runs Page#destroy() on it.
+    // Clearing a preview container's DOM without calling this first leaves
+    // that observer attached to now-removed nodes — see the teardownPreview
+    // helper in main.ts.
+    chunker: { removePages(): void };
     preview(
       content?: unknown,
       stylesheets?: unknown[],
