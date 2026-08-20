@@ -400,5 +400,47 @@ href="https://www.nobelprize.org/prizes/physics/1921/einstein/biographical/">nob
       expect(md).toContain("| --- | --- |");
       expect(md).toContain("| 1879 | Born in Ulm, Germany |");
     });
+
+    it("converts a list item that also carries paragraph alignment", () => {
+      // Word applies alignment independently of list membership; a justified
+      // or centered list item must still become a real list item, not get
+      // caught by the alignment rule and wrapped in a <div align> block.
+      const justified = `
+        <p class=MsoListParagraph style='text-align:justify;margin-left:.5in;text-indent:-.25in;mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>&#8226;<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>First item<o:p></o:p></p>
+        <p class=MsoListParagraph style='text-align:justify;margin-left:.5in;text-indent:-.25in;mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>&#8226;<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Second item<o:p></o:p></p>`;
+      expect(htmlToMarkdown(justified)).toBe("- First item\n- Second item");
+      // A genuinely non-list justified paragraph is unaffected.
+      expect(
+        htmlToMarkdown('<p style="text-align:justify">Just a paragraph.</p>'),
+      ).toBe('<div align="justify">\n\nJust a paragraph.\n\n</div>');
+    });
+
+    it("converts Word's CxSpFirst/CxSpMiddle/CxSpLast continuation classes", () => {
+      // Word glues these directly onto the class name (no separator) for
+      // consecutive list paragraphs it treats as "connected" — a paragraph-
+      // spacing optimization unrelated to list structure.
+      const cxsp = `
+        <p class=MsoListParagraphCxSpFirst style='margin-left:.5in;text-indent:-.25in;mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>&#8226;<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>First item<o:p></o:p></p>
+        <p class=MsoListParagraphCxSpMiddle style='margin-left:.5in;text-indent:-.25in;mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>&#8226;<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Second item<o:p></o:p></p>
+        <p class=MsoListParagraphCxSpLast style='margin-left:.5in;text-indent:-.25in;mso-list:l1 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>&#8226;<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Third item<o:p></o:p></p>`;
+      expect(htmlToMarkdown(cxsp)).toBe(
+        "- First item\n- Second item\n- Third item",
+      );
+    });
+
+    it("KNOWN LIMITATION: a nested sub-item resets the parent level's ordinal", () => {
+      // Documented at msoListSibling: adjacency requires an exact level
+      // match, so a level-2 item between two level-1 items breaks the
+      // level-1 run — the second "1." should read "2.". Pinned here so a
+      // future fix (or regression) shows up as an intentional test change,
+      // not a silent behavior drift.
+      const nested = `
+        <p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;mso-list:l0 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>1.<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Top item one<o:p></o:p></p>
+        <p class=MsoListParagraph style='margin-left:1in;text-indent:-.25in;mso-list:l0 level2 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>a.<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Sub item<o:p></o:p></p>
+        <p class=MsoListParagraph style='margin-left:.5in;text-indent:-.25in;mso-list:l0 level1 lfo1'><![if !supportLists]><span style='mso-list:Ignore'>2.<span style='font:7.0pt "Times New Roman"'>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span></span><![endif]>Top item two<o:p></o:p></p>`;
+      expect(htmlToMarkdown(nested)).toBe(
+        "1. Top item one\n\n  1. Sub item\n\n1. Top item two",
+      );
+    });
   });
 });

@@ -55,48 +55,6 @@ function service(): TurndownService {
     },
   });
 
-  // Word's fake lists: a flat run of <p class=MsoListParagraph> (or the <div>
-  // form), each carrying its list id/level in style="mso-list:l1 level1 ..."
-  // and a throwaway marker glyph in a <span style="mso-list:Ignore"> child —
-  // there is no real <ul>/<ol>/<li> anywhere. This rule regroups consecutive
-  // siblings that share a list id+level into one logical list, numbering
-  // ordered items by position in the run (Word's own marker text is only used
-  // to tell ordered from unordered) and dropping the marker span entirely.
-  td.addRule("msoFakeList", {
-    filter: (node) => msoListInfo(node as Element) !== null,
-    replacement: (_content, node) => {
-      const el = node as HTMLElement;
-      const info = msoListInfo(el)!;
-
-      const clone = el.cloneNode(true) as HTMLElement;
-      const marker = Array.from(clone.querySelectorAll("span")).find((s) =>
-        /mso-list:\s*ignore/i.test(s.getAttribute("style") ?? ""),
-      );
-      const markerText = marker?.textContent?.trim() ?? "";
-      marker?.remove();
-
-      const text = td.turndown(clone.innerHTML).trim();
-      if (text === "") return "";
-
-      const indent = "  ".repeat(info.level - 1);
-      const ordinal = msoListOrdinal(el, info);
-      const prefix = isOrderedMsoMarker(markerText)
-        ? `${ordinal}. `
-        : `${td.options.bulletListMarker} `;
-
-      const isFirst = !msoListSibling(el, info, "previous");
-      const isLast = !msoListSibling(el, info, "next");
-      return (
-        (isFirst ? "\n\n" : "") +
-        indent +
-        prefix +
-        text.replace(/\n/g, `\n${indent}  `) +
-        "\n" +
-        (isLast ? "\n" : "")
-      );
-    },
-  });
-
   // Tables → GFM. turndown-plugin-gfm only converts a table whose first row is
   // a proper heading row (<th> / <thead>); Word emits header cells as bold
   // <td>s with no <thead>, so the plugin `keep`s the whole table as raw HTML.
@@ -168,10 +126,15 @@ function service(): TurndownService {
       (node as HTMLElement).getAttribute("alt") ?? "",
   });
 
-  // Word/HTML paragraph alignment -> our <div align> blocks.
+  // Word/HTML paragraph alignment -> our <div align> blocks. Checked before
+  // msoFakeList below (turndown's Rules.add() unshifts, so the rule added
+  // *last* wins) — this filter only matches non-list paragraphs anyway, since
+  // msoListInfo's own class/style check excludes it, but the ordering keeps
+  // that explicit rather than relying on the exclusion alone.
   td.addRule("alignment", {
     filter: (node) => {
       if (!/^(P|DIV|H[1-6])$/.test(node.nodeName)) return false;
+      if (msoListInfo(node as Element) !== null) return false;
       return alignmentOf(node as HTMLElement) !== null;
     },
     replacement: (content, node) => {
@@ -179,6 +142,52 @@ function service(): TurndownService {
       const inner = content.trim();
       if (inner === "") return "";
       return `\n\n<div align="${align}">\n\n${inner}\n\n</div>\n\n`;
+    },
+  });
+
+  // Word's fake lists: a flat run of <p class=MsoListParagraph> (or the <div>
+  // form), each carrying its list id/level in style="mso-list:l1 level1 ..."
+  // and a throwaway marker glyph in a <span style="mso-list:Ignore"> child —
+  // there is no real <ul>/<ol>/<li> anywhere. This rule regroups consecutive
+  // siblings that share a list id+level into one logical list, numbering
+  // ordered items by position in the run (Word's own marker text is only used
+  // to tell ordered from unordered) and dropping the marker span entirely.
+  // Added last (see the ordering note on "alignment" above) so a justified or
+  // centered list item — Word applies paragraph alignment independently of
+  // list membership — still converts to a real list item instead of being
+  // caught by the alignment rule and wrapped in a <div align> block.
+  td.addRule("msoFakeList", {
+    filter: (node) => msoListInfo(node as Element) !== null,
+    replacement: (_content, node) => {
+      const el = node as HTMLElement;
+      const info = msoListInfo(el)!;
+
+      const clone = el.cloneNode(true) as HTMLElement;
+      const marker = Array.from(clone.querySelectorAll("span")).find((s) =>
+        /mso-list:\s*ignore/i.test(s.getAttribute("style") ?? ""),
+      );
+      const markerText = marker?.textContent?.trim() ?? "";
+      marker?.remove();
+
+      const text = td.turndown(clone.innerHTML).trim();
+      if (text === "") return "";
+
+      const indent = "  ".repeat(info.level - 1);
+      const ordinal = msoListOrdinal(el, info);
+      const prefix = isOrderedMsoMarker(markerText)
+        ? `${ordinal}. `
+        : `${td.options.bulletListMarker} `;
+
+      const isFirst = !msoListSibling(el, info, "previous");
+      const isLast = !msoListSibling(el, info, "next");
+      return (
+        (isFirst ? "\n\n" : "") +
+        indent +
+        prefix +
+        text.replace(/\n/g, `\n${indent}  `) +
+        "\n" +
+        (isLast ? "\n" : "")
+      );
     },
   });
 
@@ -190,16 +199,34 @@ interface MsoListInfo {
   level: number;
 }
 
+// Word glues a continuation suffix directly onto the class name with no
+// separator — MsoListParagraphCxSpFirst/Middle/Last, no word boundary in
+// between — for consecutive list paragraphs it treats as "connected" (to
+// suppress extra spacing between them). It's a paragraph-spacing optimization
+// unrelated to list structure: the mso-list style and marker span underneath
+// are identical to the plain MsoListParagraph form.
+const MSO_LIST_PARAGRAPH_CLASS =
+  /\bMsoListParagraph(?:CxSpFirst|CxSpMiddle|CxSpLast)?\b/i;
+
 /** Reads style="mso-list:l1 level2 lfo3" off a Word fake-list paragraph. */
 function msoListInfo(el: Element): MsoListInfo | null {
   if (!/^(P|DIV)$/.test(el.nodeName)) return null;
-  if (!/\bMsoListParagraph\b/i.test(el.getAttribute("class") ?? "")) {
+  if (!MSO_LIST_PARAGRAPH_CLASS.test(el.getAttribute("class") ?? "")) {
     return null;
   }
   const style = el.getAttribute("style") ?? "";
   const m = /mso-list:\s*(\S+)\s+level(\d+)/i.exec(style);
   return m === null ? null : { id: m[1], level: Number(m[2]) };
 }
+
+// KNOWN LIMITATION: requiring the exact same level means a nested sub-list
+// item breaks its parent level's run — e.g. "1. / (sub-item) / 2." sees the
+// top-level "2." as starting a brand-new list (previousElementSibling is the
+// level-2 item, not level-1), resetting its ordinal to "1" instead of
+// continuing the sequence. Fixing this properly means walking past — not just
+// rejecting — deeper-level siblings when computing adjacency/ordinal for a
+// shallower level. Flat single-level Word lists (by far the common case) are
+// unaffected; nested/outline lists may renumber incorrectly.
 
 /** The adjacent sibling in the same direction, if it belongs to the same list. */
 function msoListSibling(
