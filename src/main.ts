@@ -1149,8 +1149,19 @@ function teardownPreview(root: HTMLElement, previewer: Previewer | null) {
 }
 
 let printPreviewer: Previewer | null = null;
+// True for the entire duration of previewer.preview() in exportPdf(). Paged.js's
+// chunker is still actively creating/laying out Page objects during that
+// window (its render loop isn't cancelled just because our await is pending),
+// so tearing down through teardownPreview() then — e.g. Escape or the close
+// button firing mid-render — would call chunker.removePages(), which nulls
+// out each page's element/wrapper while the chunker's own loop is still
+// using them. That's a *different*, worse crash than the one teardownPreview
+// exists to prevent, and one that may not match PAGEDJS_NULL_READ. Guarding
+// here mirrors how runPagination() already refuses to overlap itself.
+let printPreviewRendering = false;
 
 function closePreview() {
+  if (printPreviewRendering) return;
   printPreview.hidden = true;
   teardownPreview(printRoot, printPreviewer);
   printPreviewer = null;
@@ -1163,6 +1174,10 @@ function closePreview() {
 }
 
 async function exportPdf() {
+  // A previous call's Paged.js render may still be in flight (its own loop
+  // isn't cancelled just because that earlier await settled our caller) —
+  // never tear down or re-render over it.
+  if (printPreviewRendering) return;
   // Never run two Paged.js layouts at once: cancel pending measurements and
   // wait out a running one before taking over the pipeline.
   window.clearTimeout(paginationTimer);
@@ -1189,12 +1204,15 @@ async function exportPdf() {
   source.innerHTML = html;
   const previewer = new Previewer();
   printPreviewer = previewer;
+  printPreviewRendering = true;
   try {
     await previewer.preview(source, [{ "monoleaf-print": css }], printRoot);
+    printPreviewRendering = false;
     printRoot.querySelectorAll("a[href]").forEach((a) => {
       a.setAttribute("title", "Opens in your default browser");
     });
   } catch (err) {
+    printPreviewRendering = false;
     closePreview();
     await showError(err);
   }
@@ -1475,7 +1493,11 @@ async function runPagination() {
       { title: "", author: "", date: "" },
       "#pagination-measure",
     );
-    teardownPreview(measureRoot, paginationPreviewer);
+    // paginationPreviewer is always null here — every path out of this
+    // function (including an early return above) goes through the finally
+    // block below, which tears the previous instance down and resets it.
+    // measureRoot is therefore already empty; this is just insurance.
+    measureRoot.innerHTML = "";
     const source = document.createElement("div");
     source.innerHTML = html;
     // Tracked immediately (not just after a successful preview) so the
