@@ -682,6 +682,11 @@ export function buildLivePreviewDecorations(
             // marker; edited via File ▸ Document properties. Reveal it on its
             // line so it can still be removed by hand.
             if (!cursorOnLine(state, node.from)) hideRange(node.from, node.to);
+          } else if (c.startsWith("<!--ml:page ")) {
+            // Page config: edited via File ▸ Page setup… or the toolbar font
+            // picker, not by hand — hidden the same way ml:meta is, revealed
+            // on its own line so it can still be inspected or removed.
+            if (!cursorOnLine(state, node.from)) hideRange(node.from, node.to);
           }
           break;
         }

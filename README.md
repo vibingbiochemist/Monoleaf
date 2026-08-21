@@ -76,8 +76,12 @@ writing docs, anyone who wants their work to still open cleanly in ten years.
 - **Table of contents** with in-app heading navigation
 - **Document properties** (title / author / date / subject / keywords) stored
   in-file, as a hidden comment or YAML front matter
-- **Page setup**: size, margins, header/footer with `{page}`/`{pages}`/
+- **Page setup**: size, margins, font, header/footer with `{page}`/`{pages}`/
   `{title}`/`{author}`/`{date}`, stored in the file
+- **Bundled document fonts** (Source Serif 4, Lora, Source Sans 3, Atkinson
+  Hyperlegible Next, Lexend, plus IBM Plex Mono for code): chosen per document
+  rather than drawn from your system, so the document renders and paginates
+  identically on every machine
 - **Find & replace**, live **word count**, and a real **page-accurate layout**
   view with zoom (buttons, slider, or `Ctrl`+scroll)
 
@@ -90,8 +94,8 @@ writing docs, anyone who wants their work to still open cleanly in ten years.
 **Export**
 - **PDF** with true page geometry via CSS Paged Media (choose *Save as PDF* in
   the print dialog)
-- **Self-contained HTML**: one portable file, styles inlined, no external
-  resources, dark-mode aware
+- **Self-contained HTML**: one portable file, styles inlined, chosen font
+  embedded, no external resources, dark-mode aware
 
 **Open & import**
 - **Markdown** (`.md`, `.markdown`): File ▸ Open, byte-for-byte, nothing rewritten

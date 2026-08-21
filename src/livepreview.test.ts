@@ -488,3 +488,23 @@ describe("document metadata", () => {
     ).toEqual([]);
   });
 });
+
+describe("page config", () => {
+  const PAGE_COMMENT = '<!--ml:page {"font":"lora"}-->';
+
+  it("hides the ml:page comment when the cursor is elsewhere", () => {
+    const doc = `${PAGE_COMMENT}\n\n# Body\n`;
+    // Cursor on the body, not on the comment line.
+    expect(hides(doc, doc.length - 1)).toContainEqual({
+      from: 0,
+      to: PAGE_COMMENT.length,
+      kind: "hide",
+    });
+  });
+
+  it("reveals the ml:page comment while the cursor is on its line", () => {
+    const doc = `${PAGE_COMMENT}\n\n# Body\n`;
+    // The comment's own range is not hidden while being edited.
+    expect(hides(doc, 5).some((d) => d.from === 0)).toBe(false);
+  });
+});

@@ -49,13 +49,15 @@ jobs:
       # positive list, matching about.toml's own approach, built from what is
       # actually in the tree today (`npx license-checker-rseidelsohn --production
       # --excludePrivatePackages --summary`): MIT, Apache-2.0, BSD-2/3-Clause,
-      # ISC, CC0-1.0, MPL-2.0 (dompurify's OR-alternative to Apache-2.0) and
-      # Python-2.0 (argparse). A new dependency outside this list fails the build
-      # rather than silently entering it; adding to the list is a deliberate,
-      # reviewable change, same as adding to about.toml's `accepted`.
+      # ISC, CC0-1.0, MPL-2.0 (dompurify's OR-alternative to Apache-2.0),
+      # Python-2.0 (argparse) and OFL-1.1 (the six bundled document/code
+      # fonts — @fontsource-variable/* and @fontsource/ibm-plex-mono). A new
+      # dependency outside this list fails the build rather than silently
+      # entering it; adding to the list is a deliberate, reviewable change,
+      # same as adding to about.toml's `accepted`.
       - run:
           npx license-checker-rseidelsohn --production --excludePrivatePackages
-          --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;MPL-2.0;Python-2.0"
+          --onlyAllow "MIT;Apache-2.0;BSD-2-Clause;BSD-3-Clause;ISC;CC0-1.0;MPL-2.0;Python-2.0;OFL-1.1"
 
   # The Rust unit tests (byte-exact file round-trip, write-path allow-list,
   # launch-arg parsing) need the toolchain and a built frontend, since compiling
