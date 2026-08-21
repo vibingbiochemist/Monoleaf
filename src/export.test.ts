@@ -15,6 +15,7 @@ import {
 import { createDocumentState, serializeDocument } from "./document";
 import { cellDisplayHtml } from "./tablecell";
 import { setRemoteImagesAllowed } from "./remoteimages";
+import { DEFAULT_FONT_ID, fontStack, MONO_STACK } from "./fonts";
 
 const VARS = { title: "Report", author: "Martin", date: "2026-07-18" };
 
@@ -30,6 +31,7 @@ describe("page config block", () => {
     const cfg = {
       size: "Letter" as const,
       margin: "25mm 15mm",
+      font: "lora",
       header: "{title}",
       footer: "Page {page} of {pages}",
       justify: true,
@@ -366,6 +368,7 @@ describe("buildPrintCss", () => {
       {
         size: "Letter",
         margin: "18mm",
+        font: "source-serif-4",
         header: "{title}",
         footer: "{page}",
         justify: false,
@@ -380,7 +383,14 @@ describe("buildPrintCss", () => {
 
   it("omits empty margin boxes", () => {
     const css = buildPrintCss(
-      { size: "A4", margin: "20mm", header: "", footer: "", justify: false },
+      {
+        size: "A4",
+        margin: "20mm",
+        font: "source-serif-4",
+        header: "",
+        footer: "",
+        justify: false,
+      },
       VARS,
     );
     expect(css).not.toContain("@top-center");
@@ -389,12 +399,26 @@ describe("buildPrintCss", () => {
 
   it("justify config emits justified paragraphs", () => {
     const on = buildPrintCss(
-      { size: "A4", margin: "20mm", header: "", footer: "", justify: true },
+      {
+        size: "A4",
+        margin: "20mm",
+        font: "source-serif-4",
+        header: "",
+        footer: "",
+        justify: true,
+      },
       VARS,
     );
     expect(on).toContain("p { text-align: justify; }");
     const off = buildPrintCss(
-      { size: "A4", margin: "20mm", header: "", footer: "", justify: false },
+      {
+        size: "A4",
+        margin: "20mm",
+        font: "source-serif-4",
+        header: "",
+        footer: "",
+        justify: false,
+      },
       VARS,
     );
     expect(off).not.toContain("p { text-align: justify; }");
@@ -430,12 +454,39 @@ describe("buildPrintCss", () => {
   });
 
   it("the page-break rule is unscoped so Paged.js's break scan matches it", () => {
-    const css = buildPrintCss(DEFAULT_PAGE_CONFIG, VARS, "#print-root");
+    const css = buildPrintCss(DEFAULT_PAGE_CONFIG, VARS, ".ml-print");
     // Must be a bare .ml-pagebreak selector — Paged.js queries the source
-    // content (not yet under #print-root) when stamping forced breaks.
+    // content (not yet under .ml-print) when stamping forced breaks.
     expect(css).toContain(".ml-pagebreak { display: block");
-    expect(css).not.toContain("#print-root .ml-pagebreak");
+    expect(css).not.toContain(".ml-print .ml-pagebreak");
     expect(css).toContain("break-after: page");
+  });
+
+  it("scopes with a class, not an ID Paged.js would rewrite and orphan", () => {
+    // Sheet.parse() (Paged.js) rewrites every ID selector into
+    // `[data-id="…"]`, a value only ever stamped on cloned content nodes —
+    // never on the render-target element. An ID-scoped root would silently
+    // match nothing in the paginated output. Guard the default stays a class.
+    const css = buildPrintCss(DEFAULT_PAGE_CONFIG, VARS);
+    expect(css).toContain(".ml-print {");
+    expect(css).not.toContain("#print-root");
+  });
+
+  it("uses the document's chosen font and the bundled mono stack", () => {
+    const css = buildPrintCss({ ...DEFAULT_PAGE_CONFIG, font: "lora" }, VARS);
+    expect(css).toContain('font-family: "Lora Variable", Georgia');
+    expect(css).toContain(MONO_STACK);
+  });
+
+  it("a font id outside the bundled allowlist falls back to the default rather than reaching the stylesheet", () => {
+    const doc =
+      '<!--ml:page {"font":"body { background-image: url(x) } p { color: transparent"}-->';
+    const cfg = parsePageConfig(doc);
+    expect(cfg.font).toBe(DEFAULT_FONT_ID);
+    const css = buildPrintCss(cfg, VARS);
+    expect(css).not.toContain("url(");
+    expect(css).not.toContain("color: transparent");
+    expect(css).toContain(fontStack(DEFAULT_FONT_ID));
   });
 });
 
@@ -523,5 +574,52 @@ describe("renderStandaloneHtml (self-contained HTML export)", () => {
   it("escapes the title", () => {
     const html = renderStandaloneHtml("x", "strict", "a <b> & c");
     expect(html).toContain("<title>a &lt;b&gt; &amp; c</title>");
+  });
+
+  it("requests the chosen document font by name even with nothing embedded", () => {
+    const html = renderStandaloneHtml("x", "strict", "t", false, "lora");
+    expect(html).toContain(fontStack("lora"));
+  });
+
+  it("embeds a validated font face as a base64 data URI, never a network URL", () => {
+    const html = renderStandaloneHtml("x", "strict", "t", false, "lora", [
+      {
+        family: "Lora Variable",
+        italic: false,
+        weight: "400 700",
+        base64: "AAA=",
+      },
+    ]);
+    expect(html).toContain('@font-face {\n  font-family: "Lora Variable";');
+    expect(html).toContain("font-weight: 400 700;");
+    expect(html).toContain("src: url(data:font/woff2;base64,AAA=)");
+    expect(html).not.toMatch(/url\(https?:/);
+  });
+
+  it("drops an embedded face with a family, weight or payload outside the known allowlist", () => {
+    const html = renderStandaloneHtml("x", "strict", "t", false, "lora", [
+      {
+        family: 'Evil"; } body { background: url(x) } .x {',
+        italic: false,
+        weight: "400 700",
+        base64: "AAA=",
+      },
+      {
+        family: "Lora Variable",
+        italic: false,
+        weight: "400 700",
+        base64: "not base64!",
+      },
+      {
+        family: "Lora Variable",
+        italic: false,
+        weight: "400; } .x { color: red",
+        base64: "AAA=",
+      },
+    ]);
+    expect(html).not.toContain("Evil");
+    expect(html).not.toContain("not base64!");
+    expect(html).not.toContain("color: red");
+    expect(html).not.toContain("@font-face");
   });
 });

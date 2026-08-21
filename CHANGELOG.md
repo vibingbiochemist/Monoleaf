@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Document fonts.** Page Setup now offers a font: Source Serif 4 (the new
+  default), Lora, Source Sans 3, Atkinson Hyperlegible Next or Lexend, plus
+  IBM Plex Mono for code blocks and the raw view. All six are bundled with
+  the app (SIL Open Font License) rather than drawn from whatever is
+  installed on your system, so a document renders and paginates identically
+  everywhere — the same reason page size and margins already travel with the
+  file. The choice is saved in the document itself and carried into PDF and
+  HTML exports; HTML exports embed the font directly so the file looks right
+  even on a machine that doesn't have it installed.
+  - Existing documents have no font set and now render in Source Serif 4
+    instead of the system font; page breaks may shift slightly as a result.
+  - Lexend has no italic design; *italic* text in that font is a
+    browser-synthesised slant, the same as most other apps do.
+  - Code blocks switch from Consolas/Cascadia Mono (Windows-only fonts, so
+    they rendered inconsistently on Linux) to the bundled IBM Plex Mono.
+
 ### Fixed
 
 - **PDF and print output now actually uses the page's intended typography.**

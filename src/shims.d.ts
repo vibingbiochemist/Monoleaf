@@ -3,6 +3,13 @@ declare module "*?raw" {
   export default content;
 }
 
+// Vite's explicit-URL asset suffix (see src/fontEmbeds.ts) — resolves to the
+// built, hashed asset path as a plain string.
+declare module "*?url" {
+  const url: string;
+  export default url;
+}
+
 declare module "markdown-it-task-lists" {
   import type MarkdownIt from "markdown-it";
   const plugin: (md: MarkdownIt, options?: { enabled?: boolean }) => void;

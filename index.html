@@ -424,6 +424,15 @@
               >
                 Paragraph<span class="caret">▾</span>
               </button>
+              <button
+                id="btn-font"
+                class="icon-btn glyph"
+                title="Document font: Source Serif 4"
+                aria-label="Document font"
+                aria-expanded="false"
+              >
+                <span class="font-glyph">Aa</span>
+              </button>
             </div>
             <span class="separator"></span>
             <div class="toolbar-group">
@@ -492,7 +501,7 @@
                 title="Change case"
                 aria-label="Change case"
               >
-                <span class="case-glyph">Aa</span>
+                <span class="case-glyph">A/a</span>
               </button>
               <button
                 id="btn-clear-format"
@@ -956,6 +965,16 @@
         </select>
         <label for="page-margin">Margins (CSS, e.g. 20mm or 25mm 18mm)</label>
         <input id="page-margin" type="text" spellcheck="false" />
+        <label for="page-font">Font</label>
+        <select id="page-font">
+          <option value="source-serif-4">Source Serif 4</option>
+          <option value="lora">Lora</option>
+          <option value="source-sans-3">Source Sans 3</option>
+          <option value="atkinson-hyperlegible-next">
+            Atkinson Hyperlegible Next
+          </option>
+          <option value="lexend">Lexend</option>
+        </select>
         <label for="page-header"
           >Header (placeholders: {page} {pages} {title} {date})</label
         >

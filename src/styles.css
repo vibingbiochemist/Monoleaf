@@ -385,10 +385,12 @@ html.theme-dark .brand-dark {
   font-size: 13px;
   line-height: 1;
 }
-/* "Aa" change-case glyph. */
+/* "A/a" change-case glyph — was "Aa", changed because the document-font
+   button (.font-glyph below) also reads "Aa" and the two sat close enough
+   in the toolbar to be mistaken for each other. */
 .case-glyph {
-  font-size: 13.5px;
-  letter-spacing: 0.5px;
+  font-size: 12.5px;
+  letter-spacing: 0.25px;
 }
 .script-glyph sub,
 .script-glyph sup {
@@ -414,6 +416,13 @@ html.theme-dark .brand-dark {
   border-radius: 6px;
   min-width: 118px;
   justify-content: space-between;
+}
+
+/* "Aa" document-font glyph — rendered live in the chosen font (see
+   refreshFontButton in main.ts), so it previews the font itself. See
+   .case-glyph above for why change-case uses "A/a" rather than also "Aa". */
+.font-glyph {
+  font-size: 14px;
 }
 
 .style-btn .caret {
@@ -1090,7 +1099,11 @@ html.theme-dark .brand-dark {
 }
 
 #editor .cm-scroller {
-  font-family: Consolas, "Cascadia Mono", monospace;
+  /* Raw view and the document text's monospace runs (code blocks, inline
+     code). Keep in sync with fonts.ts's MONO_STACK and export.ts's print
+     CSS — a mismatch here makes code wrap differently in the editor than in
+     the PDF, since IBM Plex Mono's advance width differs from Consolas'. */
+  font-family: "IBM Plex Mono", Consolas, "Cascadia Mono", monospace;
   line-height: 1.6;
 }
 
@@ -1292,7 +1305,7 @@ html.theme-dark #editor .cm-cursor {
 
 .cm-live-codeblock {
   background: light-dark(#f6f6f4, rgba(255, 255, 255, 0.05));
-  font-family: Consolas, "Cascadia Mono", monospace;
+  font-family: "IBM Plex Mono", Consolas, "Cascadia Mono", monospace;
   font-size: 0.88em;
 }
 
@@ -1301,7 +1314,7 @@ html.theme-dark #editor .cm-cursor {
   background: light-dark(#faf7f0, rgba(232, 163, 61, 0.08));
   border-left: 3px solid light-dark(#e8c58d, rgba(232, 163, 61, 0.5));
   color: light-dark(#8a7a5c, #b7a988);
-  font-family: Consolas, "Cascadia Mono", monospace;
+  font-family: "IBM Plex Mono", Consolas, "Cascadia Mono", monospace;
   font-size: 0.85em;
 }
 

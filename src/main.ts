@@ -1,4 +1,8 @@
 import { EditorView, keymap } from "@codemirror/view";
+// Side-effect only: registers the bundled document fonts' @font-face rules.
+// Imported first so every face is on document.fonts before the first
+// pagination pass — see ./fontfaces for why the ordering matters.
+import "./fontfaces";
 import { editorSetup, rawViewExtensions } from "./setup";
 import { Compartment, Prec, StateCommand } from "@codemirror/state";
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -75,6 +79,7 @@ import { renderOutline } from "./outline";
 import { openSearchPanel } from "@codemirror/search";
 import {
   buildPrintCss,
+  type EmbeddedFontFace,
   MARGIN_RE,
   marginToPx,
   parsePageConfig,
@@ -83,6 +88,14 @@ import {
   wrapStandaloneHtml,
   setPageConfigSpec,
 } from "./export";
+import { embedFontsForExport } from "./fontEmbeds";
+import {
+  DEFAULT_FONT_ID,
+  DOCUMENT_FONTS,
+  fontFamily,
+  fontStack,
+  isFontId,
+} from "./fonts";
 import { sanitizeDocumentHtml } from "./sanitize";
 import {
   collectRecoveryDrafts,
@@ -920,6 +933,7 @@ async function ensureAuthor(): Promise<boolean> {
  * the live view's page card matches: A4/Letter at CSS 96dpi. */
 let paperDims = { w: 794, h: 1123 }; // A4 at CSS 96dpi
 let pageMarginPx = { top: 75.6, right: 75.6, bottom: 75.6, left: 75.6 }; // 20mm
+let currentFontId = DEFAULT_FONT_ID;
 
 // CSS custom properties would not resolve in the .cm-content sizing in this
 // WebView (a literal works, a var/calc silently drops), so the page size is
@@ -968,6 +982,7 @@ function applyPageVars() {
         `${m.top * z}px ${m.right * z}px ${m.bottom * z}px ${m.left * z}px`,
       );
       s.setProperty("font-size", `${(PRINT_FONT_PX * z).toFixed(2)}px`);
+      s.setProperty("font-family", fontStack(currentFontId));
     }
     if (editorFontRule?.parentStyleSheet == null) {
       editorFontRule = findRule("#editor .cm-editor");
@@ -990,7 +1005,23 @@ function updatePageMetrics() {
   pageMarginPx = marginToPx(cfg.margin);
   const editorEl = document.getElementById("editor")!;
   editorEl.style.setProperty("--doc-align", cfg.justify ? "justify" : "left");
+  const fontChanged = cfg.font !== currentFontId;
+  currentFontId = cfg.font;
   applyPageVars();
+  if (fontChanged) {
+    // CodeMirror re-arms document.fonts.ready only once, at construction
+    // (see @codemirror/view's EditorView constructor), so a font swapped in
+    // afterwards needs an explicit re-measure — otherwise the caret,
+    // selection and page-gap widgets stay positioned against the previous
+    // font's metrics until the next zoom change. Guarded on an actual id
+    // change: this runs on every edit via refreshComments, and an
+    // unconditional document.fonts.load(...).then(...) would queue a
+    // promise and a forced measure per keystroke.
+    void document.fonts
+      .load(`${PRINT_FONT_PX}px "${fontFamily(cfg.font)}"`)
+      .then(() => view.requestMeasure())
+      .catch(() => {});
+  }
 }
 
 function refreshComments() {
@@ -1124,6 +1155,7 @@ const printRoot = document.getElementById("print-root")!;
 const pageDialog = document.getElementById("page-dialog") as HTMLDialogElement;
 const pageSize = document.getElementById("page-size") as HTMLSelectElement;
 const pageMargin = document.getElementById("page-margin") as HTMLInputElement;
+const pageFont = document.getElementById("page-font") as HTMLSelectElement;
 const pageHeader = document.getElementById("page-header") as HTMLInputElement;
 const pageFooter = document.getElementById("page-footer") as HTMLInputElement;
 
@@ -1223,15 +1255,31 @@ async function exportPdf() {
 async function exportHtml() {
   try {
     const markdown = serializeDocument(view.state);
+    const cfg = parsePageConfig(markdown);
     const fileTitle = fileLabel().replace(/\.(md|markdown)$/i, "");
     const { meta } = parseMeta(markdown);
     const body = sanitizeDocumentHtml(renderDocumentHtml(markdown, mode));
+    // Embed only the faces this document actually uses, so a plain-text
+    // export doesn't pay for an italic or code face it never renders.
+    let embeddedFonts: EmbeddedFontFace[] = [];
+    try {
+      embeddedFonts = await embedFontsForExport(cfg.font, {
+        hasItalic: /<(em|i)[ >]/i.test(body),
+        hasCode: /<(code|pre)[ >]/i.test(body),
+      });
+    } catch (err) {
+      // Fail soft: an export without the embedded font (falling back to
+      // fontStack's system-font tail) beats no export at all.
+      console.error("[monoleaf] font embedding failed:", err);
+    }
     // The exported file gets a CSP mirroring this window's setting, so a shared
     // .html cannot fetch what the app itself was told not to fetch.
     const html = wrapStandaloneHtml(
       body,
       meta.title.trim() || fileTitle,
       remoteImagesEnabled,
+      cfg.font,
+      embeddedFonts,
     );
     const path = await save({
       filters: [{ name: "HTML", extensions: ["html"] }],
@@ -1250,6 +1298,7 @@ function pageSetup() {
   const cfg = parsePageConfig(view.state.doc.toString());
   pageSize.value = cfg.size;
   pageMargin.value = cfg.margin;
+  pageFont.value = cfg.font;
   pageHeader.value = cfg.header;
   pageFooter.value = cfg.footer;
   pageJustify.checked = cfg.justify;
@@ -1273,6 +1322,10 @@ function pageSetup() {
           setPageConfigSpec(view.state, {
             size: pageSize.value === "Letter" ? "Letter" : "A4",
             margin,
+            // The <select> only ever offers known ids, but validate anyway
+            // rather than trust the DOM — the same posture parsePageConfig
+            // takes when reading this value back out of the file.
+            font: isFontId(pageFont.value) ? pageFont.value : DEFAULT_FONT_ID,
             header: pageHeader.value,
             footer: pageFooter.value,
             justify: pageJustify.checked,
@@ -1731,6 +1784,7 @@ const editorExtensions = () => [
       refreshReviewButtons(update.state);
       refreshPageIndicator();
       refreshStyleButton();
+      refreshFontButton();
       refreshOutline();
     }
   }),
@@ -2771,6 +2825,47 @@ styleButton.addEventListener("click", (e) => {
   );
 });
 
+// --- document font (toolbar quick-picker, mirrors the style picker above) --
+const fontButton = document.getElementById("btn-font")!;
+const fontGlyph = fontButton.querySelector(".font-glyph") as HTMLElement;
+
+function refreshFontButton() {
+  const cfg = parsePageConfig(view.state.doc.toString());
+  const label =
+    DOCUMENT_FONTS.find((f) => f.id === cfg.font)?.label ??
+    DOCUMENT_FONTS[0].label;
+  // Icon-only button (no visible label, to save toolbar width) — the
+  // tooltip is the only always-available disclosure of the current font.
+  fontButton.title = `Document font: ${label}`;
+  // The glyph itself previews the chosen font, the same way a live document
+  // font swap is otherwise only visible in the page card.
+  fontGlyph.style.fontFamily = fontStack(cfg.font);
+}
+
+// Writes straight through PageConfig, same as Page Setup's dialog — the two
+// controls share one field, so they can never disagree with each other.
+function chooseFont(id: string) {
+  const cfg = parsePageConfig(view.state.doc.toString());
+  view.dispatch(setPageConfigSpec(view.state, { ...cfg, font: id }));
+  view.focus();
+}
+
+fontButton.addEventListener("click", (e) => {
+  e.stopPropagation();
+  const rect = fontButton.getBoundingClientRect();
+  const cfg = parsePageConfig(view.state.doc.toString());
+  showContextMenu(
+    rect.left,
+    rect.bottom + 4,
+    DOCUMENT_FONTS.map((f) => ({
+      kind: "item",
+      label: f.label,
+      strong: f.id === cfg.font,
+      action: () => chooseFont(f.id),
+    })),
+  );
+});
+
 // --- change case (Word-style picker) ----------------------------------------
 const CASE_MODES: { mode: CaseMode; label: string }[] = [
   { mode: "upper", label: "UPPERCASE" },
@@ -3435,6 +3530,7 @@ refreshComments();
 refreshReviewButtons();
 refreshPageIndicator();
 refreshStyleButton();
+refreshFontButton();
 refreshWordCount();
 schedulePagination(500);
 view.focus();
