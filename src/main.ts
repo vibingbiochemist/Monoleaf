@@ -1491,7 +1491,7 @@ async function runPagination() {
     const css = buildPrintCss(
       cfg,
       { title: "", author: "", date: "" },
-      "#pagination-measure",
+      ".ml-measure",
     );
     // paginationPreviewer is always null here — every path out of this
     // function (including an early return above) goes through the finally
