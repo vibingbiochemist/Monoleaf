@@ -597,7 +597,15 @@ export function contentExpression(
 export function buildPrintCss(
   cfg: PageConfig,
   vars: { title: string; author?: string; date: string },
-  root = "#print-root",
+  // A class, not an ID: Paged.js's Sheet.parse() rewrites every ID selector
+  // into `[data-id="…"]` (replaceIds), and data-id is only ever stamped onto
+  // *content* nodes it clones into the paginated output, never onto the
+  // render-target element itself. An ID-scoped root here would compile to a
+  // selector nothing in the paginated DOM ever matches, silently dropping
+  // every rule below (menu, headings, code font, justify — everything except
+  // the unscoped .ml-pagebreak and the @page block, which at-rules skip).
+  // Class selectors pass through untouched.
+  root = ".ml-print",
 ): string {
   const header = contentExpression(cfg.header, vars);
   const footer = contentExpression(cfg.footer, vars);

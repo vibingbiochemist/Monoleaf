@@ -5,6 +5,18 @@ All notable changes to Monoleaf are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **PDF and print output now actually uses the page's intended typography.**
+  The stylesheet that sets the 11pt body size, heading sizes, line spacing,
+  justified text and code font was scoped to an element ID that Paged.js
+  rewrites internally, so none of those rules ever matched — printed
+  documents silently fell back to a 16px browser default instead. Exports
+  now render at the intended size, so a document has noticeably more text
+  per page and the printed page count may be lower than before.
+
 ## [1.1.0] - 2026-08-07
 
 ### Added
