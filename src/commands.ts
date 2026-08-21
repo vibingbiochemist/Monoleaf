@@ -72,6 +72,11 @@ function enclosing(
   return null;
 }
 
+/** The single character at `pos`, or "" at a document boundary. */
+function charAt(state: EditorState, pos: number): string {
+  return pos < 0 || pos >= state.doc.length ? "" : state.sliceDoc(pos, pos + 1);
+}
+
 /** Toggle an inline wrapper construct like **bold** or `code`. */
 function toggleInline(
   nodeName: string,
@@ -94,6 +99,42 @@ function toggleInline(
           changes: [
             { from: first.from, to: first.to },
             { from: last.from, to: last.to },
+          ],
+          userEvent: "delete.format",
+        }),
+      );
+      return true;
+    }
+
+    // An empty marker pair sitting right at the cursor — toggled on, then
+    // toggled again without typing in between — never parses as `nodeName`:
+    // CommonMark requires non-empty content between emphasis delimiters, so
+    // `enclosing` above can never find it. Left to the wrap branch below,
+    // every repeated click would stack another marker pair around the same
+    // empty spot ("**|**" -> "****|****" -> ...) instead of removing it.
+    // Same fix toggleHtmlWrap already applies via a direct before/after
+    // string check, adapted here for markdown's repeated-character markers.
+    if (
+      range.from === range.to &&
+      state.sliceDoc(Math.max(0, range.from - marker.length), range.from) ===
+        marker &&
+      state.sliceDoc(
+        range.to,
+        Math.min(state.doc.length, range.to + marker.length),
+      ) === marker &&
+      // Guard against a marker that is a run-prefix of a longer one built
+      // from the same character (subscript "~" vs strikethrough "~~"): if
+      // one more of that character sits just outside the matched run, this
+      // is the middle of a longer pair, not a standalone empty one — leave
+      // it alone rather than deleting half of an unrelated strikethrough.
+      charAt(state, range.from - marker.length - 1) !== marker[0] &&
+      charAt(state, range.to + marker.length) !== marker[0]
+    ) {
+      dispatch(
+        state.update({
+          changes: [
+            { from: range.from - marker.length, to: range.from },
+            { from: range.to, to: range.to + marker.length },
           ],
           userEvent: "delete.format",
         }),

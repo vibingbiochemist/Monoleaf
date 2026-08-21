@@ -109,6 +109,65 @@ describe("inline toggles", () => {
     expect(run(toggleSuperscript, "E=mc^2^", 5).doc).toBe("E=mc2");
   });
 
+  // A second click with no typing in between lands the cursor exactly
+  // between two marker pairs the first click already inserted ("**|**").
+  // CommonMark never parses that as a real StrongEmphasis/Emphasis/etc.
+  // node (delimiters need non-empty content), so naively falling through to
+  // the wrap branch would stack another pair instead of removing the empty
+  // one — turning one stray click into a permanent "****" artifact.
+  describe("toggling twice on empty content removes the pair instead of stacking", () => {
+    it("bold", () => {
+      const once = run(toggleBold, "x ", 2);
+      expect(once.doc).toBe("x ****");
+      const twice = run(toggleBold, once.doc, 4);
+      expect(twice.doc).toBe("x ");
+    });
+
+    it("italic", () => {
+      const once = run(toggleItalic, "x ", 2);
+      expect(once.doc).toBe("x **");
+      const twice = run(toggleItalic, once.doc, 3);
+      expect(twice.doc).toBe("x ");
+    });
+
+    it("strikethrough", () => {
+      const once = run(toggleStrikethrough, "x ", 2);
+      expect(once.doc).toBe("x ~~~~");
+      const twice = run(toggleStrikethrough, once.doc, 4);
+      expect(twice.doc).toBe("x ");
+    });
+
+    it("inline code", () => {
+      const once = run(toggleInlineCode, "x ", 2);
+      expect(once.doc).toBe("x ``");
+      const twice = run(toggleInlineCode, once.doc, 3);
+      expect(twice.doc).toBe("x ");
+    });
+
+    it("subscript", () => {
+      const once = run(toggleSubscript, "x ", 2);
+      expect(once.doc).toBe("x ~~");
+      const twice = run(toggleSubscript, once.doc, 3);
+      expect(twice.doc).toBe("x ");
+    });
+
+    it("superscript", () => {
+      const once = run(toggleSuperscript, "x ", 2);
+      expect(once.doc).toBe("x ^^");
+      const twice = run(toggleSuperscript, once.doc, 3);
+      expect(twice.doc).toBe("x ");
+    });
+  });
+
+  it("does not corrupt an empty strikethrough when subscript is toggled inside it (shared marker character)", () => {
+    // "~~~~" is an empty strikethrough, not two empty subscripts — since
+    // "~" is a run-prefix of "~~", the empty-pair fix must not mistake the
+    // inner two characters for a standalone empty subscript pair and delete
+    // half of the strikethrough's real markers.
+    const r = run(toggleSubscript, "~~~~", 2);
+    expect(r.doc).toContain("~~~~");
+  });
+
   it("insert equation wraps a selection in $…$", () => {
     expect(run(insertMath, "abc", 0, 3).doc).toBe("$abc$");
   });
