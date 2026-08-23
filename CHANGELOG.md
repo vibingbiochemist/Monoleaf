@@ -88,7 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   snapshot used to be deleted at the moment it was offered back, and the next one
   was over a second away and waiting on an edit that might never come, so a
   document recovered and then left untouched existed nowhere but in memory. A
-  crash or a forced close in that window lost it — the exact failure recovery
+  crash or a forced close in that window lost it: the exact failure recovery
   exists to prevent. Each draft is now written straight back, under the key of
   whichever window ends up holding it.
 
@@ -97,7 +97,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Dialogs no longer stretch to the width of the window** when they hold a long
   message. Their width is capped at a readable column, for every dialog rather
   than only the ones where it had been noticed.
-- Em dashes in labels and messages give way to plainer punctuation — a colon, a
+- Em dashes in labels and messages give way to plainer punctuation: a colon, a
   comma or parentheses. The window title keeps its dash, which is the
   conventional form there.
 
@@ -169,12 +169,12 @@ First public release.
 - **The page-setup block cannot inject CSS.** A margin value travels with the
   document and is interpolated into the printed page's `@page` rule, so it is
   validated as plain CSS lengths and nothing else. Without that, a document could
-  close the rule and append styles of its own — applied on open, since page
-  layout is measured when a file loads, not when it is printed.
+  close the rule and append styles of its own (applied on open, since page
+  layout is measured when a file loads, not when it is printed).
 - **Remote content is blocked on every attribute that fetches**, not just
   `<img src>`: `srcset`, `poster` and the legacy `background` attribute on any
   element, `href`/`xlink:href` on the SVG elements that load one, and any inline
-  `style` that references a remote URL — including through CSS escape sequences
+  `style` that references a remote URL, including through CSS escape sequences
   and `image-set()`, neither of which a pattern over `url()` tokens catches.
   Inline `data:` images are unaffected, in either setting.
 - **Exported HTML carries its own Content-Security-Policy.** A shared `.html`
@@ -212,7 +212,7 @@ First public release.
   both exports. Monoleaf does not emit them, and allowing tags it never produces
   only widens what an untrusted document can reach for. Images, math and tables
   are unaffected.
-- **Page margins accept plain CSS lengths only** — one to four values in `mm`,
+- **Page margins accept plain CSS lengths only:** one to four values in `mm`,
   `cm`, `in`, `pt` or `px`, or a bare `0`. Anything else in a document's page
   setup falls back to the default, because a margin travels with the file
   straight into the printed page's style rule.
