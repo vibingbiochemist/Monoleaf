@@ -34,6 +34,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   documents silently fell back to a 16px browser default instead. Exports
   now render at the intended size, so a document has noticeably more text
   per page and the printed page count may be lower than before.
+- **The in-editor page-break indicator now matches the real PDF/print output
+  exactly**, instead of landing on a nearby but different line. A long
+  paragraph that runs across a page boundary now reads Paged.js's own break
+  point for plain-text paragraphs directly, rather than guessing where the
+  cut fell; anything with inline formatting (bold, links, code, …) still
+  falls back to the previous best-effort estimate, which itself no longer
+  collapses onto a single position when a paragraph spans more than two
+  pages.
 
 ## [1.1.0] - 2026-08-07
 

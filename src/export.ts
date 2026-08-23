@@ -451,6 +451,11 @@ export function renderDocumentHtml(
       for (const token of state.tokens) {
         if (token.map !== null && token.block) {
           token.attrSet("data-srcline", String(token.map[0]));
+          // token.map is [startLine, endLine) — end exclusive. Lets
+          // extractPageBreaks (pagination.ts) anchor a page break to where a
+          // straddling block ENDS when Paged.js clones its stale start-line
+          // data-srcline onto the continuation fragment on the next page.
+          token.attrSet("data-srcline-end", String(token.map[1]));
         }
       }
     });

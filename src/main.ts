@@ -111,6 +111,7 @@ import {
 } from "./remoteimages";
 import { Previewer } from "pagedjs";
 import {
+  BreakToken,
   extractPageBreaks,
   pageAt,
   pageBreaksField,
@@ -981,16 +982,21 @@ function applyPageVars() {
         "padding",
         `${m.top * z}px ${m.right * z}px ${m.bottom * z}px ${m.left * z}px`,
       );
-      s.setProperty("font-size", `${(PRINT_FONT_PX * z).toFixed(2)}px`);
+      // No .toFixed() here: rounding to 2 decimals (14.67px) versus print's
+      // exact 11pt (14.666666...px) is a tiny per-line discrepancy that
+      // compounds over a long paragraph — CodeMirror's own word-wrapping and
+      // Paged.js's can end up disagreeing about which word ends a line
+      // purely from that drift, independent of where any page-break marker
+      // is placed. Not rounding doesn't make the two engines' layouts
+      // identical (they're still separate renderers), but it removes this
+      // one concrete, needless source of divergence between them.
+      s.setProperty("font-size", `${PRINT_FONT_PX * z}px`);
       s.setProperty("font-family", fontStack(currentFontId));
     }
     if (editorFontRule?.parentStyleSheet == null) {
       editorFontRule = findRule("#editor .cm-editor");
     }
-    editorFontRule?.style.setProperty(
-      "font-size",
-      `${(PRINT_FONT_PX * z).toFixed(2)}px`,
-    );
+    editorFontRule?.style.setProperty("font-size", `${PRINT_FONT_PX * z}px`);
   } catch (err) {
     console.error("[monoleaf] applyPageVars failed:", err);
   }
@@ -1558,8 +1564,22 @@ async function runPagination() {
     // if preview() itself is what throws.
     const previewer = new Previewer();
     paginationPreviewer = previewer;
+    // Collect the exact break token Paged.js cut each page at, keyed by the
+    // page it ends (0-based) — afterPageLayout can re-fire for the same page
+    // during Paged.js's own overflow retries, so last write wins, same as
+    // Paged.js's own resolution. extractPageBreaks uses these for a
+    // pixel-exact divider when the straddling block turns out to be plain
+    // text, falling back to its proportional approximation otherwise.
+    const exactBreaks = new Map<number, BreakToken | undefined>();
+    previewer.chunker.hooks.afterPageLayout.register((_el, page, token) => {
+      exactBreaks.set(page.position, token);
+    });
     await previewer.preview(source, [{ "monoleaf-measure": css }], measureRoot);
-    const { breaks, pages } = extractPageBreaks(measureRoot, view.state);
+    const { breaks, pages } = extractPageBreaks(
+      measureRoot,
+      view.state,
+      exactBreaks,
+    );
     knownBreaks = breaks;
     knownPages = pages;
     lastMeasureKey = key;

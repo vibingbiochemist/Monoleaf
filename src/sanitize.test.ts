@@ -86,6 +86,12 @@ describe("sanitizeDocumentHtml", () => {
     );
   });
 
+  it("preserves data-srcline-end (extractPageBreaks's straddling-block fallback)", () => {
+    expect(
+      sanitizeDocumentHtml('<p data-srcline="7" data-srcline-end="9">x</p>'),
+    ).toContain('data-srcline-end="9"');
+  });
+
   it("preserves MathML emitted by KaTeX", () => {
     const out = sanitizeDocumentHtml(
       "<math><mrow><mi>C</mi><mn>2</mn></mrow></math>",
