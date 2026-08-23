@@ -5,7 +5,7 @@ All notable changes to Monoleaf are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-08-23
 
 ### Added
 
@@ -42,6 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   falls back to the previous best-effort estimate, which itself no longer
   collapses onto a single position when a paragraph spans more than two
   pages.
+- **Bold, italic, strikethrough, inline code, subscript and superscript no
+  longer stack extra markers when toggled twice with nothing typed in
+  between.** Clicking the same formatting button again on an empty
+  selection used to wrap the cursor in an ever-growing pile of markers
+  (`**` → `****` → `********`…) instead of clearing the empty pair.
 
 ## [1.1.0] - 2026-08-07
 
