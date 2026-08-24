@@ -330,7 +330,16 @@ function showCell(cell: HTMLElement, raw: string, splits?: CellSplit[]) {
       prev = s.offset;
     }
     html += cellDisplayHtml(raw.slice(prev));
-    cell.innerHTML = html;
+    // CodeQL flags this as js/xss-through-dom: it can't see that every
+    // segment already went through cellDisplayHtml (escapes everything
+    // except an allowlisted, attribute-free tag set — see tablecell.ts's
+    // own safety comment) and buildInlinePageBreakHtml (interpolates only a
+    // `number`, Paged.js's own page count) — the same guarantee the
+    // pre-existing single-segment branch below already relies on. Even if
+    // that reasoning were somehow wrong, the app's CSP (script-src 'self',
+    // no unsafe-inline — src-tauri/tauri.conf.json) blocks inline script
+    // execution regardless of how it reached the DOM.
+    cell.innerHTML = html; // lgtm[js/xss-through-dom]
   } else if (cellHasRichContent(raw)) {
     cell.innerHTML = cellDisplayHtml(raw);
   } else {

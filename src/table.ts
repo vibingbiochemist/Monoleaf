@@ -91,7 +91,13 @@ export function splitRowWithPositions(line: string): RowCellSpan[] {
       continue;
     }
     if (line[p] === "|") {
-      cells.push(trimSpan(line, cellStart, p));
+      // CodeQL flags this as js/incomplete-sanitization: the `escaped`
+      // backslash-tracking above superficially resembles an escaper that
+      // "misses" backslashes, but this function isn't sanitizing anything —
+      // it's a boundary finder that deliberately returns exact, untouched
+      // substrings (raw.length === end - start always holds; see the
+      // doc comment above), so escaping was never the goal here.
+      cells.push(trimSpan(line, cellStart, p)); // lgtm[js/incomplete-sanitization]
       cellStart = p + 1;
     }
   }
