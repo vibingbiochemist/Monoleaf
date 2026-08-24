@@ -1165,6 +1165,16 @@ html.theme-dark .brand-dark {
 
 #editor .cm-cursor {
   border-left-width: 2px;
+  /* CodeMirror sets the cursor's height directly from coordsAtPos(), which
+     misresolves right at the edge of a multi-line block-replace widget (a
+     table spanning several pages, say) to the widget's own top/bottom —
+     the cursor then renders as tall as the whole table. max-height clamps
+     the used value regardless of that inline height. Sized to ordinary
+     text (14.67px baseline * 1.5 line-height ≈ 22px, plus a little
+     headroom) rather than trying to also cover every heading size at every
+     zoom level — a slightly short cursor on a large heading is a much
+     smaller issue than one spanning a whole table. */
+  max-height: 26px;
 }
 
 /* Dark mode: the default caret is nearly invisible on the dark canvas, so
