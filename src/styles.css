@@ -621,6 +621,28 @@ html.theme-dark .brand-dark {
   background: light-dark(rgba(232, 163, 61, 0.08), rgba(232, 163, 61, 0.12));
 }
 
+/* A page break landing inside a multi-page table: the table itself is one
+   opaque replaced widget (see tablewidget.ts), so the standalone
+   .cm-page-gap divider — designed to bleed across the page card's own
+   padding — can't render here. This is the in-table equivalent: a plain
+   dashed rule scoped to the row, not the page. */
+.ml-table-pagebreak td {
+  border-left: none;
+  border-right: none;
+  border-top: 1px dashed light-dark(#c9c8c4, #4a4a46);
+  border-bottom: 1px dashed light-dark(#c9c8c4, #4a4a46);
+  padding: 4px 0;
+  text-align: center;
+  background: var(--bg);
+}
+
+.ml-table-pagebreak-num {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .ml-table-bar {
   position: absolute;
   top: -30px;

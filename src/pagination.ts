@@ -87,6 +87,23 @@ export const pageBreaksField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
+/** The current page breaks as plain {pos, page} data, for consumers (like
+ * tablewidget.ts) that need the positions without depending on
+ * PageBreakWidget or decoration internals. [] when pagination is off (the
+ * field doesn't exist outside livePreviewExtensions). */
+export function pageBreakPositions(state: EditorState): PageBreak[] {
+  const deco = state.field(pageBreaksField, false);
+  if (deco === undefined) return [];
+  const result: PageBreak[] = [];
+  const it = deco.iter();
+  while (it.value !== null) {
+    const widget = (it.value.spec as { widget?: { page: number } }).widget;
+    if (widget !== undefined) result.push({ pos: it.from, page: widget.page });
+    it.next();
+  }
+  return result;
+}
+
 /** The stale, clone-inherited data-srcline of a continuation-only page — the
  * block it's continuing, identified by that block's own start line — or
  * null if the page isn't a pure continuation (no data-srcline at all). */

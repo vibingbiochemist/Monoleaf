@@ -16,6 +16,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { MenuItem } from "./contextmenu";
+import { pageBreakPositions, setPageBreaks } from "./pagination";
 import { cellDisplayHtml, cellHasRichContent } from "./tablecell";
 import {
   ColAlign,
@@ -46,19 +47,33 @@ let pendingFocus: { from: number; row: number; col: number } | null = null;
 // Last focused cell, for the toolbar operations.
 let activeCell: { row: number; col: number } = { row: -1, col: 0 };
 
+export interface TableDivider {
+  /** 0-based index into model.rows; the divider renders just before it. */
+  row: number;
+  page: number;
+}
+
 class TableWidget extends WidgetType {
   constructor(
     readonly source: string,
     readonly from: number,
     readonly model: TableModel,
+    readonly dividers: TableDivider[],
   ) {
     super();
   }
   eq(other: TableWidget) {
-    return other.source === this.source;
+    return (
+      other.source === this.source &&
+      other.dividers.length === this.dividers.length &&
+      other.dividers.every(
+        (d, i) =>
+          d.row === this.dividers[i].row && d.page === this.dividers[i].page,
+      )
+    );
   }
   get estimatedHeight() {
-    return (this.model.rows.length + 2) * 38;
+    return (this.model.rows.length + 2 + this.dividers.length) * 38;
   }
   ignoreEvent() {
     return true;
@@ -68,17 +83,44 @@ class TableWidget extends WidgetType {
   }
 }
 
+/** A GFM table row is always exactly one physical source line (confirmed via
+ * the data-srcline the pagination measurement pass stamps on every <tr>), so
+ * a break's line number maps directly to a row index — offset by the
+ * header + delimiter lines every table starts with. */
+function dividerRowIndex(
+  state: EditorState,
+  tableFrom: number,
+  pos: number,
+): number {
+  const tableStartLine = state.doc.lineAt(tableFrom).number;
+  const breakLine = state.doc.lineAt(pos).number;
+  return breakLine - tableStartLine - 2;
+}
+
 function buildDecorations(state: EditorState): DecorationSet {
   const decos: ReturnType<Decoration["range"]>[] = [];
+  const breaks = pageBreakPositions(state);
   syntaxTree(state).iterate({
     enter: (node) => {
       if (node.name !== "Table") return;
       const source = state.sliceDoc(node.from, node.to);
       const model = parseTableText(source);
       if (model === null) return;
+      // A break at or before the table's own start already renders fine via
+      // the normal pageBreaksField mechanism (that position sits outside
+      // this replaced range); only breaks landing strictly inside need to be
+      // handled here, since CodeMirror can't paint anything inside a
+      // Decoration.replace span.
+      const dividers = breaks
+        .filter((b) => b.pos > node.from && b.pos < node.to)
+        .map((b) => ({
+          row: dividerRowIndex(state, node.from, b.pos),
+          page: b.page,
+        }))
+        .filter((d) => d.row >= 0 && d.row < model.rows.length);
       decos.push(
         Decoration.replace({
-          widget: new TableWidget(source, node.from, model),
+          widget: new TableWidget(source, node.from, model, dividers),
           block: true,
         }).range(node.from, node.to),
       );
@@ -91,7 +133,10 @@ function buildDecorations(state: EditorState): DecorationSet {
 export const tableField = StateField.define<DecorationSet>({
   create: buildDecorations,
   update(deco, tr) {
-    if (tr.docChanged || tr.effects.some((e) => e.is(refreshTables))) {
+    if (
+      tr.docChanged ||
+      tr.effects.some((e) => e.is(refreshTables) || e.is(setPageBreaks))
+    ) {
       return buildDecorations(tr.state);
     }
     return deco.map(tr.changes);
@@ -207,6 +252,22 @@ function revealCellSource(cell: HTMLElement) {
   }
 }
 
+/** A page-break divider row, spanning every column — the in-table
+ * equivalent of the standalone .cm-page-gap divider, which can't render here
+ * since the whole table sits inside one replaced decoration range. */
+function buildTablePageBreakRow(page: number, cols: number): HTMLElement {
+  const tr = document.createElement("tr");
+  tr.className = "ml-table-pagebreak";
+  const td = document.createElement("td");
+  td.colSpan = cols;
+  const label = document.createElement("span");
+  label.className = "ml-table-pagebreak-num";
+  label.textContent = `Page ${page - 1}`;
+  td.appendChild(label);
+  tr.appendChild(td);
+  return tr;
+}
+
 function buildTableDom(view: EditorView, widget: TableWidget): HTMLElement {
   const model = widget.model;
   const wrap = document.createElement("div");
@@ -306,7 +367,11 @@ function buildTableDom(view: EditorView, widget: TableWidget): HTMLElement {
   thead.appendChild(hr);
   table.appendChild(thead);
   const tbody = document.createElement("tbody");
+  const dividerBeforeRow = new Map(widget.dividers.map((d) => [d.row, d.page]));
   model.rows.forEach((cells, r) => {
+    const page = dividerBeforeRow.get(r);
+    if (page !== undefined)
+      tbody.appendChild(buildTablePageBreakRow(page, model.header.length));
     const tr = document.createElement("tr");
     cells.forEach((text, c) =>
       tr.appendChild(mkCell("td", r, c, text, model.aligns[c])),

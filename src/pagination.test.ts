@@ -6,6 +6,7 @@ import {
   buildPageBreakDecorations,
   extractPageBreaks,
   pageAt,
+  pageBreakPositions,
   pageBreaksField,
   resolveExactBreakPos,
   setPageBreaks,
@@ -43,6 +44,30 @@ describe("page break decorations", () => {
     const it2 = set.iter();
     expect(it2.value).not.toBeNull();
     expect(it2.from).toBe(15);
+  });
+});
+
+describe("pageBreakPositions", () => {
+  it("is empty when the field isn't present (pagination off)", () => {
+    const state = EditorState.create({ doc: "hello\n" });
+    expect(pageBreakPositions(state)).toEqual([]);
+  });
+
+  it("returns the dispatched breaks as plain {pos, page} data", () => {
+    const state = EditorState.create({
+      doc: "aaaa\nbbbb\ncccc\n",
+      extensions: pageBreaksField,
+    });
+    const withBreaks = state.update({
+      effects: setPageBreaks.of([
+        { pos: 5, page: 2 },
+        { pos: 10, page: 3 },
+      ]),
+    }).state;
+    expect(pageBreakPositions(withBreaks)).toEqual([
+      { pos: 5, page: 2 },
+      { pos: 10, page: 3 },
+    ]);
   });
 });
 
