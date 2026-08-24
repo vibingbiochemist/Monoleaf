@@ -5,7 +5,7 @@ All notable changes to Monoleaf are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.1] - 2026-08-24
 
 ### Fixed
 
@@ -14,6 +14,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page-break divider landing inside it had nowhere to draw — the divider now
   renders as a row inside the table itself, at the same row the real
   PDF/print output breaks on.
+- **A page break landing inside a single tall cell now shows precisely
+  where the PDF actually breaks, instead of only at row boundaries.** A
+  cell long enough to span a page on its own (a `<br>`-separated list, say)
+  has no row to anchor a divider to; the divider is now rendered inline
+  inside the cell's own content, at the exact character position the real
+  PDF broke at.
+- **The gap between pages, and the divider inside a split table, now match
+  the editor's actual canvas color** instead of a similar but slightly
+  different grey that never quite lined up with the background behind the
+  page.
+- **The text cursor no longer renders as tall as an entire table** when
+  placed at the edge of a table that spans multiple pages. It's now clamped
+  to the height it would have in ordinary text.
 
 ## [1.2.0] - 2026-08-23
 
