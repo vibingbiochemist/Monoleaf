@@ -223,6 +223,28 @@ describe("htmlToMarkdown (paste with formatting)", () => {
     expect(htmlToMarkdown(wordHtml)).toBe("Hello **Word**");
   });
 
+  it("doesn't leak <style>/<xml> content reconstituted by splitting the tag across removed text", () => {
+    // A regex that removes "<style ...>...</style>" as one literal span in a
+    // single pass can be defeated: split the delimiter so the leftover
+    // prefix/suffix concatenate into a NEW, well-formed tag around
+    // attacker-chosen text that a later `</style>` (never part of the
+    // removed match) legitimately closes.
+    //   "<sty" + "<style>x</style>" + "le>PAYLOAD</style>"
+    // The middle block is the only match in a single global pass, so it
+    // alone gets removed, leaving "<sty" + "le>PAYLOAD</style>" =
+    // "<style>PAYLOAD</style>" — a clean element whose text content
+    // (PAYLOAD) then survives verbatim into the output. Handling
+    // style/xml removal on turndown's parsed tree (see service()) instead
+    // of via regex closes this: the tag is dropped by its real, parsed
+    // identity, not reconstructed from adjacent decoy fragments.
+    expect(
+      htmlToMarkdown("<p><sty<style>x</style>le>PAYLOAD</style></p>"),
+    ).not.toBe("PAYLOAD");
+    expect(htmlToMarkdown("<p><x<xml>x</xml>ml>PAYLOAD</xml></p>")).not.toBe(
+      "PAYLOAD",
+    );
+  });
+
   it("collapses blank-line pileups", () => {
     const md = htmlToMarkdown("<div><div><p>a</p></div></div><p>b</p>");
     expect(md).toBe("a\n\nb");
