@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Page breaks are no longer invisible inside a table that spans multiple
   pages.** A table is rendered in the editor as one interactive grid, so a
-  page-break divider landing inside it had nowhere to draw — the divider now
+  page-break divider landing inside it had nowhere to draw: the divider now
   renders as a row inside the table itself, at the same row the real
   PDF/print output breaks on.
 - **A page break landing inside a single tall cell now shows precisely
@@ -37,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   IBM Plex Mono for code blocks and the raw view. All six are bundled with
   the app (SIL Open Font License) rather than drawn from whatever is
   installed on your system, so a document renders and paginates identically
-  everywhere — the same reason page size and margins already travel with the
+  everywhere, the same reason page size and margins already travel with the
   file. The choice is saved in the document itself and carried into PDF and
   HTML exports; HTML exports embed the font directly so the file looks right
   even on a machine that doesn't have it installed.
@@ -53,7 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **PDF and print output now actually uses the page's intended typography.**
   The stylesheet that sets the 11pt body size, heading sizes, line spacing,
   justified text and code font was scoped to an element ID that Paged.js
-  rewrites internally, so none of those rules ever matched — printed
+  rewrites internally, so none of those rules ever matched: printed
   documents silently fell back to a 16px browser default instead. Exports
   now render at the intended size, so a document has noticeably more text
   per page and the printed page count may be lower than before.
@@ -79,7 +79,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   "What's new" disclosure under the offer shows the release notes, instead of
   just a bare version number.
 - **Skip a specific update version.** A "Skip this version" button lets you
-  decline one release without turning update checks off entirely — a later
+  decline one release without turning update checks off entirely. A later
   "Check for updates" still offers it, and the next release is unaffected.
 - **Periodic update rechecks.** Monoleaf now checks for updates roughly once a
   day while it stays open, not only at startup, so a long-running session
