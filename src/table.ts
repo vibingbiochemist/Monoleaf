@@ -37,6 +37,74 @@ function splitRow(line: string): string[] {
   return cells;
 }
 
+export interface RowCellSpan {
+  /** The exact line.slice(start, end) — deliberately NOT unescaped (unlike
+   * splitRow's cells), so raw.length === end - start always holds. Callers
+   * needing the model's unescaped text still go through splitRow/TableModel. */
+  raw: string;
+  start: number;
+  end: number;
+}
+
+const isWs = (ch: string | undefined) => ch !== undefined && /\s/.test(ch);
+
+/** Trim ws from [start, end) within line, returning the trimmed span. */
+function trimSpan(line: string, start: number, end: number): RowCellSpan {
+  let s = start;
+  let e = end;
+  while (s < e && isWs(line[s])) s++;
+  while (e > s && isWs(line[e - 1])) e--;
+  return { raw: line.slice(s, e), start: s, end: e };
+}
+
+/**
+ * Position-aware sibling of splitRow: same escape-aware pipe-boundary
+ * scanning (leading/trailing pipe stripped, \| doesn't end a cell, each
+ * cell trimmed), but reports each cell's [start, end) offset within `line`
+ * instead of returning an unescaped model string. Used to map an absolute
+ * editor position (e.g. a page-break) back to "which cell, what offset" —
+ * see resolveExactBreakPos (pagination.ts) and buildDecorations
+ * (tablewidget.ts).
+ */
+export function splitRowWithPositions(line: string): RowCellSpan[] {
+  const cells: RowCellSpan[] = [];
+
+  // Mirror splitRow's line.trim().replace(/^\|/, "").replace(/\|$/, ""), but
+  // track positions in the ORIGINAL string instead of a separate copy.
+  let i = 0;
+  const n = line.length;
+  while (i < n && isWs(line[i])) i++;
+  let end = n;
+  while (end > i && isWs(line[end - 1])) end--;
+  if (i < end && line[i] === "|") i++;
+  if (end > i && line[end - 1] === "|") end--;
+
+  let cellStart = i;
+  let escaped = false;
+  for (let p = i; p < end; p++) {
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (line[p] === "\\") {
+      escaped = true;
+      continue;
+    }
+    if (line[p] === "|") {
+      // CodeQL flags this as js/incomplete-sanitization: the `escaped`
+      // backslash-tracking above superficially resembles an escaper that
+      // "misses" backslashes, but this function isn't sanitizing anything —
+      // it's a boundary finder that deliberately returns exact, untouched
+      // substrings (raw.length === end - start always holds; see the
+      // doc comment above), so escaping was never the goal here.
+      cells.push(trimSpan(line, cellStart, p)); // lgtm[js/incomplete-sanitization]
+      cellStart = p + 1;
+    }
+  }
+  cells.push(trimSpan(line, cellStart, end));
+  return cells;
+}
+
 function parseAlign(cell: string): ColAlign | null {
   const t = cell.trim();
   if (!/^:?-+:?$/.test(t)) return null;

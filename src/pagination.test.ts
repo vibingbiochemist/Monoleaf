@@ -6,6 +6,7 @@ import {
   buildPageBreakDecorations,
   extractPageBreaks,
   pageAt,
+  pageBreakPositions,
   pageBreaksField,
   resolveExactBreakPos,
   setPageBreaks,
@@ -43,6 +44,30 @@ describe("page break decorations", () => {
     const it2 = set.iter();
     expect(it2.value).not.toBeNull();
     expect(it2.from).toBe(15);
+  });
+});
+
+describe("pageBreakPositions", () => {
+  it("is empty when the field isn't present (pagination off)", () => {
+    const state = EditorState.create({ doc: "hello\n" });
+    expect(pageBreakPositions(state)).toEqual([]);
+  });
+
+  it("returns the dispatched breaks as plain {pos, page} data", () => {
+    const state = EditorState.create({
+      doc: "aaaa\nbbbb\ncccc\n",
+      extensions: pageBreaksField,
+    });
+    const withBreaks = state.update({
+      effects: setPageBreaks.of([
+        { pos: 5, page: 2 },
+        { pos: 10, page: 3 },
+      ]),
+    }).state;
+    expect(pageBreakPositions(withBreaks)).toEqual([
+      { pos: 5, page: 2 },
+      { pos: 10, page: 3 },
+    ]);
   });
 });
 
@@ -321,6 +346,136 @@ describe("resolveExactBreakPos", () => {
     const state = EditorState.create({ doc: "first second\n" });
     const detached = document.createTextNode("orphan");
     expect(resolveExactBreakPos({ node: detached, offset: 2 }, state)).toBe(
+      null,
+    );
+  });
+});
+
+describe("resolveExactBreakPos: table rows", () => {
+  // "Line 1<br>Line 2<br>Line 3" split across 3 text nodes by 2 real <br>
+  // elements — the shape a browser gives a rendered table cell with forced
+  // line breaks, matching the real repro that surfaced this (a cell with
+  // many <br>-separated lines, taller than a single printed page).
+  const ROW = "| short | Line 1<br>Line 2<br>Line 3 |\n";
+
+  function buildRow() {
+    const state = EditorState.create({ doc: ROW });
+    const tr = document.createElement("tr");
+    tr.setAttribute("data-srcline", "0");
+    tr.setAttribute("data-srcline-end", "1");
+    const td0 = document.createElement("td");
+    td0.textContent = "short";
+    const td1 = document.createElement("td");
+    td1.append(
+      document.createTextNode("Line 1"),
+      document.createElement("br"),
+      document.createTextNode("Line 2"),
+      document.createElement("br"),
+      document.createTextNode("Line 3"),
+    );
+    tr.append(td0, td1);
+    return { state, tr, td1 };
+  }
+
+  it("resolves a break inside a <br>-separated cell to the exact source character", () => {
+    const { state, td1 } = buildRow();
+    // The middle text node, 3 chars in: "Lin|e 2" — right after "Lin".
+    const middleTextNode = td1.childNodes[2];
+    const pos = resolveExactBreakPos(
+      { node: middleTextNode, offset: 3 },
+      state,
+    );
+    expect(pos).not.toBeNull();
+    // Must land exactly between the "n" and the "e" of the SECOND "Line 2",
+    // not the first "Line 1" or third "Line 3".
+    expect(state.doc.sliceString(pos! - 3, pos!)).toBe("Lin");
+    expect(state.doc.sliceString(pos!, pos! + 3)).toBe("e 2");
+  });
+
+  it("returns null for a break on inter-cell whitespace (no cell ancestor)", () => {
+    const { state, tr } = buildRow();
+    // A text node that's a direct child of <tr>, not inside any <td> — the
+    // inter-cell whitespace markdown-it's HTML string produces once parsed.
+    const whitespaceNode = document.createTextNode("\n");
+    tr.insertBefore(whitespaceNode, tr.firstChild);
+    expect(
+      resolveExactBreakPos({ node: whitespaceNode, offset: 0 }, state),
+    ).toBe(null);
+  });
+
+  it("returns null exactly at a cell boundary (start or end)", () => {
+    const { state, td1 } = buildRow();
+    const firstTextNode = td1.childNodes[0];
+    // Offset 0 of the cell's first text node = the cell's very start.
+    expect(
+      resolveExactBreakPos({ node: firstTextNode, offset: 0 }, state),
+    ).toBe(null);
+    const lastTextNode = td1.childNodes[4];
+    // End of the cell's last text node = the cell's very end.
+    expect(
+      resolveExactBreakPos(
+        { node: lastTextNode, offset: (lastTextNode.textContent ?? "").length },
+        state,
+      ),
+    ).toBe(null);
+  });
+
+  it("returns null for a break inside a cell containing an escaped pipe (that same cell, not just any cell in the row)", () => {
+    const state = EditorState.create({ doc: "| short | a\\|b<br>Line 2 |\n" });
+    const tr = document.createElement("tr");
+    tr.setAttribute("data-srcline", "0");
+    tr.setAttribute("data-srcline-end", "1");
+    const td0 = document.createElement("td");
+    td0.textContent = "short";
+    const td1 = document.createElement("td");
+    const textNode = document.createTextNode("Line 2");
+    td1.append(
+      document.createTextNode("a|b"),
+      document.createElement("br"),
+      textNode,
+    );
+    tr.append(td0, td1);
+    expect(resolveExactBreakPos({ node: textNode, offset: 2 }, state)).toBe(
+      null,
+    );
+  });
+
+  it("still resolves exactly when a DIFFERENT cell in the same row has an escaped pipe or rich formatting", () => {
+    const state = EditorState.create({
+      doc: "| a\\|b | Line 1<br>Line 2 |\n",
+    });
+    const tr = document.createElement("tr");
+    tr.setAttribute("data-srcline", "0");
+    tr.setAttribute("data-srcline-end", "1");
+    const td0 = document.createElement("td");
+    td0.textContent = "a|b";
+    const td1 = document.createElement("td");
+    const textNode = document.createTextNode("Line 2");
+    td1.append(
+      document.createTextNode("Line 1"),
+      document.createElement("br"),
+      textNode,
+    );
+    tr.append(td0, td1);
+    expect(
+      resolveExactBreakPos({ node: textNode, offset: 2 }, state),
+    ).not.toBeNull();
+  });
+
+  it("returns null for a break inside a cell reshaped by real markdown formatting", () => {
+    const state = EditorState.create({ doc: "| plain | **bo**ld |\n" });
+    const tr = document.createElement("tr");
+    tr.setAttribute("data-srcline", "0");
+    tr.setAttribute("data-srcline-end", "1");
+    const td0 = document.createElement("td");
+    td0.textContent = "plain";
+    const td1 = document.createElement("td");
+    const strong = document.createElement("strong");
+    strong.textContent = "bo";
+    const textNode = document.createTextNode("ld");
+    td1.append(strong, textNode);
+    tr.append(td0, td1);
+    expect(resolveExactBreakPos({ node: textNode, offset: 1 }, state)).toBe(
       null,
     );
   });

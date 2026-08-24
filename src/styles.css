@@ -8,6 +8,11 @@
   --accent: light-dark(#e8a33d, #e8a33d);
   --accent-soft: light-dark(rgba(232, 163, 61, 0.16), rgba(232, 163, 61, 0.22));
   --bg: light-dark(#f6f6f4, #191b1e);
+  /* The live view's gray canvas behind the white page card — kept as its
+     own variable (not --bg, the general app-chrome background) so the
+     page-break "gap" dividers can match it exactly rather than showing a
+     slightly-off grey of their own. */
+  --canvas-bg: light-dark(#d7d7d4, #141413);
   --panel: light-dark(#fbfbfa, #23252a);
   --border: light-dark(#e4e3df, #383b42);
   --text: light-dark(#20201e, #f5f1e8);
@@ -621,6 +626,57 @@ html.theme-dark .brand-dark {
   background: light-dark(rgba(232, 163, 61, 0.08), rgba(232, 163, 61, 0.12));
 }
 
+/* A page break landing inside a multi-page table: the table itself is one
+   opaque replaced widget (see tablewidget.ts), so the standalone
+   .cm-page-gap divider can't render here. table-row/table-cell layout
+   ignores margins, so a <td> can't bleed past the table's own width the way
+   .cm-page-gap bleeds past the page card's padding — instead the TD just
+   reserves the right VERTICAL space in the table's normal flow (matching
+   .cm-page-gap's own 58/30/58 total height), and .ml-table-pagebreak-bleed
+   escapes it via absolute positioning, bleeding left/right by the SAME
+   amount .cm-page-gap does, without widening the table itself. The result
+   looks like the same page break everywhere in the document, table or not. */
+.ml-table-pagebreak td {
+  position: relative;
+  border: none;
+  padding: 0;
+  height: 146px; /* 58 + 30 + 58 — the visible content moved to the bleed */
+}
+
+.ml-table-pagebreak-bleed {
+  position: absolute;
+  inset: 0 -72px; /* same horizontal bleed as .cm-page-gap's margin */
+}
+
+.ml-table-pagebreak-gap-bottom {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ml-table-pagebreak-gap-space {
+  height: 30px;
+  margin: 0 -30px; /* bleeds further, past the card border/shadow — same as .cm-page-gap-space */
+  background: var(--canvas-bg);
+}
+
+.ml-table-pagebreak-gap-top {
+  height: 58px;
+}
+
+/* A page break landing INSIDE a single cell's own content — a cell tall
+   enough to need one of its own, e.g. a run of forced <br> line breaks.
+   Sits normally in the cell's text flow (keeping whatever vertical position
+   that gives it); position: relative makes it the anchor for
+   .ml-table-pagebreak-bleed's escape to the page card's edge. */
+.ml-table-pagebreak-inline {
+  display: block;
+  position: relative;
+  height: 146px;
+  user-select: none;
+}
+
 .ml-table-bar {
   position: absolute;
   top: -30px;
@@ -1015,7 +1071,7 @@ html.theme-dark .brand-dark {
 .cm-page-gap-space {
   height: 30px;
   margin: 0 -30px; /* beyond the card border and shadow */
-  background: var(--bg);
+  background: var(--canvas-bg);
   box-shadow:
     inset 0 7px 7px -7px rgba(0, 0, 0, 0.28),
     inset 0 -7px 7px -7px rgba(0, 0, 0, 0.28);
@@ -1074,7 +1130,7 @@ html.theme-dark .brand-dark {
    sheet. The #editor.live prefix outranks CodeMirror's base .cm-content
    (which is flex-grow:2 and would otherwise fill the scroller). */
 #editor.live .cm-scroller {
-  background: light-dark(#d7d7d4, #141413);
+  background: var(--canvas-bg);
   padding: 26px 16px;
 }
 

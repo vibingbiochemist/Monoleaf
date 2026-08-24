@@ -5,6 +5,8 @@ import {
   EditorView,
   WidgetType,
 } from "@codemirror/view";
+import { splitRowWithPositions } from "./table";
+import { cellDisplayTextWithMap } from "./tablecell";
 
 /**
  * Accurate in-editor page awareness. A background job (main.ts) runs the
@@ -87,6 +89,23 @@ export const pageBreaksField = StateField.define<DecorationSet>({
   provide: (f) => EditorView.decorations.from(f),
 });
 
+/** The current page breaks as plain {pos, page} data, for consumers (like
+ * tablewidget.ts) that need the positions without depending on
+ * PageBreakWidget or decoration internals. [] when pagination is off (the
+ * field doesn't exist outside livePreviewExtensions). */
+export function pageBreakPositions(state: EditorState): PageBreak[] {
+  const deco = state.field(pageBreaksField, false);
+  if (deco === undefined) return [];
+  const result: PageBreak[] = [];
+  const it = deco.iter();
+  while (it.value !== null) {
+    const widget = (it.value.spec as { widget?: { page: number } }).widget;
+    if (widget !== undefined) result.push({ pos: it.from, page: widget.page });
+    it.next();
+  }
+  return result;
+}
+
 /** The stale, clone-inherited data-srcline of a continuation-only page — the
  * block it's continuing, identified by that block's own start line — or
  * null if the page isn't a pure continuation (no data-srcline at all). */
@@ -133,6 +152,11 @@ export function resolveExactBreakPos(
     Math.min(startLine + 1, state.doc.lines),
   ).from;
   const blockTo = state.doc.line(Math.min(endLine, state.doc.lines)).to;
+
+  if (blockEl.tagName === "TR") {
+    return resolveTableCellBreakPos(token, state, blockEl, blockFrom, blockTo);
+  }
+
   const sourceText = state.doc.sliceString(blockFrom, blockTo);
 
   // Collapse whitespace runs to a single space, the same way CommonMark
@@ -169,6 +193,64 @@ export function resolveExactBreakPos(
       ? toOriginal[renderedOffset]
       : sourceText.length;
   return blockFrom + originalIndex;
+}
+
+/**
+ * resolveExactBreakPos's table-row path. A <tr>'s own textContent can't be
+ * used the way a paragraph's can: markdown-it's HTML output puts a literal
+ * newline between sibling <td>s, which a browser parses as real text nodes
+ * between them — no per-cell concatenation without separators can ever
+ * reproduce that, so matching at the row level would always fail. Instead,
+ * find the <td>/<th> ancestor of the break token's node and match just that
+ * ONE cell's rendered text against its own raw source span — a single cell
+ * has no injected newlines inside it, and precision degrades per cell
+ * rather than per row (a plain cell can resolve exactly even if a sibling
+ * cell in the same row has rich markdown formatting).
+ */
+function resolveTableCellBreakPos(
+  token: BreakToken,
+  state: EditorState,
+  rowEl: Element,
+  rowFrom: number,
+  rowTo: number,
+): number | null {
+  const startEl =
+    token.node.nodeType === Node.ELEMENT_NODE
+      ? (token.node as Element)
+      : token.node.parentElement;
+  const cellEl = startEl?.closest("td, th");
+  // No cell ancestor (the break landed on inter-cell whitespace) or it
+  // belongs to some OTHER row entirely: nothing to anchor to here.
+  if (cellEl == null || !rowEl.contains(cellEl)) return null;
+
+  const cells = Array.from((rowEl as HTMLTableRowElement).cells ?? []);
+  const colIndex = cells.indexOf(cellEl as HTMLTableCellElement);
+  if (colIndex === -1) return null;
+
+  const rowText = state.doc.sliceString(rowFrom, rowTo);
+  const span = splitRowWithPositions(rowText)[colIndex];
+  // An escaped "\|" would need reconciling two different index spaces
+  // (source vs. unescaped model text) for one rare case — bail instead.
+  if (span === undefined || span.raw.includes("\\|")) return null;
+
+  const { text: expected, toOriginal } = cellDisplayTextWithMap(span.raw);
+  if (expected !== cellEl.textContent) return null; // formatted — bail
+
+  const range = document.createRange();
+  range.setStart(cellEl, 0);
+  if (token.node.nodeType === Node.TEXT_NODE) {
+    const len = token.node.textContent?.length ?? 0;
+    range.setEnd(token.node, Math.min(token.offset, len));
+  } else {
+    range.setEnd(token.node, 0);
+  }
+  const renderedOffset = range.toString().length;
+  // Exactly at a cell boundary isn't a mid-cell split — the row-level
+  // fallback owns boundary cases uniformly (extractPageBreaks' existing
+  // strict-inequality convention for "inside" a table's range).
+  if (renderedOffset <= 0 || renderedOffset >= expected.length) return null;
+
+  return rowFrom + span.start + toOriginal[renderedOffset];
 }
 
 /**

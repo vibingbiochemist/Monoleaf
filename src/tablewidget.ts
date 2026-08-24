@@ -16,6 +16,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { MenuItem } from "./contextmenu";
+import { PageBreak, pageBreakPositions, setPageBreaks } from "./pagination";
 import { cellDisplayHtml, cellHasRichContent } from "./tablecell";
 import {
   ColAlign,
@@ -28,6 +29,7 @@ import {
   serializeTable,
   setAlign,
   setCell,
+  splitRowWithPositions,
   TableModel,
 } from "./table";
 
@@ -46,19 +48,53 @@ let pendingFocus: { from: number; row: number; col: number } | null = null;
 // Last focused cell, for the toolbar operations.
 let activeCell: { row: number; col: number } = { row: -1, col: 0 };
 
+export interface TableDivider {
+  /** 0-based index into model.rows. */
+  row: number;
+  page: number;
+  /** When set, this divider renders INSIDE cell (row, splitCol) at
+   * splitOffset (an index into that cell's own raw text) instead of as a
+   * row before the whole row — for a single cell tall enough to need a
+   * page break of its own. */
+  splitCol?: number;
+  splitOffset?: number;
+}
+
 class TableWidget extends WidgetType {
   constructor(
     readonly source: string,
     readonly from: number,
     readonly model: TableModel,
+    readonly dividers: TableDivider[],
   ) {
     super();
   }
   eq(other: TableWidget) {
-    return other.source === this.source;
+    return (
+      other.source === this.source &&
+      other.dividers.length === this.dividers.length &&
+      other.dividers.every((d, i) => {
+        const mine = this.dividers[i];
+        return (
+          d.row === mine.row &&
+          d.page === mine.page &&
+          d.splitCol === mine.splitCol &&
+          d.splitOffset === mine.splitOffset
+        );
+      })
+    );
   }
   get estimatedHeight() {
-    return (this.model.rows.length + 2) * 38;
+    // A "before whole row" divider adds a full extra row; a mid-cell split
+    // doesn't add a row but still adds its own ~146px (58+30+58, matching
+    // .cm-page-gap's proportions) within the existing one.
+    const rowDividers = this.dividers.filter(
+      (d) => d.splitCol === undefined,
+    ).length;
+    const inlineDividers = this.dividers.length - rowDividers;
+    return (
+      (this.model.rows.length + 2 + rowDividers) * 38 + inlineDividers * 146
+    );
   }
   ignoreEvent() {
     return true;
@@ -68,17 +104,78 @@ class TableWidget extends WidgetType {
   }
 }
 
+/** A GFM table row is always exactly one physical source line (confirmed via
+ * the data-srcline the pagination measurement pass stamps on every <tr>), so
+ * a break's line number maps directly to a row index — offset by the
+ * header + delimiter lines every table starts with. */
+function dividerRowIndex(
+  state: EditorState,
+  tableFrom: number,
+  pos: number,
+): number {
+  const tableStartLine = state.doc.lineAt(tableFrom).number;
+  const breakLine = state.doc.lineAt(pos).number;
+  return breakLine - tableStartLine - 2;
+}
+
+/** Where a break landing inside a table should render: a mid-cell split
+ * (the common case for one cell tall enough to need a page break of its
+ * own) when the exact cell/offset can be safely determined, otherwise a
+ * divider before the whole row — the row-boundary case PR #42 already
+ * handled. Bails to the row-level form rather than guessing whenever the
+ * cell can't be pinned down exactly (escaped "\|", out-of-range column),
+ * same "exact when safe, approximate otherwise" posture as
+ * resolveExactBreakPos itself. */
+function resolveTableDivider(
+  state: EditorState,
+  tableFrom: number,
+  model: TableModel,
+  b: PageBreak,
+): TableDivider | null {
+  const row = dividerRowIndex(state, tableFrom, b.pos);
+  if (row < 0 || row >= model.rows.length) return null;
+
+  const line = state.doc.lineAt(b.pos);
+  const spans = splitRowWithPositions(line.text);
+  const colIndex = spans.findIndex(
+    (s) => b.pos > line.from + s.start && b.pos < line.from + s.end,
+  );
+  if (
+    colIndex === -1 ||
+    colIndex >= model.rows[row].length ||
+    spans[colIndex].raw.includes("\\|")
+  ) {
+    return { row, page: b.page }; // divider before the whole row
+  }
+  return {
+    row,
+    page: b.page,
+    splitCol: colIndex,
+    splitOffset: b.pos - (line.from + spans[colIndex].start),
+  };
+}
+
 function buildDecorations(state: EditorState): DecorationSet {
   const decos: ReturnType<Decoration["range"]>[] = [];
+  const breaks = pageBreakPositions(state);
   syntaxTree(state).iterate({
     enter: (node) => {
       if (node.name !== "Table") return;
       const source = state.sliceDoc(node.from, node.to);
       const model = parseTableText(source);
       if (model === null) return;
+      // A break at or before the table's own start already renders fine via
+      // the normal pageBreaksField mechanism (that position sits outside
+      // this replaced range); only breaks landing strictly inside need to be
+      // handled here, since CodeMirror can't paint anything inside a
+      // Decoration.replace span.
+      const dividers = breaks
+        .filter((b) => b.pos > node.from && b.pos < node.to)
+        .map((b) => resolveTableDivider(state, node.from, model, b))
+        .filter((d): d is TableDivider => d !== null);
       decos.push(
         Decoration.replace({
-          widget: new TableWidget(source, node.from, model),
+          widget: new TableWidget(source, node.from, model, dividers),
           block: true,
         }).range(node.from, node.to),
       );
@@ -91,7 +188,10 @@ function buildDecorations(state: EditorState): DecorationSet {
 export const tableField = StateField.define<DecorationSet>({
   create: buildDecorations,
   update(deco, tr) {
-    if (tr.docChanged || tr.effects.some((e) => e.is(refreshTables))) {
+    if (
+      tr.docChanged ||
+      tr.effects.some((e) => e.is(refreshTables) || e.is(setPageBreaks))
+    ) {
       return buildDecorations(tr.state);
     }
     return deco.map(tr.changes);
@@ -175,17 +275,76 @@ function focusCell(view: EditorView, from: number, row: number, col: number) {
   });
 }
 
+interface CellSplit {
+  /** Index into the cell's own raw text where the divider is inserted. */
+  offset: number;
+  page: number;
+}
+
+/** A page-break divider meant to sit INSIDE a cell's own rendered content —
+ * the in-table equivalent of the standalone .cm-page-gap divider, used when
+ * a single cell is itself too tall to fit on one page. Its own label text
+ * DOES contribute to `.textContent`, which is exactly why revealCellSource
+ * below can't rely on a plain string-equality check to know whether a cell
+ * needs revealing. */
+function buildInlinePageBreakHtml(page: number): string {
+  // Same bottom-margin/gap/top-margin structure as the standalone
+  // .cm-page-gap divider (pagination.ts's PageBreakWidget), including its
+  // horizontal bleed: .ml-table-pagebreak-inline sits normally in the
+  // cell's own text flow (so it keeps whatever vertical position that gives
+  // it), and .ml-table-pagebreak-bleed — an absolutely positioned child —
+  // escapes it horizontally to reach the page card's edge the same way
+  // .cm-page-gap does, without affecting the cell's own layout.
+  return (
+    `<div class="ml-table-pagebreak-inline" contenteditable="false">` +
+    `<div class="ml-table-pagebreak-bleed">` +
+    `<div class="ml-table-pagebreak-gap-bottom">` +
+    `<span class="cm-page-num">${page - 1}</span></div>` +
+    `<div class="ml-table-pagebreak-gap-space"></div>` +
+    `<div class="ml-table-pagebreak-gap-top"></div>` +
+    `</div>` +
+    `</div>`
+  );
+}
+
 /**
  * Show a cell the way the PDF/HTML export shows it: inline HTML from the safe
  * subset rendered, entities resolved (see tablecell.ts). The markdown source
  * stays in `data-raw` — a rendered cell reads back through `textContent` as
  * flattened text, so every commit path compares against `data-raw` and the
  * cell is switched back to its raw source while focused for editing.
+ *
+ * `splits`, when given, means this ONE cell is itself taller than a page:
+ * its raw text is sliced at each split's offset and rendered as separate
+ * segments (still through the same cellDisplayHtml as any other cell) with
+ * an inline divider between them — see resolveTableDivider/TableDivider.
  */
-function showCell(cell: HTMLElement, raw: string) {
+function showCell(cell: HTMLElement, raw: string, splits?: CellSplit[]) {
   cell.dataset.raw = raw;
-  if (cellHasRichContent(raw)) cell.innerHTML = cellDisplayHtml(raw);
-  else cell.textContent = raw;
+  if (splits !== undefined && splits.length > 0) {
+    let html = "";
+    let prev = 0;
+    for (const s of splits) {
+      html += cellDisplayHtml(raw.slice(prev, s.offset));
+      html += buildInlinePageBreakHtml(s.page);
+      prev = s.offset;
+    }
+    html += cellDisplayHtml(raw.slice(prev));
+    // CodeQL flags this as js/xss-through-dom: it can't see that every
+    // segment already went through cellDisplayHtml (escapes everything
+    // except an allowlisted, attribute-free tag set — see tablecell.ts's
+    // own safety comment) and buildInlinePageBreakHtml (interpolates only a
+    // `number`, Paged.js's own page count) — the same guarantee the
+    // pre-existing single-segment branch below already relies on. Even if
+    // that reasoning were somehow wrong, the app's CSP (script-src 'self',
+    // no unsafe-inline — src-tauri/tauri.conf.json) blocks inline script
+    // execution regardless of how it reached the DOM.
+    cell.innerHTML = html; // lgtm[js/xss-through-dom]
+  } else if (cellHasRichContent(raw)) {
+    cell.innerHTML = cellDisplayHtml(raw);
+  } else {
+    cell.textContent = raw;
+  }
 }
 
 /** The markdown source of a cell, regardless of whether it is rendered. */
@@ -196,7 +355,12 @@ function cellRaw(cell: HTMLElement): string {
 /** Swap a rendered cell to its raw source so typing edits real markdown. */
 function revealCellSource(cell: HTMLElement) {
   const raw = cellRaw(cell);
-  if (cell.textContent === raw) return; // plain cell: nothing was rendered
+  // A plain cell (no element children) that reads back unchanged had
+  // nothing rendered — nothing to reveal. Checking for element children too
+  // (not just the string comparison) means a divider's own label text can
+  // never be mistaken for "nothing was rendered": any element children at
+  // all — rich content OR a page-break divider — always gets revealed.
+  if (cell.children.length === 0 && cell.textContent === raw) return;
   cell.textContent = raw;
   // Content length just changed under the caret, so a click-derived offset is
   // meaningless. Put it at the end, the same convention focusCell() uses.
@@ -205,6 +369,40 @@ function revealCellSource(cell: HTMLElement) {
     sel.selectAllChildren(cell);
     sel.collapseToEnd();
   }
+}
+
+/** A page-break divider row, spanning every column — the in-table
+ * equivalent of the standalone .cm-page-gap divider, which can't render here
+ * since the whole table sits inside one replaced decoration range. */
+function buildTablePageBreakRow(page: number, cols: number): HTMLElement {
+  const tr = document.createElement("tr");
+  tr.className = "ml-table-pagebreak";
+  const td = document.createElement("td");
+  td.colSpan = cols;
+  // A <tr>/<td> can't bleed past the table's own width the way .cm-page-gap
+  // bleeds past the page card's padding (table layout ignores cell margins)
+  // — so the TD just reserves the right VERTICAL space in the table's own
+  // flow, and this inner wrapper escapes it via absolute positioning,
+  // bleeding left/right the same amount .cm-page-gap does, without widening
+  // the table itself. Same bottom-margin/gap/top-margin structure as the
+  // inline mid-cell divider and the standalone .cm-page-gap — one
+  // consistent "this is a page break" look everywhere.
+  const bleed = document.createElement("div");
+  bleed.className = "ml-table-pagebreak-bleed";
+  const bottom = document.createElement("div");
+  bottom.className = "ml-table-pagebreak-gap-bottom";
+  const num = document.createElement("span");
+  num.className = "cm-page-num";
+  num.textContent = String(page - 1);
+  bottom.appendChild(num);
+  const space = document.createElement("div");
+  space.className = "ml-table-pagebreak-gap-space";
+  const top = document.createElement("div");
+  top.className = "ml-table-pagebreak-gap-top";
+  bleed.append(bottom, space, top);
+  td.appendChild(bleed);
+  tr.appendChild(td);
+  return tr;
 }
 
 function buildTableDom(view: EditorView, widget: TableWidget): HTMLElement {
@@ -283,6 +481,24 @@ function buildTableDom(view: EditorView, widget: TableWidget): HTMLElement {
   // --- the grid --------------------------------------------------------------
   const table = document.createElement("table");
   table.className = "ml-table";
+  // Group dividers: "before the whole row" (unique per row) vs. "inside one
+  // cell" (a single tall cell can need more than one, if it spans 3+ pages
+  // on its own — keyed by "row:col", sorted so segments slice in order).
+  const dividerBeforeRow = new Map<number, number>();
+  const cellSplits = new Map<string, CellSplit[]>();
+  for (const d of widget.dividers) {
+    if (d.splitCol === undefined || d.splitOffset === undefined) {
+      dividerBeforeRow.set(d.row, d.page);
+      continue;
+    }
+    const key = `${d.row}:${d.splitCol}`;
+    const list = cellSplits.get(key) ?? [];
+    list.push({ offset: d.splitOffset, page: d.page });
+    cellSplits.set(key, list);
+  }
+  for (const list of cellSplits.values())
+    list.sort((a, b) => a.offset - b.offset);
+
   const mkCell = (
     tag: "th" | "td",
     row: number,
@@ -294,7 +510,7 @@ function buildTableDom(view: EditorView, widget: TableWidget): HTMLElement {
     cell.contentEditable = "plaintext-only";
     cell.dataset.row = String(row);
     cell.dataset.col = String(col);
-    showCell(cell, text);
+    showCell(cell, text, cellSplits.get(`${row}:${col}`));
     if (align !== "none") cell.style.textAlign = align;
     return cell;
   };
@@ -307,6 +523,9 @@ function buildTableDom(view: EditorView, widget: TableWidget): HTMLElement {
   table.appendChild(thead);
   const tbody = document.createElement("tbody");
   model.rows.forEach((cells, r) => {
+    const page = dividerBeforeRow.get(r);
+    if (page !== undefined)
+      tbody.appendChild(buildTablePageBreakRow(page, model.header.length));
     const tr = document.createElement("tr");
     cells.forEach((text, c) =>
       tr.appendChild(mkCell("td", r, c, text, model.aligns[c])),
@@ -349,8 +568,11 @@ function buildTableDom(view: EditorView, widget: TableWidget): HTMLElement {
     const text = cell.textContent ?? "";
     const before = cellRaw(cell);
     // Re-render: on a real edit the widget is rebuilt from the document and
-    // this node is discarded, but an unchanged cell must go back to rendered.
-    showCell(cell, text);
+    // this node is discarded, but an unchanged cell must go back to
+    // rendered — including its divider, if it has one, or blurring a split
+    // cell without editing it would strand it undivided until an unrelated
+    // edit forces a full rebuild.
+    showCell(cell, text, cellSplits.get(`${row}:${col}`));
     if (text !== before) {
       commitModel(
         view,

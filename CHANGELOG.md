@@ -5,6 +5,16 @@ All notable changes to Monoleaf are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Page breaks are no longer invisible inside a table that spans multiple
+  pages.** A table is rendered in the editor as one interactive grid, so a
+  page-break divider landing inside it had nowhere to draw — the divider now
+  renders as a row inside the table itself, at the same row the real
+  PDF/print output breaks on.
+
 ## [1.2.0] - 2026-08-23
 
 ### Added

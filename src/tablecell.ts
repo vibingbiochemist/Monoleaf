@@ -259,5 +259,51 @@ export function cellDisplayHtml(raw: string): string {
  * `<br>` contributes nothing, matching how `textContent` sees a real <br>.
  */
 export function cellDisplayText(raw: string): string {
-  return decodeEntities(raw.replace(TAG_RE, ""));
+  return cellDisplayTextWithMap(raw).text;
+}
+
+/**
+ * Same transformation as cellDisplayText, but also returns a rendered-index
+ * -> source-index map (one entry per emitted character), for mapping an
+ * exact rendered offset (e.g. a page-break position, via the DOM Range API)
+ * back to where it falls in the cell's raw markdown source. Iterates by
+ * UTF-16 index, matching how Range.toString().length counts characters —
+ * not by code point — so surrogate pairs and multi-digit numeric character
+ * references stay aligned with what the DOM actually measures.
+ */
+export function cellDisplayTextWithMap(raw: string): {
+  text: string;
+  toOriginal: number[];
+} {
+  let text = "";
+  const toOriginal: number[] = [];
+  const n = raw.length;
+  let i = 0;
+  while (i < n) {
+    TAG_RE.lastIndex = i;
+    const tag = TAG_RE.exec(raw);
+    if (tag !== null && tag.index === i) {
+      i += tag[0].length; // zero-width: a real <br> contributes no text
+      continue;
+    }
+    ENTITY_RE.lastIndex = i;
+    const entity = ENTITY_RE.exec(raw);
+    if (entity !== null && entity.index === i) {
+      const body = entity[1];
+      const decoded = body.startsWith("#")
+        ? (codePointText(body) ?? entity[0])
+        : (NAMED_ENTITIES[body] ?? entity[0]);
+      // An unresolved entity decodes to its own literal text (matching
+      // decodeEntities), so every emitted char maps back to the entity's
+      // start — imprecise for that rare case, never unsafe.
+      for (let k = 0; k < decoded.length; k++) toOriginal.push(i);
+      text += decoded;
+      i += entity[0].length;
+      continue;
+    }
+    toOriginal.push(i);
+    text += raw[i];
+    i++;
+  }
+  return { text, toOriginal };
 }
