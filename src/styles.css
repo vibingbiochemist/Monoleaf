@@ -8,6 +8,11 @@
   --accent: light-dark(#e8a33d, #e8a33d);
   --accent-soft: light-dark(rgba(232, 163, 61, 0.16), rgba(232, 163, 61, 0.22));
   --bg: light-dark(#f6f6f4, #191b1e);
+  /* The live view's gray canvas behind the white page card — kept as its
+     own variable (not --bg, the general app-chrome background) so the
+     page-break "gap" dividers can match it exactly rather than showing a
+     slightly-off grey of their own. */
+  --canvas-bg: light-dark(#d7d7d4, #141413);
   --panel: light-dark(#fbfbfa, #23252a);
   --border: light-dark(#e4e3df, #383b42);
   --text: light-dark(#20201e, #f5f1e8);
@@ -653,7 +658,7 @@ html.theme-dark .brand-dark {
 .ml-table-pagebreak-gap-space {
   height: 30px;
   margin: 0 -30px; /* bleeds further, past the card border/shadow — same as .cm-page-gap-space */
-  background: var(--bg);
+  background: var(--canvas-bg);
 }
 
 .ml-table-pagebreak-gap-top {
@@ -1066,7 +1071,7 @@ html.theme-dark .brand-dark {
 .cm-page-gap-space {
   height: 30px;
   margin: 0 -30px; /* beyond the card border and shadow */
-  background: var(--bg);
+  background: var(--canvas-bg);
   box-shadow:
     inset 0 7px 7px -7px rgba(0, 0, 0, 0.28),
     inset 0 -7px 7px -7px rgba(0, 0, 0, 0.28);
@@ -1125,7 +1130,7 @@ html.theme-dark .brand-dark {
    sheet. The #editor.live prefix outranks CodeMirror's base .cm-content
    (which is flex-grow:2 and would otherwise fill the scroller). */
 #editor.live .cm-scroller {
-  background: light-dark(#d7d7d4, #141413);
+  background: var(--canvas-bg);
   padding: 26px 16px;
 }
 
