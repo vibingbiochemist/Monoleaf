@@ -12,7 +12,7 @@ What you write stays plain Markdown that any editor, GitHub, or an LLM can read.
 
 [![version](https://img.shields.io/github/v/release/vibingbiochemist/Monoleaf?label=version&color=E8A33D)](https://github.com/vibingbiochemist/Monoleaf/releases)
 [![license](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![platform](https://img.shields.io/badge/platform-Windows_%26_Linux-0078D6)](https://github.com/vibingbiochemist/Monoleaf/releases)
+[![platform](https://img.shields.io/badge/platform-Windows_%2C_macOS_%26_Linux-0078D6)](https://github.com/vibingbiochemist/Monoleaf/releases)
 [![built with Tauri](https://img.shields.io/badge/built%20with-Tauri%20%2B%20CodeMirror-24C8DB)](https://tauri.app)
 
 [**monoleaf.org**](https://monoleaf.org) · [Download](https://github.com/vibingbiochemist/Monoleaf/releases) · [Report an issue](https://github.com/vibingbiochemist/Monoleaf/issues)
@@ -142,6 +142,19 @@ Run the installer.
 > a free tool with one maintainer, so it is **not planned** rather than pending. If
 > you would rather not run an unsigned binary, build it yourself: see below.
 
+### macOS
+
+Open the `.dmg` and drag Monoleaf into Applications.
+
+> **Note:** the `.dmg` is **unsigned and unnotarized** — there is no Apple
+> Developer account, and none is planned; the yearly cost is hard to justify
+> for a free tool with one maintainer. Gatekeeper will refuse to open the app
+> on a plain double-click ("Monoleaf is damaged and can't be opened," or
+> similar). **Right-click (or Control-click) the app and choose Open**, then
+> confirm **Open** again in the dialog that follows — this only needs doing
+> once. If you would rather not run an unsigned binary, build it yourself: see
+> below.
+
 ### Linux
 
 Download the `.AppImage`, make it executable, and run it:
@@ -169,25 +182,22 @@ npm run tauri build    # build the installer → src-tauri/target/release/bundle
 
 ### Platform support
 
-**Windows and Linux are distributed; Windows is the more thoroughly tested of
-the two.** Monoleaf is a Tauri app, so the same source also builds on macOS,
-and `npm run tauri build` produces a `.dmg` there. Where each platform stands:
+**Windows, macOS and Linux are all distributed; Windows is the most
+thoroughly tested of the three.** Where each platform stands:
 
 - **Windows**: primary target, most exercised.
+- **macOS**: shipped as an unsigned, unnotarized `.dmg` — see the note in the
+  download section above for the Gatekeeper workaround. Community-tested
+  rather than exercised as broadly as Windows.
 - **Linux**: shipped as an AppImage, but community-tested rather than
   exercised as broadly as Windows — see the note in the download section
   above.
-- **macOS**: **not distributed**. CI builds the `.dmg` on every push, so a
-  compile break would be caught, but nobody has run it and checked that the
-  editor behaves, and an unsigned/unnotarized `.dmg` hits Gatekeeper hard
-  enough (not a simple click-through, unlike Windows or Linux) that shipping
-  it well needs a paid Apple Developer account first.
 - Everything the editor does is portable in principle. Native spell-checking is
   the one Windows-specific feature, and it is compiled out elsewhere rather than
   breaking the build.
 
-If you build on macOS, or hit anything on Linux, reports either way are
-welcome — that is the fastest route to making both fully supported.
+If you hit anything on macOS or Linux, reports are welcome — that is the
+fastest route to making both as thoroughly exercised as Windows.
 
 ## Keyboard shortcuts
 

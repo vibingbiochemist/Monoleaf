@@ -3,9 +3,11 @@
 # Windows (NSIS, per-user, no admin) is the primary target and must work;
 # macOS and Linux are wired up but secondary.
 #
-# NOTE macOS: distribution eventually needs a paid Apple Developer account
-# for code signing / notarization. Until then the .dmg is UNSIGNED — Gatekeeper
-# will warn, and users must right-click > Open. Do not ship broadly this way.
+# NOTE macOS: there is no Apple Developer account and none is planned, so the
+# .dmg is UNSIGNED and unnotarized. Gatekeeper refuses to open it on a plain
+# double-click ("app is damaged"); users must right-click > Open, then confirm
+# Open again. release.yml's release body spells this out for anyone
+# downloading it.
 name: build
 
 # Continuous integration: verify tests + that installers build on every push to
