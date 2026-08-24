@@ -25,6 +25,24 @@ function service(): TurndownService {
   // Our house inline-HTML constructs survive as-is.
   td.keep(["u", "mark"]);
 
+  // Word's <style>/<xml> scaffolding, dropped node-and-contents. Done here
+  // (on turndown's own parsed tree) rather than by regex on the raw string:
+  // a regex removing "<style ...>...</style>" as one literal span can be
+  // defeated by an attacker splitting the delimiter across the boundary —
+  // e.g. "<sty<style>x</style>le>PAYLOAD" removes the inner block and
+  // concatenates the leftovers back into "<style>PAYLOAD", reconstituting
+  // the very tag the regex was meant to strip. A real parser can't be fooled
+  // this way: it tokenizes tags by position, not by string content.
+  td.remove(["style", "xml"] as (keyof HTMLElementTagNameMap)[]);
+
+  // Word's <o:p> paragraph markers: unwrap (keep the text, drop the tag) —
+  // same reconstitution hazard as <style> above, so handled structurally
+  // here rather than via `<\/?o:p[^>]*>` regex stripping.
+  td.addRule("msoParagraphMarker", {
+    filter: ["o:p"] as unknown as (keyof HTMLElementTagNameMap)[],
+    replacement: (content) => content,
+  });
+
   // GFM strikethrough must be double-tilde: a single tilde is subscript in
   // our enhanced dialect.
   td.addRule("strikethrough", {
@@ -273,7 +291,11 @@ function alignmentOf(el: HTMLElement): string | null {
     : null;
 }
 
-/** Strip Word's clipboard scaffolding before conversion. */
+/**
+ * Strip Word's clipboard scaffolding before conversion. <style>/<xml>/<o:p>
+ * are handled structurally in service()'s turndown rules instead of here —
+ * see the comment there for why regex can't safely remove those.
+ */
 function cleanWordHtml(html: string): string {
   return (
     html
@@ -286,9 +308,6 @@ function cleanWordHtml(html: string): string {
       // it's how Word marks its fake-list bullet/number spans — so only the
       // marker tags themselves are stripped, never what's between them.
       .replace(/<!\[(?:if\b[^\]]*|endif)\]>/gi, "")
-      .replace(/<\/?o:p[^>]*>/gi, "")
-      .replace(/<style[\s\S]*?<\/style>/gi, "")
-      .replace(/<xml[\s\S]*?<\/xml>/gi, "")
   );
 }
 
