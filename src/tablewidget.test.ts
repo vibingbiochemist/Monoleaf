@@ -254,7 +254,7 @@ describe("page breaks landing inside a table", () => {
 
     const dividers = view.dom.querySelectorAll("tr.ml-table-pagebreak");
     expect(dividers.length).toBe(1);
-    expect(dividers[0].textContent).toContain("Page 1");
+    expect(dividers[0].querySelector(".cm-page-num")?.textContent).toBe("1");
     // It sits directly before the row it announces.
     const nextRow = dividers[0].nextElementSibling;
     expect(nextRow?.textContent).toContain("r1c1");
@@ -292,6 +292,117 @@ describe("page breaks landing inside a table", () => {
   it("existing tables with no pagination field render exactly as before", () => {
     const view = mount(ROWS);
     expect(view.dom.querySelectorAll("tr.ml-table-pagebreak").length).toBe(0);
+    view.destroy();
+  });
+});
+
+// A single cell taller than a page (many forced <br> line breaks) — the
+// real case that surfaced this: a row-level divider has no row boundary to
+// anchor to mid-cell, so the divider has to render INSIDE the cell itself.
+describe("page breaks landing inside a single tall cell", () => {
+  const TALL = `| short | tall |
+| --- | --- |
+| a | Line 1<br>Line 2<br>Line 3 |
+`;
+
+  function tallCellDataRowLine(view: EditorView) {
+    return view.state.doc.line(3); // "| a | Line 1<br>Line 2<br>Line 3 |"
+  }
+
+  it("renders exactly one inline divider at the right split point", () => {
+    const view = mount(TALL, [pageBreaksField]);
+    const line = tallCellDataRowLine(view);
+    // Right after "Line 1<br>Line 2" — i.e. between the second and third
+    // forced line, inside the tall cell's own raw text.
+    const pos = line.from + line.text.indexOf("Line 2<br>") + "Line 2".length;
+    view.dispatch({ effects: setPageBreaks.of([{ pos, page: 3 }]) });
+
+    const dividers = view.dom.querySelectorAll(".ml-table-pagebreak-inline");
+    expect(dividers.length).toBe(1);
+    expect(dividers[0].querySelector(".cm-page-num")?.textContent).toBe("2");
+    // No row-level divider was ALSO added for this break.
+    expect(view.dom.querySelectorAll("tr.ml-table-pagebreak").length).toBe(0);
+
+    const cell = dividers[0].closest("[data-row]") as HTMLElement;
+    expect(cell.dataset.row).toBe("0");
+    expect(cell.dataset.col).toBe("1");
+    // Splits the cell's own rendered content around the divider.
+    expect(cell.textContent).toContain("Line 1");
+    expect(cell.textContent).toContain("Line 2");
+    expect(cell.textContent).toContain("Line 3");
+    view.destroy();
+  });
+
+  it("survives a focus+blur cycle on the split cell with no edit", () => {
+    const view = mount(TALL, [pageBreaksField]);
+    const line = tallCellDataRowLine(view);
+    const pos = line.from + line.text.indexOf("Line 2<br>") + "Line 2".length;
+    view.dispatch({ effects: setPageBreaks.of([{ pos, page: 3 }]) });
+
+    const cell = view.dom.querySelector<HTMLElement>(
+      '[data-row="0"][data-col="1"]',
+    )!;
+    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+
+    expect(cell.querySelectorAll(".ml-table-pagebreak-inline").length).toBe(1);
+    // The document itself was never touched.
+    expect(view.state.doc.toString()).toContain("Line 1<br>Line 2<br>Line 3");
+    view.destroy();
+  });
+
+  it("shows the raw source (no divider) while the split cell is being edited", () => {
+    const view = mount(TALL, [pageBreaksField]);
+    const line = tallCellDataRowLine(view);
+    const pos = line.from + line.text.indexOf("Line 2<br>") + "Line 2".length;
+    view.dispatch({ effects: setPageBreaks.of([{ pos, page: 3 }]) });
+
+    const cell = view.dom.querySelector<HTMLElement>(
+      '[data-row="0"][data-col="1"]',
+    )!;
+    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    expect(cell.querySelector(".ml-table-pagebreak-inline")).toBeNull();
+    // Exact equality (not just "contains") proves the divider's own label
+    // is never part of what an edit session reads as the cell's value.
+    expect(cell.textContent).toBe("Line 1<br>Line 2<br>Line 3");
+    view.destroy();
+  });
+
+  it("still commits an edit to the split cell correctly", () => {
+    const view = mount(TALL, [pageBreaksField]);
+    const line = tallCellDataRowLine(view);
+    const pos = line.from + line.text.indexOf("Line 2<br>") + "Line 2".length;
+    view.dispatch({ effects: setPageBreaks.of([{ pos, page: 3 }]) });
+
+    const cell = view.dom.querySelector<HTMLElement>(
+      '[data-row="0"][data-col="1"]',
+    )!;
+    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    cell.textContent = "Line 1<br>Line 2<br>Line 3<br>Line 4";
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+
+    // Exact equality on the committed line (not just "contains") proves no
+    // divider label text leaked into the saved markdown.
+    expect(view.state.doc.line(3).text).toBe(
+      "| a | Line 1<br>Line 2<br>Line 3<br>Line 4 |",
+    );
+    view.destroy();
+  });
+
+  it("falls back to a row-level divider when the column can't be pinned down (escaped pipe)", () => {
+    const ESCAPED = `| short | tall |
+| --- | --- |
+| a | x\\|y<br>Line 2<br>Line 3 |
+`;
+    const view = mount(ESCAPED, [pageBreaksField]);
+    const line = view.state.doc.line(3);
+    const pos = line.from + line.text.indexOf("Line 2<br>") + "Line 2".length;
+    view.dispatch({ effects: setPageBreaks.of([{ pos, page: 3 }]) });
+
+    expect(view.dom.querySelectorAll(".ml-table-pagebreak-inline").length).toBe(
+      0,
+    );
+    expect(view.dom.querySelectorAll("tr.ml-table-pagebreak").length).toBe(1);
     view.destroy();
   });
 });

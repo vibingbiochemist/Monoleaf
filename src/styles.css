@@ -623,24 +623,53 @@ html.theme-dark .brand-dark {
 
 /* A page break landing inside a multi-page table: the table itself is one
    opaque replaced widget (see tablewidget.ts), so the standalone
-   .cm-page-gap divider — designed to bleed across the page card's own
-   padding — can't render here. This is the in-table equivalent: a plain
-   dashed rule scoped to the row, not the page. */
+   .cm-page-gap divider can't render here. table-row/table-cell layout
+   ignores margins, so a <td> can't bleed past the table's own width the way
+   .cm-page-gap bleeds past the page card's padding — instead the TD just
+   reserves the right VERTICAL space in the table's normal flow (matching
+   .cm-page-gap's own 58/30/58 total height), and .ml-table-pagebreak-bleed
+   escapes it via absolute positioning, bleeding left/right by the SAME
+   amount .cm-page-gap does, without widening the table itself. The result
+   looks like the same page break everywhere in the document, table or not. */
 .ml-table-pagebreak td {
-  border-left: none;
-  border-right: none;
-  border-top: 1px dashed light-dark(#c9c8c4, #4a4a46);
-  border-bottom: 1px dashed light-dark(#c9c8c4, #4a4a46);
-  padding: 4px 0;
-  text-align: center;
+  position: relative;
+  border: none;
+  padding: 0;
+  height: 146px; /* 58 + 30 + 58 — the visible content moved to the bleed */
+}
+
+.ml-table-pagebreak-bleed {
+  position: absolute;
+  inset: 0 -72px; /* same horizontal bleed as .cm-page-gap's margin */
+}
+
+.ml-table-pagebreak-gap-bottom {
+  height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ml-table-pagebreak-gap-space {
+  height: 30px;
+  margin: 0 -30px; /* bleeds further, past the card border/shadow — same as .cm-page-gap-space */
   background: var(--bg);
 }
 
-.ml-table-pagebreak-num {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
+.ml-table-pagebreak-gap-top {
+  height: 58px;
+}
+
+/* A page break landing INSIDE a single cell's own content — a cell tall
+   enough to need one of its own, e.g. a run of forced <br> line breaks.
+   Sits normally in the cell's text flow (keeping whatever vertical position
+   that gives it); position: relative makes it the anchor for
+   .ml-table-pagebreak-bleed's escape to the page card's edge. */
+.ml-table-pagebreak-inline {
+  display: block;
+  position: relative;
+  height: 146px;
+  user-select: none;
 }
 
 .ml-table-bar {
