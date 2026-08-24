@@ -240,9 +240,9 @@ describe("htmlToMarkdown (paste with formatting)", () => {
     expect(
       htmlToMarkdown("<p><sty<style>x</style>le>PAYLOAD</style></p>"),
     ).not.toBe("PAYLOAD");
-    expect(
-      htmlToMarkdown("<p><x<xml>x</xml>ml>PAYLOAD</xml></p>"),
-    ).not.toBe("PAYLOAD");
+    expect(htmlToMarkdown("<p><x<xml>x</xml>ml>PAYLOAD</xml></p>")).not.toBe(
+      "PAYLOAD",
+    );
   });
 
   it("collapses blank-line pileups", () => {
