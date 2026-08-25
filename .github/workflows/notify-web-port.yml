@@ -58,6 +58,11 @@ jobs:
           src/document.test.ts
           src/export.ts
           src/export.test.ts
+          src/fontEmbeds.ts
+          src/fontEmbeds.test.ts
+          src/fontfaces.ts
+          src/fonts.ts
+          src/fonts.test.ts
           src/footnotes.ts
           src/footnotes.test.ts
           src/htmlcomment.ts
