@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.1] - 2026-08-24
 
+### Added
+
+- **macOS and Linux now ship alongside Windows.** Windows remains the tested,
+  primary build. The macOS `.dmg` is unsigned and unnotarized (no Apple
+  Developer account, none planned): Gatekeeper refuses a plain double-click
+  as "damaged," so right-click (or Control-click) the app and choose Open,
+  then confirm Open again. The Linux AppImage is community-tested rather
+  than exercised as broadly as Windows.
+
 ### Fixed
 
 - **Page breaks are no longer invisible inside a table that spans multiple
