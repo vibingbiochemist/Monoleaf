@@ -708,6 +708,86 @@ describe("saving resolves a previously-unresolvable local image", () => {
   });
 });
 
+// Prediction to verify before assuming the eq() fix from the previous commit
+// covers this: currentDocumentPath is fixed and never changes here — only
+// whether the file exists does. resolvedLocalPath is identical before and
+// after (same url, same document path), so if eq() only compares
+// resolvedLocalPath/remoteBlocked/url/alt/width, it should report the two
+// widget instances equal and CodeMirror should keep the stale (failed)
+// placeholder, never calling toDOM() again on the freshly-succeeding widget.
+describe("loadFailureCount: retries a failure but not an unrelated edit", () => {
+  afterEach(() => setCurrentDocumentPath(null));
+
+  it("clears the placeholder once the file loads, via reconfigure", async () => {
+    invokeMock.mockReset();
+    setCurrentDocumentPath("/docs/notes.md");
+    // Set before the view is even constructed: the ViewPlugin's constructor
+    // calls build() -> toDOM() synchronously, so this is the mock the FIRST
+    // load sees, not a later reconfigure.
+    invokeMock.mockRejectedValueOnce("ENOENT: no such file");
+
+    const compartment = new Compartment();
+    const doc = "![a figure](retry-test.png)";
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        markdownForMode("enhanced"),
+        compartment.of(livePreviewExtensions()),
+      ],
+    });
+    ensureSyntaxTree(state, doc.length, 5000);
+    const view = new EditorView({ state, parent });
+    view.dispatch({ changes: { from: 0, insert: "" } });
+    await flush();
+    await flush();
+
+    expect(
+      view.dom.querySelector<HTMLElement>(".cm-image-blocked")?.title,
+    ).toContain("Could not load");
+    expect(view.dom.querySelector("img.cm-live-image")).toBeNull();
+
+    // The file now exists. currentDocumentPath is untouched — only the
+    // outcome of loading the same resolved path has changed.
+    invokeMock.mockResolvedValue("data:image/png;base64,FFFF");
+    view.dispatch({
+      effects: compartment.reconfigure(livePreviewExtensions()),
+    });
+    await flush();
+
+    expect(view.dom.querySelector(".cm-image-blocked")).toBeNull();
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,FFFF");
+    view.destroy();
+  });
+
+  // The other side of the fix above: `loadFailureCount` must stay unchanged
+  // for a path that has never failed, or every unrelated edit anywhere in
+  // the document would make eq() report a difference for every local image
+  // in the viewport and flicker them all back to an empty <img> while the
+  // (already-cached) promise resolves again.
+  it("does not re-invoke for an already-resolved image on an unrelated edit", async () => {
+    invokeMock.mockReset();
+    setCurrentDocumentPath("/docs/notes.md");
+    invokeMock.mockResolvedValue("data:image/png;base64,GGGG");
+
+    const view = mountLive("x ![a figure](no-retry-needed.png)");
+    await flush();
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+
+    // An edit far from the image reference: real docChanged, not a
+    // reconfigure.
+    view.dispatch({ changes: { from: 0, insert: "y" } });
+    await flush();
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,GGGG");
+    view.destroy();
+  });
+});
+
 // Regresses a pre-existing bug, unrelated to local images: found while
 // building the test above, not something this task set out to fix.
 //

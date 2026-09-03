@@ -80,16 +80,41 @@ export function resolveLocalImagePath(
 // An ordinary edit elsewhere in the document does NOT hit this path, even
 // though `build()` reruns for that too (docChanged): CodeMirror compares the
 // freshly-built ImageWidget against the existing one via eq() — url, alt,
-// width, and (since this file's cache/resolution state is not part of the
-// widget's own fields) two captured-at-construction values, `remoteBlocked`
-// and `resolvedLocalPath`. An unrelated edit changes none of those for this
-// image, so eq() says "same," the old DOM is kept, and toDOM() (therefore
-// loadLocalImage) never reruns. A reconfigure that actually changed
-// getCurrentDocumentPath() or remoteImagesAllowed() DOES change one of those
-// captured values for a widget whose reference depends on it, which is
-// exactly what makes eq() report a difference and forces the redraw this
-// cache is then in place for.
+// width, and (since this module's cache/resolution state is not part of the
+// widget's own fields) three captured-at-construction values, `remoteBlocked`,
+// `resolvedLocalPath`, and `loadFailureCount`. An unrelated edit changes none
+// of those for this image, so eq() says "same," the old DOM is kept, and
+// toDOM() (therefore loadLocalImage) never reruns.
+//
+// A reconfigure that changed getCurrentDocumentPath() or
+// remoteImagesAllowed() changes `resolvedLocalPath`/`remoteBlocked` for a
+// widget whose reference depends on it. But resolving to the SAME path twice
+// is not the only way the outcome can change: a widget built right after a
+// failed load, and one built on the next reconfigure with nothing else
+// different, resolve to the identical path — that retry needs
+// `loadFailureCount` specifically, or eq() would see three matching fields
+// and one unchanged one, call the two widgets equal, and keep showing the
+// stale failure placeholder even after the file starts loading successfully.
 const cache = new Map<string, Promise<string>>();
+
+// Resolved absolute path -> number of loads that have failed for it so far.
+// eq() (ImageWidget, livepreview.ts) cannot tell "the resolved path changed"
+// apart from "the same path just started working" by comparing
+// resolvedLocalPath alone — that field is identical before and after a
+// retry, since the document didn't move, only the file's existence did.
+// This counter is the thing that DOES differ: a widget captures it at
+// construction (see ImageWidget's `loadFailureCount` field), so a widget
+// built right after a failure and one built after the next reconfigure -
+// even at the very same resolved path - compare unequal via eq() until a
+// load actually succeeds, at which point the count stops changing and
+// eq() goes back to treating that path as stable across ordinary edits.
+const failureCount = new Map<string, number>();
+
+/** How many times a load for `resolvedPath` has failed so far (0 if never
+ * attempted or never failed). Read at ImageWidget construction time. */
+export function loadFailureCount(resolvedPath: string): number {
+  return failureCount.get(resolvedPath) ?? 0;
+}
 
 /**
  * Load (and cache) the data: URL for an already-resolved absolute path.
@@ -109,7 +134,10 @@ export function loadLocalImage(resolvedPath: string): Promise<string> {
   if (pending === undefined) {
     pending = invoke<string>("read_image_as_data_url", { path: resolvedPath });
     cache.set(resolvedPath, pending);
-    pending.catch(() => cache.delete(resolvedPath));
+    pending.catch(() => {
+      cache.delete(resolvedPath);
+      failureCount.set(resolvedPath, loadFailureCount(resolvedPath) + 1);
+    });
   }
   return pending;
 }

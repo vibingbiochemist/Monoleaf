@@ -7,6 +7,7 @@ import { tags } from "@lezer/highlight";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
 import {
   getCurrentDocumentPath,
+  loadFailureCount,
   loadLocalImage,
   resolveLocalImagePath,
 } from "./localimages";
@@ -142,6 +143,14 @@ class ImageWidget extends WidgetType {
    * same reason as `remoteBlocked`: resolution depends on
    * `getCurrentDocumentPath()`, which is not part of url/alt/width. */
   private readonly resolvedLocalPath: string | null | undefined;
+  /** How many times a load of `resolvedLocalPath` had failed as of this
+   * widget's construction. `resolvedLocalPath` alone cannot tell a widget
+   * built right after a failure apart from one built on the next
+   * reconfigure where nothing else changed — the document didn't move, only
+   * whether the file loads did — so eq() needs this too, or a retry after a
+   * missing file appears would never redraw. See the `cache`/`failureCount`
+   * comments in localimages.ts. */
+  private readonly loadFailureCount: number;
 
   constructor(
     readonly url: string,
@@ -154,6 +163,10 @@ class ImageWidget extends WidgetType {
       isRemoteUrl(url) || isDataUrl(url)
         ? undefined
         : resolveLocalImagePath(url, getCurrentDocumentPath());
+    this.loadFailureCount =
+      this.resolvedLocalPath == null
+        ? 0
+        : loadFailureCount(this.resolvedLocalPath);
   }
   eq(other: ImageWidget) {
     return (
@@ -161,7 +174,8 @@ class ImageWidget extends WidgetType {
       other.alt === this.alt &&
       other.width === this.width &&
       other.remoteBlocked === this.remoteBlocked &&
-      other.resolvedLocalPath === this.resolvedLocalPath
+      other.resolvedLocalPath === this.resolvedLocalPath &&
+      other.loadFailureCount === this.loadFailureCount
     );
   }
 
@@ -969,9 +983,9 @@ const livePreviewPlugin = ViewPlugin.fromClass(
         // Rebuilding is only half of it: build() constructs a fresh
         // ImageWidget either way, but CodeMirror still decides whether to
         // redraw by comparing it to the previous one via eq() — see the
-        // `remoteBlocked`/`resolvedLocalPath` fields on ImageWidget for the
-        // other half, without which a fresh-but-eq()-equal widget would
-        // still keep its stale DOM.
+        // `remoteBlocked`/`resolvedLocalPath`/`loadFailureCount` fields on
+        // ImageWidget for the other half, without which a fresh-but-eq()-equal
+        // widget would still keep its stale DOM.
         update.transactions.some((tr) => tr.reconfigured)
       ) {
         [this.decorations, this.atomics] = this.build(update.view);
