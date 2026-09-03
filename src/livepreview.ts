@@ -5,6 +5,11 @@ import {
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
+import {
+  getCurrentDocumentPath,
+  loadLocalImage,
+  resolveLocalImagePath,
+} from "./localimages";
 import type { Tree } from "@lezer/common";
 import {
   Decoration,
@@ -115,6 +120,12 @@ class AdmonitionTitleWidget extends WidgetType {
   }
 }
 
+/** True for a `data:` URI — carries its bytes inline, reaches no network and
+ * needs no disk read, so it renders exactly like an https image. */
+function isDataUrl(url: string): boolean {
+  return /^data:/i.test(url.trim());
+}
+
 class ImageWidget extends WidgetType {
   /** Whether this is a remote image the reader has not opted into loading —
    * captured at construction, not re-read live in toDOM/eq, because eq()
@@ -122,8 +133,15 @@ class ImageWidget extends WidgetType {
    * live `remoteImagesAllowed()` call instead of a field, two widgets built
    * before and after the setting changed would still compare equal on
    * url/alt/width and CodeMirror would keep the stale (blocked) DOM instead
-   * of redrawing when the setting flips. */
+   * of redrawing — the exact bug fixed here for local images and, as a
+   * pre-existing bug, for the remote-images toggle. */
   private readonly remoteBlocked: boolean;
+  /** The resolved absolute path for a local reference, `null` if it cannot
+   * be resolved (no open document), or `undefined` if `url` is not a local
+   * reference at all (remote or data:). Captured at construction for the
+   * same reason as `remoteBlocked`: resolution depends on
+   * `getCurrentDocumentPath()`, which is not part of url/alt/width. */
+  private readonly resolvedLocalPath: string | null | undefined;
 
   constructor(
     readonly url: string,
@@ -132,36 +150,44 @@ class ImageWidget extends WidgetType {
   ) {
     super();
     this.remoteBlocked = isRemoteUrl(url) && !remoteImagesAllowed();
+    this.resolvedLocalPath =
+      isRemoteUrl(url) || isDataUrl(url)
+        ? undefined
+        : resolveLocalImagePath(url, getCurrentDocumentPath());
   }
   eq(other: ImageWidget) {
     return (
       other.url === this.url &&
       other.alt === this.alt &&
       other.width === this.width &&
-      other.remoteBlocked === this.remoteBlocked
+      other.remoteBlocked === this.remoteBlocked &&
+      other.resolvedLocalPath === this.resolvedLocalPath
     );
   }
-  toDOM(view: EditorView) {
-    const wrap = document.createElement("span");
-    wrap.className = "cm-image-wrap";
 
-    // A remote image the reader has not opted into is a *span*, not an <img>.
-    // An <img> with no src draws the browser's broken-image glyph with the alt
-    // text struck through it, which reads as an error when nothing is wrong —
-    // and there is no image to resize, so the drag handle is skipped too.
-    if (this.remoteBlocked) {
-      const blocked = document.createElement("span");
-      blocked.className = "cm-image-blocked";
-      blocked.dataset.blockedSrc = this.url;
-      blocked.textContent = this.alt !== "" ? this.alt : "remote image";
-      blocked.title = `Not loaded: ${this.url}\nTurn on “Load remote images” in settings to load it.`;
-      wrap.appendChild(blocked);
-      return wrap;
-    }
+  /** A quiet dashed-frame placeholder (alt text + tooltip), used for every
+   * "nothing is wrong, there is just no image to show yet" case: a remote
+   * fetch declined, a relative reference with no document to resolve it
+   * against, or a local read that failed. */
+  private placeholder(title: string): HTMLElement {
+    const span = document.createElement("span");
+    span.className = "cm-image-blocked";
+    span.dataset.blockedSrc = this.url;
+    span.textContent = this.alt !== "" ? this.alt : "image";
+    span.title = title;
+    return span;
+  }
 
+  /** Build the `<img>` + resize handle, append both to `wrap`, and return the
+   * `<img>` so a caller resolving asynchronously can set `.src` later. */
+  private buildImg(
+    view: EditorView,
+    wrap: HTMLElement,
+    src: string,
+  ): HTMLImageElement {
     const img = document.createElement("img");
     img.className = "cm-live-image";
-    img.src = this.url;
+    img.src = src;
     img.alt = this.alt;
     if (this.alt !== "") img.title = this.alt;
     if (this.width !== "") {
@@ -199,8 +225,65 @@ class ImageWidget extends WidgetType {
       document.addEventListener("mouseup", onUp);
     });
     wrap.appendChild(handle);
+    return img;
+  }
+
+  toDOM(view: EditorView) {
+    const wrap = document.createElement("span");
+    wrap.className = "cm-image-wrap";
+
+    // A remote image the reader has not opted into is a *span*, not an <img>.
+    // An <img> with no src draws the browser's broken-image glyph with the alt
+    // text struck through it, which reads as an error when nothing is wrong —
+    // and there is no image to resize, so the drag handle is skipped too.
+    if (this.remoteBlocked) {
+      wrap.appendChild(
+        this.placeholder(
+          `Not loaded: ${this.url}\nTurn on “Load remote images” in settings to load it.`,
+        ),
+      );
+      return wrap;
+    }
+
+    // Remote (allowed) and data: URIs need no Rust round trip — handing the
+    // URL straight to <img src> triggers the browser's own (async) decode,
+    // same as it always has.
+    if (this.resolvedLocalPath === undefined) {
+      this.buildImg(view, wrap, this.url);
+      return wrap;
+    }
+
+    // Everything else is a local file reference, already resolved (in the
+    // constructor) against the open document's directory, or used as-is if
+    // already absolute.
+    const resolved = this.resolvedLocalPath;
+    if (resolved === null) {
+      wrap.appendChild(
+        this.placeholder("Save the document to load local images."),
+      );
+      return wrap;
+    }
+
+    // The webview cannot read this path itself (no asset-protocol scope, no
+    // fs plugin) — read_image_as_data_url does it in Rust and hands back a
+    // data: URL. Returned synchronously with an empty src so toDOM never
+    // blocks; the invoke resolves later and sets it.
+    const img = this.buildImg(view, wrap, "");
+    loadLocalImage(resolved).then(
+      (dataUrl) => {
+        img.src = dataUrl;
+      },
+      (err) => {
+        // Whole wrap, not just the <img>: the drag handle built alongside it
+        // has nothing to resize once the load has failed.
+        wrap.replaceChildren(
+          this.placeholder(`Could not load: ${resolved}\n${err}`),
+        );
+      },
+    );
     return wrap;
   }
+
   ignoreEvent() {
     return true;
   }
@@ -479,24 +562,19 @@ export function buildLivePreviewDecorations(
         }
 
         case "Image": {
-          // https images render inline; other references (local files, etc.)
-          // stay as their alt text — the .md holds only the reference either
-          // way, never image bytes.
+          // Every reference gets a widget; the .md itself still holds only
+          // the reference, never image bytes — ImageWidget decides how to
+          // get from that reference to pixels (or a placeholder).
           const text = state.doc.sliceString(node.from, node.to);
           const close = text.indexOf("](");
           if (text.startsWith("![") && close >= 0) {
             const alt = text.slice(2, close);
             const url = text.slice(close + 2, text.length - 1).split(/\s+/)[0];
-            if (/^https?:\/\//i.test(url)) {
-              hideRange(
-                node.from,
-                node.to,
-                Decoration.replace({ widget: new ImageWidget(url, alt, "") }),
-              );
-            } else {
-              hideRange(node.from, node.from + 2); // "!["
-              hideRange(node.from + close, node.to); // "](url …)"
-            }
+            hideRange(
+              node.from,
+              node.to,
+              Decoration.replace({ widget: new ImageWidget(url, alt, "") }),
+            );
           }
           break;
         }
@@ -561,13 +639,13 @@ export function buildLivePreviewDecorations(
 
         case "HTMLBlock": {
           const blockText = state.doc.sliceString(node.from, node.to);
-          // A standalone <img …> block: render it (https) or hide it.
+          // A standalone <img …> block: every reference gets a widget.
           const imgM = /<img\b[^>]*>/i.exec(blockText);
           if (imgM !== null) {
             const info = parseImgTag(imgM[0]);
             const from = node.from + imgM.index;
             const to = from + imgM[0].length;
-            if (info !== null && /^https?:\/\//i.test(info.src)) {
+            if (info !== null) {
               hideRange(
                 from,
                 to,
@@ -619,10 +697,10 @@ export function buildLivePreviewDecorations(
 
         case "HTMLTag": {
           const tag = state.sliceDoc(node.from, node.to);
-          // Inline <img …>: render it (https) or hide it (no raw bleed).
+          // Inline <img …>: every reference gets a widget.
           if (/^<img\b/i.test(tag)) {
             const info = parseImgTag(tag);
-            if (info !== null && /^https?:\/\//i.test(info.src)) {
+            if (info !== null) {
               hideRange(
                 node.from,
                 node.to,
@@ -872,26 +950,28 @@ const livePreviewPlugin = ViewPlugin.fromClass(
         update.selectionSet ||
         update.viewportChanged ||
         syntaxTree(update.state) !== syntaxTree(update.startState) ||
-        // A Compartment reconfigure (live view, remote images, portability
-        // mode, tracked changes — any of them) does NOT recreate this plugin
+        // A Compartment reconfigure (any of them: live view, remote images,
+        // portability mode, tracked changes) does NOT recreate this plugin
         // when the reconfigured extension array still contains this same
         // `livePreviewPlugin` value — CodeMirror's EditorView.updatePlugins
         // finds it by reference in the old spec array and reuses the
         // existing instance rather than constructing a new one. That reused
         // instance still gets its update() called, but none of the four
         // checks above fire for a bare reconfigure, so without this check a
-        // widget whose rendering depends on state outside the document (a
+        // widget whose rendering depends on state outside the document (an
+        // image load that only resolves once currentDocumentPath is set, a
         // remote image only allowed once the setting flips) would keep
         // showing its stale placeholder until something else — an edit, a
         // scroll — happened to touch it. `tr.reconfigured` is public API
         // (`startState.config != state.config`), so this covers every
-        // reconfigure, not just the one that changed.
+        // reconfigure, not just the live-view one.
         //
         // Rebuilding is only half of it: build() constructs a fresh
         // ImageWidget either way, but CodeMirror still decides whether to
         // redraw by comparing it to the previous one via eq() — see the
-        // `remoteBlocked` field on ImageWidget for the other half, without
-        // which a fresh-but-eq()-equal widget would still keep its stale DOM.
+        // `remoteBlocked`/`resolvedLocalPath` fields on ImageWidget for the
+        // other half, without which a fresh-but-eq()-equal widget would
+        // still keep its stale DOM.
         update.transactions.some((tr) => tr.reconfigured)
       ) {
         [this.decorations, this.atomics] = this.build(update.view);

@@ -24,6 +24,7 @@ import { createDocumentState, serializeDocument } from "./document";
 import { applyMeta, parseMeta, type DocMeta, type MetaFormat } from "./meta";
 import { PortabilityMode, portabilityExtensions } from "./portability";
 import { livePreviewExtensions } from "./livepreview";
+import { setCurrentDocumentPath } from "./localimages";
 import {
   applyLink,
   changeCase,
@@ -1892,6 +1893,13 @@ function loadIntoEditor(
   path: string | null,
   suggested: string | null = null,
 ) {
+  // Pushed before setState, not after: setState synchronously rebuilds the
+  // live-preview decorations (ViewPlugin.fromClass's constructor runs
+  // immediately), which is where local image references get resolved
+  // against this path. Setting it after would resolve the new document's
+  // images against the *previous* document's directory (or null, on the
+  // first file opened this session).
+  setCurrentDocumentPath(path);
   // A fresh state per file so the lineSeparator facet matches the file's
   // actual line endings (the facet is fixed at state creation).
   view.setState(createDocumentState(content, editorExtensions()));
@@ -2062,6 +2070,17 @@ async function saveFile(forcePrompt = false): Promise<boolean> {
       await invoke("write_file", { path, contents });
     }
     currentPath = path;
+    setCurrentDocumentPath(path);
+    // A document saved for the first time (or saved-as to a new directory)
+    // can turn previously unresolvable relative image references into
+    // resolvable ones. Same reconfigure toggleRemoteImages uses: an image
+    // widget caches its DOM, so a placeholder keeps showing until the
+    // decorations are rebuilt.
+    view.dispatch({
+      effects: liveCompartment.reconfigure(
+        liveView ? livePreviewExtensions() : rawViewExtensions,
+      ),
+    });
     // The document has a real name now, so any imported suggestion is spent.
     suggestedName = null;
     dirty = false;
