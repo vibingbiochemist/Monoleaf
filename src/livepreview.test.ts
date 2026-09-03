@@ -1,8 +1,15 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it } from "vitest";
 import { ensureSyntaxTree } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
-import { buildLivePreviewDecorations, paragraphGuard } from "./livepreview";
+import { Compartment, EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+import {
+  buildLivePreviewDecorations,
+  livePreviewExtensions,
+  paragraphGuard,
+} from "./livepreview";
 import { markdownForMode } from "./portability";
+import { setRemoteImagesAllowed } from "./remoteimages";
 
 interface Entry {
   from: number;
@@ -506,5 +513,59 @@ describe("page config", () => {
     const doc = `${PAGE_COMMENT}\n\n# Body\n`;
     // The comment's own range is not hidden while being edited.
     expect(hides(doc, 5).some((d) => d.from === 0)).toBe(false);
+  });
+});
+
+// Regresses a pre-existing bug, unrelated to any in-flight feature: found
+// while building a different reconfigure-based test, not something anyone
+// set out to fix. toggleRemoteImages (main.ts) flips remoteImagesAllowed and
+// dispatches liveCompartment.reconfigure(livePreviewExtensions()). Its own
+// comment says this "rebuilds the image widgets" — but livePreviewExtensions()
+// always returns the same `livePreviewPlugin` value, so
+// EditorView.updatePlugins finds it by reference in the previous spec array
+// and reuses the existing plugin instance instead of reconstructing it. The
+// reused instance's update() still runs, but before the fix in livepreview.ts,
+// none of its original four conditions (docChanged/selectionSet/
+// viewportChanged/syntax tree) are true for a bare reconfigure, so build()
+// never reran and an already-blocked remote image kept showing its
+// placeholder even after the setting was turned on. The fix — a fifth
+// condition checking `tr.reconfigured`, plus capturing `remoteBlocked` on the
+// widget so eq() actually notices the difference — covers this case.
+describe("toggling remote images on rebuilds an already-blocked widget", () => {
+  afterEach(() => setRemoteImagesAllowed(false));
+
+  it("clears the blocked placeholder and renders the image, via reconfigure", () => {
+    setRemoteImagesAllowed(false);
+
+    const compartment = new Compartment();
+    const doc = "![x](https://example.com/a.png)";
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        markdownForMode("enhanced"),
+        compartment.of(livePreviewExtensions()),
+      ],
+    });
+    ensureSyntaxTree(state, doc.length, 5000);
+    const view = new EditorView({ state, parent });
+    view.dispatch({ changes: { from: 0, insert: "" } });
+
+    expect(
+      view.dom.querySelector<HTMLElement>(".cm-image-blocked")?.title,
+    ).toContain("Not loaded: https://example.com/a.png");
+    expect(view.dom.querySelector("img.cm-live-image")).toBeNull();
+
+    setRemoteImagesAllowed(true);
+    // The exact call toggleRemoteImages (main.ts) makes.
+    view.dispatch({
+      effects: compartment.reconfigure(livePreviewExtensions()),
+    });
+
+    expect(view.dom.querySelector(".cm-image-blocked")).toBeNull();
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("https://example.com/a.png");
+    view.destroy();
   });
 });

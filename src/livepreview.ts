@@ -116,18 +116,29 @@ class AdmonitionTitleWidget extends WidgetType {
 }
 
 class ImageWidget extends WidgetType {
+  /** Whether this is a remote image the reader has not opted into loading —
+   * captured at construction, not re-read live in toDOM/eq, because eq()
+   * only ever sees the two widget INSTANCES being compared: if this were a
+   * live `remoteImagesAllowed()` call instead of a field, two widgets built
+   * before and after the setting changed would still compare equal on
+   * url/alt/width and CodeMirror would keep the stale (blocked) DOM instead
+   * of redrawing when the setting flips. */
+  private readonly remoteBlocked: boolean;
+
   constructor(
     readonly url: string,
     readonly alt: string,
     readonly width: string,
   ) {
     super();
+    this.remoteBlocked = isRemoteUrl(url) && !remoteImagesAllowed();
   }
   eq(other: ImageWidget) {
     return (
       other.url === this.url &&
       other.alt === this.alt &&
-      other.width === this.width
+      other.width === this.width &&
+      other.remoteBlocked === this.remoteBlocked
     );
   }
   toDOM(view: EditorView) {
@@ -138,7 +149,7 @@ class ImageWidget extends WidgetType {
     // An <img> with no src draws the browser's broken-image glyph with the alt
     // text struck through it, which reads as an error when nothing is wrong —
     // and there is no image to resize, so the drag handle is skipped too.
-    if (isRemoteUrl(this.url) && !remoteImagesAllowed()) {
+    if (this.remoteBlocked) {
       const blocked = document.createElement("span");
       blocked.className = "cm-image-blocked";
       blocked.dataset.blockedSrc = this.url;
@@ -860,7 +871,28 @@ const livePreviewPlugin = ViewPlugin.fromClass(
         update.docChanged ||
         update.selectionSet ||
         update.viewportChanged ||
-        syntaxTree(update.state) !== syntaxTree(update.startState)
+        syntaxTree(update.state) !== syntaxTree(update.startState) ||
+        // A Compartment reconfigure (live view, remote images, portability
+        // mode, tracked changes — any of them) does NOT recreate this plugin
+        // when the reconfigured extension array still contains this same
+        // `livePreviewPlugin` value — CodeMirror's EditorView.updatePlugins
+        // finds it by reference in the old spec array and reuses the
+        // existing instance rather than constructing a new one. That reused
+        // instance still gets its update() called, but none of the four
+        // checks above fire for a bare reconfigure, so without this check a
+        // widget whose rendering depends on state outside the document (a
+        // remote image only allowed once the setting flips) would keep
+        // showing its stale placeholder until something else — an edit, a
+        // scroll — happened to touch it. `tr.reconfigured` is public API
+        // (`startState.config != state.config`), so this covers every
+        // reconfigure, not just the one that changed.
+        //
+        // Rebuilding is only half of it: build() constructs a fresh
+        // ImageWidget either way, but CodeMirror still decides whether to
+        // redraw by comparing it to the previous one via eq() — see the
+        // `remoteBlocked` field on ImageWidget for the other half, without
+        // which a fresh-but-eq()-equal widget would still keep its stale DOM.
+        update.transactions.some((tr) => tr.reconfigured)
       ) {
         [this.decorations, this.atomics] = this.build(update.view);
       }
