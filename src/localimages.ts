@@ -108,6 +108,17 @@ const cache = new Map<string, Promise<string>>();
 // even at the very same resolved path - compare unequal via eq() until a
 // load actually succeeds, at which point the count stops changing and
 // eq() goes back to treating that path as stable across ordinary edits.
+//
+// Uncapped and unthrottled by design, with a known consequence: a
+// permanently-broken reference (typo, moved file) retries on every single
+// reconfigure for as long as the count keeps incrementing, and with
+// autosave on and active typing that's saveFile firing every ~1.5s idle
+// gap — a continuous retry every ~1.5 seconds for the rest of the editing
+// session, not an occasional check. Each retry is cheap (one IPC round
+// trip, a fast ENOENT), and the alternative — capping retries — would
+// bring back the exact problem this file exists to avoid: a file that
+// shows up later never loading without closing and reopening the
+// document. Accepted trade-off, not an oversight.
 const failureCount = new Map<string, number>();
 
 /** How many times a load for `resolvedPath` has failed so far (0 if never
