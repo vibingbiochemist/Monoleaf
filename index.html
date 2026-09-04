@@ -612,7 +612,7 @@
               <button
                 id="btn-image"
                 class="icon-btn"
-                title="Insert image by URL"
+                title="Insert image (URL or local file — you can also drag and drop a file)"
                 aria-label="Insert image"
               >
                 <svg class="icon"><use href="#i-image" /></svg>
@@ -1036,14 +1036,19 @@
     <dialog id="image-dialog" class="ml-dialog">
       <form method="dialog">
         <label for="image-url"
-          >Image URL (the picture stays at this address, not in the file)</label
+          >Image URL or local file path (a URL stays at that address; a local
+          file's bytes are read fresh each time the document is opened, never
+          copied into it)</label
         >
-        <input
-          id="image-url"
-          type="text"
-          placeholder="https://"
-          spellcheck="false"
-        />
+        <div class="ml-image-url-row">
+          <input
+            id="image-url"
+            type="text"
+            placeholder="https:// or a local file"
+            spellcheck="false"
+          />
+          <button id="image-browse" type="button">Browse…</button>
+        </div>
         <label for="image-alt">Alt text (optional)</label>
         <input id="image-alt" type="text" spellcheck="false" />
         <menu>

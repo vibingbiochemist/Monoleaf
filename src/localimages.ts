@@ -68,6 +68,52 @@ export function resolveLocalImagePath(
   return dir.join(sep);
 }
 
+/**
+ * Rewrite an absolute path as relative to the open document's directory, or
+ * return it unchanged if it isn't under that directory (a different drive,
+ * a sibling folder, or no open document at all).
+ *
+ * Deliberately does not escape upward with `../..` to reach a common
+ * ancestor outside the document's own directory tree: the payoff (a shorter
+ * reference) is small, and "must be inside the document's folder or its
+ * subfolders" is a simple, unsurprising rule for what a picked/dropped image
+ * turns into, instead of a reference that silently depends on exactly how
+ * far apart two folders happen to sit.
+ */
+export function relativizeUnderDocument(
+  absolutePath: string,
+  documentPath: string | null,
+): string | null {
+  if (documentPath === null) return null;
+
+  const dir = documentPath.split(/[\\/]/);
+  dir.pop(); // drop the document's own file name
+  const target = absolutePath.split(/[\\/]/);
+
+  for (let i = 0; i < dir.length; i++) {
+    if (dir[i] !== target[i]) return null; // not under the document's directory
+  }
+  const rest = target.slice(dir.length);
+  if (rest.length === 0) return null; // the path IS the document's directory
+  return rest.join("/"); // "/" regardless of platform: markdown convention,
+  // and the document may later be opened on a different OS.
+}
+
+/** Extensions `read_image_as_data_url` (src-tauri/src/lib.rs, `image_mime_type`)
+ * accepts. Duplicated here rather than queried from Rust: it's a short,
+ * closed, rarely-changing list, and both the file-picker filter and the
+ * drag-and-drop filter need it synchronously, before any invoke. */
+export const IMAGE_EXTENSIONS = [
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "webp",
+  "svg",
+  "bmp",
+  "avif",
+];
+
 // Resolved absolute path -> in-flight/completed fetch. Keyed by resolved path
 // rather than the raw markdown reference so two different relative references
 // that land on the same file share one invoke. It also matters across a

@@ -8,6 +8,7 @@ import { Compartment, Prec, StateCommand } from "@codemirror/state";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -24,7 +25,11 @@ import { createDocumentState, serializeDocument } from "./document";
 import { applyMeta, parseMeta, type DocMeta, type MetaFormat } from "./meta";
 import { PortabilityMode, portabilityExtensions } from "./portability";
 import { livePreviewExtensions } from "./livepreview";
-import { setCurrentDocumentPath } from "./localimages";
+import {
+  IMAGE_EXTENSIONS,
+  relativizeUnderDocument,
+  setCurrentDocumentPath,
+} from "./localimages";
 import {
   applyLink,
   changeCase,
@@ -177,6 +182,11 @@ const MARKDOWN_FILTERS = [
 
 // Import targets: formats converted to Markdown rather than opened as-is.
 const IMPORT_FILTERS = [{ name: "PDF", extensions: ["pdf"] }];
+
+// Browse-for-an-image target (Insert Image dialog, and the extension check on
+// a drag-and-drop). Kept in sync with IMAGE_EXTENSIONS (localimages.ts),
+// which is itself kept in sync with lib.rs's image_mime_type.
+const IMAGE_FILTERS = [{ name: "Images", extensions: IMAGE_EXTENSIONS }];
 
 let currentPath: string | null = null;
 let dirty = false;
@@ -875,6 +885,69 @@ async function insertImage() {
   }
   view.focus();
 }
+
+/** A file's name with its extension stripped, for a default alt-text guess
+ * ("diagram.png" -> "diagram"). Falls back to the whole name for a
+ * dotfile-style name with no extension to strip. */
+function baseNameWithoutExtension(path: string): string {
+  const name = path.split(/[\\/]/).pop() ?? path;
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
+const imageBrowseButton = document.getElementById(
+  "image-browse",
+) as HTMLButtonElement;
+imageBrowseButton.addEventListener("click", () => void browseForImage());
+
+/** Browse… in the Insert Image dialog: fills in the URL field with a picked
+ * file's path (relative to the open document when possible) without closing
+ * the dialog — the user still confirms with Insert, same as typing it by
+ * hand. */
+async function browseForImage() {
+  const path = await open({ filters: IMAGE_FILTERS, multiple: false });
+  if (path === null) return;
+  imageUrlInput.value = relativizeUnderDocument(path, currentPath) ?? path;
+  if (imageAltInput.value.trim() === "") {
+    imageAltInput.value = baseNameWithoutExtension(path);
+  }
+}
+
+// Dropping a file onto the window: Tauri's native drag-drop (paths, not
+// browser File objects, so this works the same way read_image_as_data_url
+// does — no asset-protocol scope or fs plugin needed). Registered once for
+// the window's lifetime; every dropped path that isn't a recognised image
+// extension is silently ignored; a doc position outside the editor (e.g. a
+// drop on the toolbar) falls back to the current cursor.
+void getCurrentWebview().onDragDropEvent((event) => {
+  if (event.payload.type !== "drop") return;
+  const imagePaths = event.payload.paths.filter((p) =>
+    IMAGE_EXTENSIONS.some((ext) => p.toLowerCase().endsWith(`.${ext}`)),
+  );
+  if (imagePaths.length === 0) return;
+
+  const ratio = window.devicePixelRatio || 1;
+  const pos =
+    view.posAtCoords({
+      x: event.payload.position.x / ratio,
+      y: event.payload.position.y / ratio,
+    }) ?? view.state.selection.main.head;
+
+  const markdown = imagePaths
+    .map((p) =>
+      imageMarkup(
+        relativizeUnderDocument(p, currentPath) ?? p,
+        baseNameWithoutExtension(p),
+      ),
+    )
+    .join("\n");
+  view.dispatch({
+    changes: { from: pos, insert: markdown },
+    selection: { anchor: pos + markdown.length },
+    userEvent: "input.image",
+  });
+  view.focus();
+});
 
 // --- comments ---------------------------------------------------------------
 
