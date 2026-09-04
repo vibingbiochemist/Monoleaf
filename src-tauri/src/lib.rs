@@ -61,19 +61,23 @@ fn spawn_document_window(app: &AppHandle, payload: Option<String>) -> Result<Str
             .unwrap_or_else(|e| e.into_inner())
             .insert(label.clone(), p);
     }
-    // Same chrome AND same launch state as the main window (see
-    // tauri.conf.json): our own title bar (decorations off) and maximized, so a
-    // window spawned by New / Open / a file-association launch opens full-screen
-    // like the config-defined "main" window rather than as a small floating box.
-    // inner_size is the restored (un-maximized) size the window falls back to.
-    let win = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
+    // Same chrome AND same launch state as the main window (see tauri.conf.json
+    // / tauri.macos.conf.json): our own title bar, maximized, everywhere except
+    // macOS, where a spawned window instead gets native decorations and a
+    // normal (not maximized) size — matching the platform override for the
+    // config-defined "main" window, because a window builder call like this
+    // one is NOT covered by the JSON config merge and would otherwise revert a
+    // New/Open window to the Windows-style chrome on Mac. inner_size is the
+    // restored (un-maximized) size the window falls back to.
+    let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title("Monoleaf")
         .inner_size(1000.0, 720.0)
-        .maximized(true)
-        .decorations(false)
-        .focused(true)
-        .build()
-        .map_err(|e| e.to_string())?;
+        .focused(true);
+    #[cfg(target_os = "macos")]
+    let builder = builder.maximized(false).decorations(true);
+    #[cfg(not(target_os = "macos"))]
+    let builder = builder.maximized(true).decorations(false);
+    let win = builder.build().map_err(|e| e.to_string())?;
     // Windows can otherwise place the new window behind the current foreground
     // window; force it to the front so New / Open always surfaces the document.
     let _ = win.set_focus();
