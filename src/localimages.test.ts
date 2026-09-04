@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 
-import { loadLocalImage, resolveLocalImagePath } from "./localimages";
+import {
+  loadLocalImage,
+  relativizeUnderDocument,
+  resolveLocalImagePath,
+} from "./localimages";
 
 describe("resolveLocalImagePath", () => {
   it("returns an already-absolute reference as-is, regardless of the document", () => {
@@ -40,6 +44,43 @@ describe("resolveLocalImagePath", () => {
   it("cannot resolve a relative reference with no open document", () => {
     expect(resolveLocalImagePath("img.png", null)).toBeNull();
     expect(resolveLocalImagePath("./img.png", null)).toBeNull();
+  });
+});
+
+describe("relativizeUnderDocument", () => {
+  it("rewrites a path under the document's own directory as relative", () => {
+    expect(relativizeUnderDocument("/home/x/img.png", "/home/x/notes.md")).toBe(
+      "img.png",
+    );
+    expect(
+      relativizeUnderDocument("/home/x/assets/img.png", "/home/x/notes.md"),
+    ).toBe("assets/img.png");
+    expect(
+      relativizeUnderDocument("C:\\docs\\img.png", "C:\\docs\\note.md"),
+    ).toBe("img.png");
+  });
+
+  it("uses / regardless of the document's own separator style", () => {
+    expect(
+      relativizeUnderDocument("C:\\docs\\assets\\img.png", "C:\\docs\\note.md"),
+    ).toBe("assets/img.png");
+  });
+
+  it("falls back to null (caller keeps the absolute path) when not under the document's directory", () => {
+    // A sibling directory: not a prefix match, even though both are under /home/x.
+    expect(
+      relativizeUnderDocument("/home/x/other/img.png", "/home/x/sub/notes.md"),
+    ).toBeNull();
+    // A different drive entirely.
+    expect(
+      relativizeUnderDocument("D:\\img.png", "C:\\docs\\note.md"),
+    ).toBeNull();
+    // The path IS the document's directory (no file name left to reference).
+    expect(relativizeUnderDocument("/home/x", "/home/x/notes.md")).toBeNull();
+  });
+
+  it("cannot relativize with no open document", () => {
+    expect(relativizeUnderDocument("/home/x/img.png", null)).toBeNull();
   });
 });
 

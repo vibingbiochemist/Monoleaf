@@ -184,6 +184,25 @@ describe("inline toggles", () => {
     );
     expect(imageMarkup("https://x/y.png", "")).toBe("![](https://x/y.png)");
   });
+
+  it("wraps a destination containing a space or parenthesis in <...>", () => {
+    // A bare CommonMark destination can't contain either — the parser stops
+    // there, and the whole ![]() silently fails to become an image at all
+    // (see livepreview.test.ts). Both are ordinary in real Windows paths:
+    // "OneDrive - Some Company" and "Screenshot (1).png".
+    expect(imageMarkup("C:\\Users\\x\\OneDrive - Co\\pic.png", "pic")).toBe(
+      "![pic](<C:\\Users\\x\\OneDrive - Co\\pic.png>)",
+    );
+    expect(imageMarkup("C:\\Users\\x\\pic (1).png", "pic")).toBe(
+      "![pic](<C:\\Users\\x\\pic (1).png>)",
+    );
+  });
+
+  it("leaves a destination with neither a space nor a parenthesis bare", () => {
+    expect(imageMarkup("images/diagram.png", "d")).toBe(
+      "![d](images/diagram.png)",
+    );
+  });
 });
 
 describe("underline and highlight (inline HTML)", () => {

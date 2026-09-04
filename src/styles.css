@@ -1874,8 +1874,35 @@ html.theme-dark #editor .cm-cursor {
 
 .ml-dialog input + label,
 .ml-dialog select + label,
-.ml-dialog textarea + label {
+.ml-dialog textarea + label,
+.ml-image-url-row + label {
   margin-top: 12px;
+}
+
+.ml-image-url-row {
+  display: flex;
+  gap: 8px;
+}
+
+.ml-image-url-row input {
+  flex: 1;
+  min-width: 0; /* let the input shrink below its content's natural width */
+}
+
+.ml-image-url-row button {
+  font: inherit;
+  font-size: 13px;
+  padding: 5px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ml-image-url-row button:hover {
+  background: var(--hover);
 }
 
 .ml-dialog menu {

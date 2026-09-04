@@ -312,7 +312,11 @@ function commitImageWidth(
 ): void {
   const pos = view.posAtDOM(dom);
   const line = view.state.doc.lineAt(pos);
-  const re = /!\[[^\]]*\]\([^)]*\)|<img\b[^>]*>/gi;
+  // The image case's destination may be <...>-wrapped (imageMarkup,
+  // commands.ts, for a path containing a space or parenthesis) — that
+  // wrapped form can itself contain a literal ")", so the bare `[^)]*`
+  // alternative alone would stop matching partway through it.
+  const re = /!\[[^\]]*\]\((?:<[^>]*>|[^)]*)\)|<img\b[^>]*>/gi;
   for (const m of line.text.matchAll(re)) {
     const from = line.from + (m.index ?? 0);
     const to = from + m[0].length;
@@ -323,7 +327,14 @@ function commitImageWidth(
     if (t.startsWith("![")) {
       const c = t.indexOf("](");
       alt = t.slice(2, c);
-      src = t.slice(c + 2, t.length - 1).split(/\s+/)[0];
+      const dest = t.slice(c + 2, t.length - 1);
+      // <...>-wrapped: take everything up to the matching >, same as the
+      // Image case (livepreview's buildLivePreviewDecorations) does via the
+      // parser's URL node. Bare: stop at the first space, which is how a
+      // trailing "title" gets dropped (unsupported here, same as before).
+      src = dest.startsWith("<")
+        ? dest.slice(1, dest.indexOf(">"))
+        : dest.split(/\s+/)[0];
     } else {
       src =
         /\bsrc\s*=\s*"([^"]*)"/.exec(t)?.[1] ??
@@ -579,11 +590,28 @@ export function buildLivePreviewDecorations(
           // Every reference gets a widget; the .md itself still holds only
           // the reference, never image bytes — ImageWidget decides how to
           // get from that reference to pixels (or a placeholder).
-          const text = state.doc.sliceString(node.from, node.to);
-          const close = text.indexOf("](");
-          if (text.startsWith("![") && close >= 0) {
-            const alt = text.slice(2, close);
-            const url = text.slice(close + 2, text.length - 1).split(/\s+/)[0];
+          //
+          // Read the destination from the parser's own URL child (same
+          // approach as the Link case below) rather than slicing the raw
+          // text and splitting on whitespace: a destination containing a
+          // space or a title ("img.png "a title"") makes naive splitting cut
+          // it short, and — more importantly — a bare destination
+          // containing a space or parenthesis (an ordinary Windows path
+          // like "OneDrive - Some Company\pic.png") isn't valid CommonMark
+          // at all, so the parser only recognises "![alt]" and leaves the
+          // rest as plain text; there is no "](url)" tail here to slice in
+          // the first place. imageMarkup() (commands.ts) wraps such
+          // destinations in `<...>`, which the parser DOES recognise as a
+          // whole Image — getChild("URL") includes those angle brackets in
+          // its text, so they're stripped here.
+          const urlNode = node.node.getChild("URL");
+          const marks = node.node.getChildren("LinkMark");
+          if (urlNode !== null && marks.length >= 2) {
+            const alt = state.sliceDoc(marks[0].to, marks[1].from);
+            let url = state.sliceDoc(urlNode.from, urlNode.to);
+            if (url.startsWith("<") && url.endsWith(">")) {
+              url = url.slice(1, -1);
+            }
             hideRange(
               node.from,
               node.to,

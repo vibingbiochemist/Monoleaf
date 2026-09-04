@@ -297,9 +297,19 @@ export const insertMath: StateCommand = ({ state, dispatch }) => {
 /**
  * Portable markdown image reference: ![alt](url). Renders in the editor, the
  * PDF, and on GitHub; the pixels stay at the URL, never inside the .md.
+ *
+ * A bare (unbracketed) CommonMark link destination cannot contain a space or
+ * a parenthesis — parsing stops there, so the rest (and the whole construct)
+ * silently fails to become an image at all and is left as plain text. Local
+ * file paths hit this constantly: "OneDrive - Some Company" and
+ * "Screenshot (1).png" are both completely ordinary Windows names. Wrapping
+ * the destination in `<...>` is the CommonMark-standard escape hatch for
+ * exactly this — every compliant renderer (GitHub included) treats
+ * `(<url>)` and `(url)` identically when `url` needs no escaping.
  */
 export function imageMarkup(url: string, alt: string): string {
-  return `![${alt}](${url})`;
+  const destination = /[\s()]/.test(url) ? `<${url}>` : url;
+  return `![${alt}](${destination})`;
 }
 
 /**

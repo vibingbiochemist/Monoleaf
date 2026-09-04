@@ -86,6 +86,47 @@ describe("no raw-syntax bleeds", () => {
     ]);
   });
 
+  /** The widget's own `url` field (decos() only reports whether a range is a
+   * widget, not what it's for) — for verifying a wrapped destination gets
+   * unwrapped, and a bare one that needed wrapping produces nothing at all. */
+  function widgetUrls(doc: string): string[] {
+    const state = EditorState.create({
+      doc,
+      extensions: markdownForMode("enhanced"),
+    });
+    const tree = ensureSyntaxTree(state, doc.length, 5000)!;
+    const set = buildLivePreviewDecorations(state, 0, doc.length, tree);
+    const urls: string[] = [];
+    const it = set.decorations.iter();
+    while (it.value !== null) {
+      const spec = it.value.spec as { widget?: { url?: string } };
+      if (spec.widget?.url !== undefined) urls.push(spec.widget.url);
+      it.next();
+    }
+    return urls;
+  }
+
+  it("unwraps a <...>-wrapped destination (a space or parenthesis, imageMarkup's escape hatch)", () => {
+    expect(
+      widgetUrls("![pic](<C:\\Users\\x\\OneDrive - Co\\pic.png>)"),
+    ).toEqual(["C:\\Users\\x\\OneDrive - Co\\pic.png"]);
+    expect(widgetUrls("![pic](<C:\\Users\\x\\pic (1).png>)")).toEqual([
+      "C:\\Users\\x\\pic (1).png",
+    ]);
+  });
+
+  it("renders nothing for a bare destination containing a space or parenthesis", () => {
+    // Invalid CommonMark, not a Monoleaf gap: a bare (unbracketed)
+    // destination can't contain either, so the parser only recognises
+    // "![alt]" and leaves the rest as plain text — there is no image node
+    // to hand ImageWidget at all. imageMarkup (commands.ts) never produces
+    // this; it's only reachable by hand-typing an unwrapped path.
+    expect(widgetUrls("![pic](C:\\Users\\x\\OneDrive - Co\\pic.png)")).toEqual(
+      [],
+    );
+    expect(widgetUrls("![pic](C:\\Users\\x\\pic (1).png)")).toEqual([]);
+  });
+
   it("hides a setext underline and sizes the heading", () => {
     const doc = "Title\n=====\n\nbody";
     const all = decos(doc, doc.length);
