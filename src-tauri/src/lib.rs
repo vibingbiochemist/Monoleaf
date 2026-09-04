@@ -1,3 +1,4 @@
+use base64::Engine;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -373,6 +374,49 @@ fn read_file(path: String) -> Result<String, String> {
 fn write_file(path: String, contents: String) -> Result<(), String> {
     validate_write_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
     fs::write(&path, contents.as_bytes()).map_err(|e| format!("Failed to write {path}: {e}"))
+}
+
+/// Map a file extension to the MIME type an `<img>` needs to decode it.
+///
+/// An explicit, closed list rather than a guess (e.g. from magic bytes):
+/// anything not on it is refused with a clear error instead of being served
+/// under a wrong or made-up type.
+fn image_mime_type(ext: &str) -> Option<&'static str> {
+    match ext {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "svg" => Some("image/svg+xml"),
+        "bmp" => Some("image/bmp"),
+        "avif" => Some("image/avif"),
+        _ => None,
+    }
+}
+
+/// Read a local image referenced by a document (`![](diagram.png)`,
+/// `<img src="../x.png">`) and hand it back as a `data:` URL the webview can
+/// decode with no extra permission — the CSP already permits `img-src data:`
+/// unconditionally.
+///
+/// Guarded by the same [`validate_path`] every file command uses: the
+/// frontend already has this level of disk access via `read_file`, so this
+/// adds no new capability, only a new way to reach the same one. No separate
+/// directory scoping on top — see `validate_path`'s doc comment for why.
+#[tauri::command]
+fn read_image_as_data_url(path: String) -> Result<String, String> {
+    validate_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
+    let ext = std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    let mime = ext
+        .as_deref()
+        .and_then(image_mime_type)
+        .ok_or_else(|| format!("{path} is not a supported image type"))?;
+    let bytes = fs::read(&path).map_err(|e| format!("Failed to read {path}: {e}"))?;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(format!("data:{mime};base64,{encoded}"))
 }
 
 /// Convert a PDF to Markdown for opening as a new, unsaved document.
@@ -962,6 +1006,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
+            read_image_as_data_url,
             set_allow_network_paths,
             import_pdf_as_markdown,
             spell_suggest,
@@ -1049,6 +1094,76 @@ mod tests {
         let bad = std::env::temp_dir().join("monoleaf_evil.bat");
         assert!(write_file(bad.to_string_lossy().into_owned(), "x".into()).is_err());
         assert!(!bad.exists());
+    }
+
+    #[test]
+    fn read_image_as_data_url_round_trips_and_picks_mime_type() {
+        let cases: &[(&str, &str, &[u8])] = &[
+            (
+                "monoleaf_img_test.png",
+                "image/png",
+                b"\x89PNG not-a-real-image-but-bytes-are-bytes",
+            ),
+            (
+                "monoleaf_img_test.svg",
+                "image/svg+xml",
+                b"<svg xmlns='x'></svg>",
+            ),
+            (
+                "monoleaf_img_test.JPG",
+                "image/jpeg",
+                b"\xff\xd8\xff\xe0 pretend jpeg",
+            ),
+        ];
+        for (name, mime, bytes) in cases {
+            let path = std::env::temp_dir().join(name);
+            fs::write(&path, bytes).unwrap();
+
+            let data_url = read_image_as_data_url(path.to_string_lossy().into_owned()).unwrap();
+            let prefix = format!("data:{mime};base64,");
+            assert!(
+                data_url.starts_with(&prefix),
+                "{name}: expected prefix {prefix:?}, got {data_url:?}"
+            );
+            let decoded = base64::engine::general_purpose::STANDARD
+                .decode(&data_url[prefix.len()..])
+                .unwrap();
+            assert_eq!(&decoded, bytes, "{name}: payload did not round-trip");
+
+            let _ = fs::remove_file(&path);
+        }
+    }
+
+    #[test]
+    fn read_image_as_data_url_rejects_non_image_extensions() {
+        for name in ["monoleaf_img_reject.txt", "monoleaf_img_reject.exe"] {
+            let path = std::env::temp_dir().join(name);
+            fs::write(&path, b"not an image").unwrap();
+            let result = read_image_as_data_url(path.to_string_lossy().into_owned());
+            assert!(result.is_err(), "{name} should have been refused");
+            let _ = fs::remove_file(&path);
+        }
+        // Extensionless, and a path that never existed: both are refused
+        // (the former on the extension check, the latter reaches fs::read
+        // only for a path that would have passed it).
+        assert!(read_image_as_data_url("no_extension_here".into()).is_err());
+    }
+
+    #[test]
+    fn read_image_as_data_url_rejects_network_paths_unless_allowed() {
+        // ALLOW_NETWORK_PATHS defaults to false and no other test in this
+        // binary flips it, so this observes the real default rather than a
+        // value another test happened to leave behind.
+        for path in [
+            r"\\attacker.test\share\note.png",
+            "//attacker.test/share/note.png",
+        ] {
+            assert_eq!(
+                read_image_as_data_url(path.to_string()),
+                Err(NETWORK_PATH_REFUSED.to_string()),
+                "not rejected: {path}"
+            );
+        }
     }
 
     /// Both file commands refuse UNC/network paths *unless the user has opted

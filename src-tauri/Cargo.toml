@@ -37,6 +37,7 @@ tauri-plugin-clipboard-manager = "2.3.2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2.10.1"
 pdf-extract = "0.12"
+base64 = "0.22"
 
 # The `windows` crate is only used by the (Windows-only) spell-check module, so
 # gate it to Windows targets. Left in [dependencies] it would drag the

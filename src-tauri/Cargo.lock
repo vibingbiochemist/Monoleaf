@@ -2328,6 +2328,7 @@ dependencies = [
 name = "monoleaf"
 version = "1.2.1"
 dependencies = [
+ "base64 0.22.1",
  "pdf-extract",
  "serde",
  "serde_json",

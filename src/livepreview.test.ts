@@ -1,8 +1,20 @@
-import { describe, expect, it } from "vitest";
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ensureSyntaxTree } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
-import { buildLivePreviewDecorations, paragraphGuard } from "./livepreview";
+import { Compartment, EditorState } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
+
+const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
+
+import {
+  buildLivePreviewDecorations,
+  livePreviewExtensions,
+  paragraphGuard,
+} from "./livepreview";
+import { setCurrentDocumentPath } from "./localimages";
 import { markdownForMode } from "./portability";
+import { setRemoteImagesAllowed } from "./remoteimages";
 
 interface Entry {
   from: number;
@@ -54,14 +66,16 @@ describe("no raw-syntax bleeds", () => {
     expect(hides(doc, 0)).toEqual([{ from: 2, to: 3, kind: "hide" }]);
   });
 
-  it("keeps a local image as alt text (syntax hidden)", () => {
+  it("renders a local image reference as a widget, same as https", () => {
+    // Resolving/loading is ImageWidget's job (see localimages.test.ts and the
+    // "local images" describe block below) — at the decoration-planning level
+    // a local reference gets a widget exactly like a remote one.
     const doc = "see ![a figure](img.png) here";
     const all = decos(doc, 0);
-    const h = all.filter((d) => d.kind === "hide");
-    // "![" hidden and "](img.png)" hidden; "a figure" stays visible.
-    expect(h).toContainEqual({ from: 4, to: 6, kind: "hide" });
-    expect(h).toContainEqual({ from: 14, to: 24, kind: "hide" });
-    expect(all.filter((d) => d.kind === "widget")).toEqual([]);
+    expect(all.filter((d) => d.kind === "hide")).toEqual([]);
+    expect(all.filter((d) => d.kind === "widget")).toEqual([
+      { from: 4, to: 24, kind: "widget" },
+    ]);
   });
 
   it("renders an https image as a widget", () => {
@@ -506,5 +520,324 @@ describe("page config", () => {
     const doc = `${PAGE_COMMENT}\n\n# Body\n`;
     // The comment's own range is not hidden while being edited.
     expect(hides(doc, 5).some((d) => d.from === 0)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Local image widgets, mounted in a real EditorView so ImageWidget.toDOM
+// actually runs (the decoration-planning tests above only check that a
+// widget was scheduled, not what it renders).
+
+function mountLive(doc: string): EditorView {
+  const parent = document.createElement("div");
+  document.body.appendChild(parent);
+  const state = EditorState.create({
+    doc,
+    extensions: [markdownForMode("enhanced"), livePreviewExtensions()],
+  });
+  ensureSyntaxTree(state, doc.length, 5000);
+  const view = new EditorView({ state, parent });
+  // Nudge it so the full parse (done above, off-view) is what gets rendered.
+  view.dispatch({ changes: { from: 0, insert: "" } });
+  return view;
+}
+
+/** Let the microtask queue (the invoke promise and its .then) drain. */
+const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+// invokeMock is reset at the top of each test body rather than in a
+// beforeEach: resetting it from a hook was observed to make Vitest misreport
+// a properly-handled rejection in a later test as an uncaught error (the
+// mock's async-result tracking gets confused about which test a settled
+// promise belongs to). Resetting inline avoids that; see localimages.test.ts.
+describe("local image widgets", () => {
+  afterEach(() => setCurrentDocumentPath(null));
+
+  it("resolves a relative reference against the open document and renders it (Image)", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("data:image/png;base64,AAAA");
+    setCurrentDocumentPath("/docs/notes.md");
+
+    const view = mountLive("![a figure](img.png)");
+    await flush();
+
+    expect(invokeMock).toHaveBeenCalledWith("read_image_as_data_url", {
+      path: "/docs/img.png",
+    });
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,AAAA");
+    view.destroy();
+  });
+
+  it("renders an already-absolute local path without needing an open document (HTMLBlock)", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("data:image/png;base64,BBBB");
+    setCurrentDocumentPath(null);
+
+    const view = mountLive('<img src="/abs/pic.png" alt="pic">');
+    await flush();
+
+    expect(invokeMock).toHaveBeenCalledWith("read_image_as_data_url", {
+      path: "/abs/pic.png",
+    });
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,BBBB");
+    view.destroy();
+  });
+
+  it("resolves an inline <img> the same way as a standalone one (HTMLTag)", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("data:image/png;base64,CCCC");
+    setCurrentDocumentPath("/docs/notes.md");
+
+    // A distinct file name from the other cases in this describe block: the
+    // resolved-path cache in localimages.ts is module-global, so reusing
+    // "img.png" here would hit that cache instead of exercising this call site.
+    const view = mountLive('before <img src="inline.png" alt="x"> after');
+    await flush();
+
+    expect(invokeMock).toHaveBeenCalledWith("read_image_as_data_url", {
+      path: "/docs/inline.png",
+    });
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,CCCC");
+    view.destroy();
+  });
+
+  it("shows a distinct fallback for a relative reference in an unsaved document", async () => {
+    invokeMock.mockReset();
+    setCurrentDocumentPath(null);
+
+    const view = mountLive("![a figure](img.png)");
+    await flush();
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    const placeholder =
+      view.dom.querySelector<HTMLElement>(".cm-image-blocked");
+    expect(placeholder?.title).toBe("Save the document to load local images.");
+    expect(view.dom.querySelector("img.cm-live-image")).toBeNull();
+    view.destroy();
+  });
+
+  it("falls back to a placeholder when the read is rejected (non-image extension)", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockRejectedValue(
+      "/docs/notes.txt is not a supported image type",
+    );
+    setCurrentDocumentPath("/docs/notes.md");
+
+    const view = mountLive("![attachment](notes.txt)");
+    await flush();
+    await flush(); // one more tick for the rejection handler
+
+    // Exactly one call, not two: two would mean a second widget instance (a
+    // stale one from a rebuild, say) independently triggered its own read,
+    // which happens to produce this same symptom (an extra, differently-timed
+    // rejection) rather than the harness quirk documented above.
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(view.dom.querySelector("img.cm-live-image")).toBeNull();
+    const placeholder =
+      view.dom.querySelector<HTMLElement>(".cm-image-blocked");
+    expect(placeholder?.title).toContain("Could not load");
+    view.destroy();
+  });
+});
+
+// Regresses saveFile's reconfigure call (main.ts) specifically — not just
+// resolution/rendering given a correct currentDocumentPath, which the tests
+// above already cover. A widget for the same url/alt/width is normally kept
+// as-is across a rebuild (see the comment on `cache` in localimages.ts): only
+// an explicit liveCompartment.reconfigure() forces every widget to run
+// toDOM() again, which is the mechanism that must fire on save for a
+// previously-unresolvable placeholder to clear. Fresh construction (as in
+// mountLive) would pass even if saveFile's reconfigure call were deleted, so
+// this uses its own Compartment and an explicit reconfigure dispatch,
+// mirroring main.ts's liveCompartment (main.ts:500) and what saveFile
+// (main.ts) actually dispatches, rather than folding the extension straight
+// into the EditorState's extensions array.
+describe("saving resolves a previously-unresolvable local image", () => {
+  afterEach(() => setCurrentDocumentPath(null));
+
+  it("clears the placeholder once the document has a path, via reconfigure", async () => {
+    invokeMock.mockReset();
+    setCurrentDocumentPath(null);
+
+    const compartment = new Compartment();
+    // A distinct file name from the other tests in this file: the
+    // resolved-path cache in localimages.ts is module-global, so reusing
+    // "img.png" with the same directory would hit another test's cache
+    // entry instead of exercising this reconfigure path.
+    const doc = "![a figure](save-test.png)";
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        markdownForMode("enhanced"),
+        compartment.of(livePreviewExtensions()),
+      ],
+    });
+    ensureSyntaxTree(state, doc.length, 5000);
+    const view = new EditorView({ state, parent });
+    view.dispatch({ changes: { from: 0, insert: "" } });
+
+    expect(invokeMock).not.toHaveBeenCalled();
+    expect(
+      view.dom.querySelector<HTMLElement>(".cm-image-blocked")?.title,
+    ).toBe("Save the document to load local images.");
+    expect(view.dom.querySelector("img.cm-live-image")).toBeNull();
+
+    invokeMock.mockResolvedValue("data:image/png;base64,EEEE");
+    setCurrentDocumentPath("/docs/notes.md");
+    // The same call saveFile (main.ts) makes after currentPath = path.
+    view.dispatch({
+      effects: compartment.reconfigure(livePreviewExtensions()),
+    });
+    await flush();
+
+    expect(view.dom.querySelector(".cm-image-blocked")).toBeNull();
+    expect(invokeMock).toHaveBeenCalledWith("read_image_as_data_url", {
+      path: "/docs/save-test.png",
+    });
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,EEEE");
+    view.destroy();
+  });
+});
+
+// Prediction to verify before assuming the eq() fix from the previous commit
+// covers this: currentDocumentPath is fixed and never changes here — only
+// whether the file exists does. resolvedLocalPath is identical before and
+// after (same url, same document path), so if eq() only compares
+// resolvedLocalPath/remoteBlocked/url/alt/width, it should report the two
+// widget instances equal and CodeMirror should keep the stale (failed)
+// placeholder, never calling toDOM() again on the freshly-succeeding widget.
+describe("loadFailureCount: retries a failure but not an unrelated edit", () => {
+  afterEach(() => setCurrentDocumentPath(null));
+
+  it("clears the placeholder once the file loads, via reconfigure", async () => {
+    invokeMock.mockReset();
+    setCurrentDocumentPath("/docs/notes.md");
+    // Set before the view is even constructed: the ViewPlugin's constructor
+    // calls build() -> toDOM() synchronously, so this is the mock the FIRST
+    // load sees, not a later reconfigure.
+    invokeMock.mockRejectedValueOnce("ENOENT: no such file");
+
+    const compartment = new Compartment();
+    const doc = "![a figure](retry-test.png)";
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        markdownForMode("enhanced"),
+        compartment.of(livePreviewExtensions()),
+      ],
+    });
+    ensureSyntaxTree(state, doc.length, 5000);
+    const view = new EditorView({ state, parent });
+    view.dispatch({ changes: { from: 0, insert: "" } });
+    await flush();
+    await flush();
+
+    expect(
+      view.dom.querySelector<HTMLElement>(".cm-image-blocked")?.title,
+    ).toContain("Could not load");
+    expect(view.dom.querySelector("img.cm-live-image")).toBeNull();
+
+    // The file now exists. currentDocumentPath is untouched — only the
+    // outcome of loading the same resolved path has changed.
+    invokeMock.mockResolvedValue("data:image/png;base64,FFFF");
+    view.dispatch({
+      effects: compartment.reconfigure(livePreviewExtensions()),
+    });
+    await flush();
+
+    expect(view.dom.querySelector(".cm-image-blocked")).toBeNull();
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,FFFF");
+    view.destroy();
+  });
+
+  // The other side of the fix above: `loadFailureCount` must stay unchanged
+  // for a path that has never failed, or every unrelated edit anywhere in
+  // the document would make eq() report a difference for every local image
+  // in the viewport and flicker them all back to an empty <img> while the
+  // (already-cached) promise resolves again.
+  it("does not re-invoke for an already-resolved image on an unrelated edit", async () => {
+    invokeMock.mockReset();
+    setCurrentDocumentPath("/docs/notes.md");
+    invokeMock.mockResolvedValue("data:image/png;base64,GGGG");
+
+    const view = mountLive("x ![a figure](no-retry-needed.png)");
+    await flush();
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+
+    // An edit far from the image reference: real docChanged, not a
+    // reconfigure.
+    view.dispatch({ changes: { from: 0, insert: "y" } });
+    await flush();
+
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,GGGG");
+    view.destroy();
+  });
+});
+
+// Regresses a pre-existing bug, unrelated to local images: found while
+// building the test above, not something this task set out to fix.
+//
+// toggleRemoteImages (main.ts) flips remoteImagesAllowed and dispatches
+// liveCompartment.reconfigure(livePreviewExtensions()), same as saveFile
+// does now. Its own comment says this "rebuilds the image widgets" — but
+// livePreviewExtensions() always returns the same `livePreviewPlugin` value,
+// so EditorView.updatePlugins finds it by reference in the previous spec
+// array and reuses the existing plugin instance instead of reconstructing
+// it. The reused instance's update() still runs, but before the fix in
+// livepreview.ts, none of its four conditions (docChanged/selectionSet/
+// viewportChanged/syntax tree) are true for a bare reconfigure, so
+// build() never reran and an already-blocked remote image kept showing its
+// placeholder even after the setting was turned on. The fix — a fifth
+// condition checking `tr.reconfigured` — covers this case too.
+describe("toggling remote images on rebuilds an already-blocked widget", () => {
+  afterEach(() => setRemoteImagesAllowed(false));
+
+  it("clears the blocked placeholder and renders the image, via reconfigure", () => {
+    setRemoteImagesAllowed(false);
+
+    const compartment = new Compartment();
+    const doc = "![x](https://example.com/a.png)";
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        markdownForMode("enhanced"),
+        compartment.of(livePreviewExtensions()),
+      ],
+    });
+    ensureSyntaxTree(state, doc.length, 5000);
+    const view = new EditorView({ state, parent });
+    view.dispatch({ changes: { from: 0, insert: "" } });
+
+    expect(
+      view.dom.querySelector<HTMLElement>(".cm-image-blocked")?.title,
+    ).toContain("Not loaded: https://example.com/a.png");
+    expect(view.dom.querySelector("img.cm-live-image")).toBeNull();
+
+    setRemoteImagesAllowed(true);
+    // The exact call toggleRemoteImages (main.ts) makes.
+    view.dispatch({
+      effects: compartment.reconfigure(livePreviewExtensions()),
+    });
+
+    expect(view.dom.querySelector(".cm-image-blocked")).toBeNull();
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("https://example.com/a.png");
+    view.destroy();
   });
 });
