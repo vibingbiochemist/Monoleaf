@@ -49,9 +49,9 @@ describe("resolveLocalImagePath", () => {
 
 describe("relativizeUnderDocument", () => {
   it("rewrites a path under the document's own directory as relative", () => {
-    expect(
-      relativizeUnderDocument("/home/x/img.png", "/home/x/notes.md"),
-    ).toBe("img.png");
+    expect(relativizeUnderDocument("/home/x/img.png", "/home/x/notes.md")).toBe(
+      "img.png",
+    );
     expect(
       relativizeUnderDocument("/home/x/assets/img.png", "/home/x/notes.md"),
     ).toBe("assets/img.png");
@@ -62,10 +62,7 @@ describe("relativizeUnderDocument", () => {
 
   it("uses / regardless of the document's own separator style", () => {
     expect(
-      relativizeUnderDocument(
-        "C:\\docs\\assets\\img.png",
-        "C:\\docs\\note.md",
-      ),
+      relativizeUnderDocument("C:\\docs\\assets\\img.png", "C:\\docs\\note.md"),
     ).toBe("assets/img.png");
   });
 
