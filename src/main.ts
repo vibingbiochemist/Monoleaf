@@ -3,6 +3,14 @@ import { EditorView, keymap } from "@codemirror/view";
 // Imported first so every face is on document.fonts before the first
 // pagination pass — see ./fontfaces for why the ordering matters.
 import "./fontfaces";
+
+// macOS gets native window decorations (see tauri.macos.conf.json), so our
+// Windows-style custom title bar — and its min/maximize/close buttons, which
+// would otherwise sit duplicated under the real traffic lights — only belongs
+// on the platforms where decorations are off. navigator.platform is reliable
+// here: this always runs inside Tauri's own webview (WKWebView on Mac), never
+// an arbitrary browser, so there's no user-agent spoofing to worry about.
+const isMacOS = navigator.platform.toUpperCase().startsWith("MAC");
 import { editorSetup, rawViewExtensions } from "./setup";
 import { Compartment, Prec, StateCommand } from "@codemirror/state";
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -236,8 +244,14 @@ function setDirty(value: boolean) {
 
 // Custom title bar: native decorations are off, so the min/maximize/close
 // buttons drive the window directly. The maximize glyph swaps to a restore
-// glyph whenever the window is maximized.
+// glyph whenever the window is maximized. On macOS decorations are on
+// instead (real traffic lights), so this bar would just duplicate them —
+// hide it and skip wiring buttons that aren't there.
 function setupWindowControls() {
+  if (isMacOS) {
+    document.getElementById("titlebar")?.setAttribute("hidden", "");
+    return;
+  }
   const win = getCurrentWindow();
   const maxBtn = document.getElementById("win-max");
   document

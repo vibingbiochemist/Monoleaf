@@ -1,0 +1,14 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "app": {
+    "windows": [
+      {
+        "title": "Monoleaf",
+        "width": 1100,
+        "height": 750,
+        "maximized": false,
+        "decorations": true
+      }
+    ]
+  }
+}
