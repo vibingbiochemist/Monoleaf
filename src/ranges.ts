@@ -1,4 +1,5 @@
 import { EditorState } from "@codemirror/state";
+import { hardBreakLineEnd } from "./repair";
 
 // Comment anchor tokens (see comments.ts). Formatting must never place
 // markdown delimiters directly against these: they are invisible in live
@@ -35,6 +36,16 @@ export function trimRange(
     if (to > from && /\s/.test(state.doc.sliceString(to - 1, to))) {
       to--;
       continue;
+    }
+    // A Shift+End selection ends after the hard-break "\" (hidden, atomic).
+    // A delimiter placed after it would be escaped ("\**" → "\*" + "*"), so
+    // the wrap must land before the backslash.
+    if (to > from) {
+      const line = state.doc.lineAt(to);
+      if (to === line.to && hardBreakLineEnd(state, line)) {
+        to--;
+        continue;
+      }
     }
     const bwd = ANCHOR_BWD.exec(
       state.doc.sliceString(Math.max(from, to - LOOKBEHIND), to),

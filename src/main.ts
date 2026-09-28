@@ -7,10 +7,13 @@ import "./fontfaces";
 // macOS gets native window decorations (see tauri.macos.conf.json), so our
 // Windows-style custom title bar — and its min/maximize/close buttons, which
 // would otherwise sit duplicated under the real traffic lights — only belongs
-// on the platforms where decorations are off. navigator.platform is reliable
-// here: this always runs inside Tauri's own webview (WKWebView on Mac), never
-// an arbitrary browser, so there's no user-agent spoofing to worry about.
-const isMacOS = navigator.platform.toUpperCase().startsWith("MAC");
+// on the platforms where decorations are off. Shortcut labels and the few
+// Mac-specific key bindings come from the same platform module.
+import {
+  isMac as isMacOS,
+  formatShortcut,
+  localizeShortcutLabels,
+} from "./platform";
 import { editorSetup, rawViewExtensions } from "./setup";
 import { Compartment, Prec, StateCommand } from "@codemirror/state";
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -1555,7 +1558,9 @@ zoomSlider.addEventListener("input", () => setZoom(Number(zoomSlider.value)));
 window.addEventListener(
   "wheel",
   (e) => {
-    if (!e.ctrlKey) return;
+    // macOS reports a trackpad pinch as ctrlKey too; Cmd+wheel is the
+    // keyboard-and-mouse equivalent there.
+    if (!(e.ctrlKey || (isMacOS && e.metaKey))) return;
     e.preventDefault();
     setZoom(zoom + (e.deltaY < 0 ? 10 : -10));
   },
@@ -1737,8 +1742,12 @@ function refreshReviewButtons(state = view.state) {
   suggestButton.textContent = "Track changes";
   suggestButton.setAttribute("aria-pressed", String(tracking));
   suggestButton.title = tracking
-    ? "Track changes is ON: edits become tracked changes (CriticMarkup). Click to edit directly (Ctrl+Shift+E)."
-    : "Track changes is OFF. Click so edits become tracked changes instead of applying directly (Ctrl+Shift+E).";
+    ? formatShortcut(
+        "Track changes is ON: edits become tracked changes (CriticMarkup). Click to edit directly (Ctrl+Shift+E).",
+      )
+    : formatShortcut(
+        "Track changes is OFF. Click so edits become tracked changes instead of applying directly (Ctrl+Shift+E).",
+      );
 }
 
 function toggleTracking() {
@@ -1764,20 +1773,26 @@ const formattingKeymap = keymap.of([
   { key: "Mod-i", run: toggleItalic },
   { key: "Mod-Shift-x", run: toggleStrikethrough },
   { key: "Mod-u", run: toggleUnderline },
-  { key: "Mod-Alt-h", run: toggleHighlight },
+  // The `mac:` alternatives below mirror MAC_OVERRIDES in platform.ts:
+  // Cmd+Option+H (hide others), Cmd+` (cycle windows) and Cmd+M (minimise)
+  // are taken by macOS before the webview sees them. Windows/Linux unchanged.
+  { key: "Mod-Alt-h", mac: "Shift-Cmd-h", run: toggleHighlight },
   { key: "Mod-l", run: setAlignment("left") },
   { key: "Mod-e", run: setAlignment("center") },
   { key: "Mod-r", run: setAlignment("right") },
   { key: "Mod-j", run: setAlignment("justify") },
-  { key: "Mod-`", run: toggleInlineCode },
+  { key: "Mod-`", mac: "Shift-Cmd-c", run: toggleInlineCode },
   { key: "Mod-=", run: toggleSubscript },
   { key: "Mod-Shift-=", run: toggleSuperscript },
-  { key: "Mod-m", run: insertMath },
+  { key: "Mod-m", mac: "Alt-Cmd-e", run: insertMath },
   ...[1, 2, 3, 4, 5, 6].map((n) => ({
     key: `Mod-Shift-${n}`,
+    // ⇧⌘3/4/5/6 are macOS's system-wide screenshot shortcuts and never
+    // reach an app; Word for Mac puts headings on ⌥⌘1/2/3, so follow it.
+    mac: `Alt-Cmd-${n}`,
     run: setHeading(n),
   })),
-  { key: "Mod-Shift-0", run: setHeading(0) },
+  { key: "Mod-Shift-0", mac: "Alt-Cmd-0", run: setHeading(0) },
   {
     key: "Mod-k",
     run: () => {
@@ -3599,7 +3614,9 @@ window.addEventListener(
     if (!(e.ctrlKey || e.metaKey)) return;
     const key = e.key.toLowerCase();
     // Ctrl+Q toggles live/raw ("Quelltext"); Ctrl+E belongs to centering.
-    if (key === "q" && !e.shiftKey) {
+    // On macOS Cmd+Q quits the app (handled by the app menu before we see
+    // it), so the toggle lives on Cmd+/ there — see MAC_OVERRIDES.
+    if (key === (isMacOS ? "/" : "q") && !e.shiftKey) {
       e.preventDefault();
       toggleLiveView();
       return;
@@ -3647,6 +3664,7 @@ setupRecoveryFlush();
 // cannot broadcast its offer into a window that is not listening yet.
 setupUpdateSync();
 setupWindowControls();
+localizeShortcutLabels(); // ⌘ labels on macOS; no-op elsewhere
 setupCloseGuard();
 applyViewClass();
 applyZoom();

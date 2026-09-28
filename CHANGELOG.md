@@ -5,6 +5,29 @@ All notable changes to Monoleaf are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **Keyboard shortcuts now work and read correctly on macOS.** Four
+  bindings collided with keys macOS reserves for itself and never reached
+  the editor: Cmd+Q (quits) now has the writing/source toggle on ⌘/,
+  Cmd+M (minimise) has Insert equation on ⌥⌘E, Cmd+Option+H (hide other
+  apps) has Highlight on ⇧⌘H, and Cmd+` (cycle windows) has Inline code on
+  ⇧⌘C. Headings move from ⇧⌘1–6 (⇧⌘3/4/5/6 are the macOS screenshot keys)
+  to ⌥⌘1–6 with body text on ⌥⌘0, the same keys Word for Mac uses. Every
+  tooltip, menu hint and help text shows ⌘-style shortcuts on a
+  Mac instead of "Ctrl+…", and Cmd+scroll zooms the page like Ctrl+scroll
+  does elsewhere. Windows and Linux bindings are unchanged.
+- **Stray markdown symbols no longer appear after deleting around
+  formatting.** Backspace right after a bold or italic word deletes its last
+  letter instead of eating the closing marker; deleting the last letter
+  inside a run removes the whole run rather than leaving `****`; Enter
+  inside a run splits it into two runs; a space typed at a run's edge lands
+  outside it; and a Shift+Enter line break is treated as one unit, so
+  Delete, Ctrl+Backspace and selection deletes never leave a lone `\`
+  behind. Backspace after an escaped character removes its backslash too.
+
 ## [1.2.1] - 2026-08-24
 
 ### Added
