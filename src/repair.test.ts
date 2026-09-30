@@ -56,11 +56,16 @@ const del = (doc: string, from: number, to: number) =>
 
 /** A pure cursor move from `fromPos` to `toPos`, as the arrow/End/Home keys
  * or a click would produce; returns where the cursor actually lands. */
-function move(doc: string, fromPos: number, toPos: number): number {
+function move(
+  doc: string,
+  fromPos: number,
+  toPos: number,
+  userEvent = "select",
+): number {
   const state = mk(doc, fromPos);
   return state.update({
     selection: EditorSelection.cursor(toPos),
-    userEvent: "select",
+    userEvent,
   }).state.selection.main.head;
 }
 
@@ -99,6 +104,12 @@ describe("hard break (\\ + newline) behaves as one unit", () => {
 
   it("ArrowLeft from the next line lands before the backslash", () => {
     expect(move(HB + "more", 6, 5)).toBe(4);
+  });
+
+  it("End pressed again, or a click at the line end, stays before it", () => {
+    // Same transaction as ArrowRight above, told apart by the user event.
+    expect(move(HB + "more", 4, 5, "select.boundary")).toBe(4);
+    expect(move(HB + "more", 4, 5, "select.pointer")).toBe(4);
   });
 
   it("does not touch the cursor after an escaped backslash", () => {
@@ -183,6 +194,17 @@ describe("Backspace / Delete against inline markers", () => {
     expect(del("**bold** x", 6, 8)).toEqual({ doc: "**bold**x", cursor: 6 });
   });
 
+  it("nested runs: the outer marker never loses a character", () => {
+    // "***x***" is bold inside italic; CodeMirror targets the inner "**".
+    expect(backspace("***x***", 1, 3)).toEqual({ doc: "*x*", cursor: 1 });
+    expect(backspace("a ***x***", 3, 5)).toEqual({
+      doc: "a***x***",
+      cursor: 1,
+    });
+    expect(del("***x***", 4, 6)).toEqual({ doc: "*x*", cursor: 1 });
+    expect(del("***x*** b", 4, 6)).toEqual({ doc: "***x***b", cursor: 4 });
+  });
+
   it("works for strikethrough, inline code and underline tags too", () => {
     expect(backspace("~~gone~~", 6, 8).doc).toBe("~~gon~~");
     expect(backspace("`code`", 5, 6).doc).toBe("`cod`");
@@ -241,6 +263,11 @@ describe("cursor at hidden leading block markers", () => {
 
   it("ArrowLeft from after the bullet moves to the previous line", () => {
     expect(move("up" + NL + "- item", 5, 3)).toBe(2);
+  });
+
+  it("Home pressed again after the bullet stays on the line", () => {
+    expect(move("up" + NL + "- item", 5, 3, "select.boundary")).toBe(5);
+    expect(move("up" + NL + "- item", 5, 3, "select.pointer")).toBe(5);
   });
 
   it("task items: after the checkbox", () => {

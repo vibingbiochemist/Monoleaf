@@ -47,6 +47,8 @@ import {
   type CaseMode,
   clearFormatting,
   collectHeadings,
+  cursorLineEnd,
+  cursorLineStart,
   deleteHardBreakBackward,
   hardBreakEnter,
   imageMarkup,
@@ -1766,6 +1768,13 @@ function toggleTracking() {
 
 const formattingKeymap = keymap.of([
   { key: "Backspace", run: deleteHardBreakBackward },
+  // Home/End announce themselves ("select.boundary") so the repair layer
+  // snaps the cursor beside a hidden marker instead of reading the move as
+  // an arrow-key step; see lineBoundary in commands.ts.
+  { key: "Home", run: cursorLineStart },
+  { key: "End", run: cursorLineEnd },
+  { mac: "Cmd-ArrowLeft", run: cursorLineStart },
+  { mac: "Cmd-ArrowRight", run: cursorLineEnd },
   { key: "Enter", run: paragraphEnter },
   { key: "Shift-Enter", run: hardBreakEnter },
   { key: "Mod-Enter", run: insertPageBreak },
@@ -3615,8 +3624,11 @@ window.addEventListener(
     const key = e.key.toLowerCase();
     // Ctrl+Q toggles live/raw ("Quelltext"); Ctrl+E belongs to centering.
     // On macOS Cmd+Q quits the app (handled by the app menu before we see
-    // it), so the toggle lives on Cmd+/ there — see MAC_OVERRIDES.
-    if (key === (isMacOS ? "/" : "q") && !e.shiftKey) {
+    // it), so the toggle lives on Cmd+/ there — see MAC_OVERRIDES. No Shift
+    // test for "/": on German, French and other layouts "/" is itself a
+    // shifted key, so ⌘/ arrives with shiftKey set. (⇧⌘/ on a US layout is
+    // the Help-menu key, but it reports "?" and never reaches this branch.)
+    if (isMacOS ? key === "/" : key === "q" && !e.shiftKey) {
       e.preventDefault();
       toggleLiveView();
       return;

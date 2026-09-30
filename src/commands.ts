@@ -7,10 +7,12 @@ import {
   StateCommand,
   TransactionSpec,
 } from "@codemirror/state";
+import type { Command } from "@codemirror/view";
 import { trimRange } from "./ranges";
 import {
   hardBreakLineEnd,
   inlineConstructsAt,
+  outsideConstructEdge,
   type InlineConstruct,
 } from "./repair";
 import { hideCommentSyntax } from "./comments";
@@ -924,23 +926,9 @@ export const hardBreakEnter: StateCommand = ({ state, dispatch }) => {
   // markers: "**bold\<nl>**" leaves the closer at a line start, where it no
   // longer closes anything and shows raw. Inside the run, a hard break is
   // fine — emphasis may span lines within a paragraph.
-  let pos = range.from;
-  if (range.empty) {
-    for (let guard = 0; guard < 8; guard++) {
-      const c = inlineConstructsAt(state, pos).find(
-        (k) => k.close.from === pos,
-      );
-      if (c === undefined) break;
-      pos = c.close.to;
-    }
-    if (pos === range.from) {
-      for (let guard = 0; guard < 8; guard++) {
-        const c = inlineConstructsAt(state, pos).find((k) => k.open.to === pos);
-        if (c === undefined) break;
-        pos = c.open.from;
-      }
-    }
-  }
+  const pos = range.empty
+    ? outsideConstructEdge(state, range.from)
+    : range.from;
   const from = pos === range.from ? range.from : pos;
   const to = pos === range.from ? range.to : pos;
   dispatch(
@@ -953,6 +941,34 @@ export const hardBreakEnter: StateCommand = ({ state, dispatch }) => {
   );
   return true;
 };
+
+/**
+ * Home / End (and ⌘← / ⌘→ on a Mac). CodeMirror's own line-boundary commands
+ * dispatch the same "select" event as the arrow keys, so the repair layer
+ * could not tell End pressed while already before a hidden hard-break "\"
+ * (stay put) from ArrowRight (step onto the next line) — pressing End twice
+ * used to jump a line. These dispatch "select.boundary", which repair.ts
+ * treats as "snap to the typing side" (see normaliseCursor).
+ */
+function lineBoundary(forward: boolean): Command {
+  return (view) => {
+    const { state } = view;
+    const selection = EditorSelection.create(
+      state.selection.ranges.map((r) => view.moveToLineBoundary(r, forward)),
+      state.selection.mainIndex,
+    );
+    if (!selection.eq(state.selection)) {
+      view.dispatch({
+        selection,
+        scrollIntoView: true,
+        userEvent: "select.boundary",
+      });
+    }
+    return true;
+  };
+}
+export const cursorLineStart: Command = lineBoundary(false);
+export const cursorLineEnd: Command = lineBoundary(true);
 
 /**
  * Backspace at the start of a line whose previous line ends with a hard-break

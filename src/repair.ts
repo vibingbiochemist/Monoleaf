@@ -164,6 +164,41 @@ function constructWithMark(
   return null;
 }
 
+/**
+ * From `pos` at a content start, hop outward over every opening marker that
+ * ends exactly there ("***|x***" → 0): the position before the outermost
+ * abutting construct.
+ */
+function outerOpenEdge(state: EditorState, pos: number): number {
+  for (let guard = 0; guard < 8; guard++) {
+    const c = inlineConstructsAt(state, pos).find((k) => k.open.to === pos);
+    if (c === undefined) break;
+    pos = c.open.from;
+  }
+  return pos;
+}
+
+/** Mirror of outerOpenEdge for closers: "***x|***" → 7. */
+function outerCloseEdge(state: EditorState, pos: number): number {
+  for (let guard = 0; guard < 8; guard++) {
+    const c = inlineConstructsAt(state, pos).find((k) => k.close.from === pos);
+    if (c === undefined) break;
+    pos = c.close.to;
+  }
+  return pos;
+}
+
+/**
+ * Where a cursor at `pos` sits if moved just OUTSIDE the constructs whose
+ * marker it touches: after all closers ending there, else before all openers
+ * starting there, else `pos` itself. Used for edits that may not sit right
+ * inside a delimiter (a space, a hard break).
+ */
+export function outsideConstructEdge(state: EditorState, pos: number): number {
+  const after = outerCloseEdge(state, pos);
+  return after !== pos ? after : outerOpenEdge(state, pos);
+}
+
 // ---------------------------------------------------------------------------
 // Hard breaks and leading block markers
 
@@ -223,23 +258,27 @@ export function leadingHiddenEnd(state: EditorState, line: Line): number {
  * Where a cursor placed at `head` should really go. Two positions render at
  * the same pixel: line end vs. before a hard-break "\", and line start vs.
  * after a hidden bullet/quote mark. Keep the cursor on the side where typing
- * does what the picture suggests. `prevHead` distinguishes an arrow-key step
- * that landed on the other side (keep moving in that direction) from an
- * End/Home/click/vertical move (snap back).
+ * does what the picture suggests. `snap` is set for moves that name a place
+ * (Home/End, a click): those always land on the typing side. Otherwise
+ * `prevHead` distinguishes an arrow-key step that landed on the other side
+ * (keep moving in that direction) from a vertical move (snap back) — the
+ * transaction alone cannot tell End from ArrowRight, so the Home/End
+ * commands in commands.ts mark themselves with a "select.boundary" event.
  */
 function normaliseCursor(
   state: EditorState,
   prevHead: number,
   head: number,
+  snap: boolean,
 ): number {
   const line = state.doc.lineAt(head);
   if (head === line.to && hardBreakLineEnd(state, line)) {
-    return prevHead === line.to - 1 ? line.to + 1 : line.to - 1;
+    return !snap && prevHead === line.to - 1 ? line.to + 1 : line.to - 1;
   }
   if (head === line.from) {
     const end = leadingHiddenEnd(state, line);
     if (end > line.from) {
-      if (prevHead !== end || line.number === 1) return end;
+      if (snap || prevHead !== end || line.number === 1) return end;
       const prev = state.doc.line(line.number - 1);
       return hardBreakLineEnd(state, prev) ? prev.to - 1 : prev.to;
     }
@@ -247,13 +286,18 @@ function normaliseCursor(
   return head;
 }
 
-function normaliseSelection(tr: Transaction): TransactionSpec | null {
+function normaliseSelection(
+  tr: Transaction,
+  userEvent: string,
+): TransactionSpec | null {
   const sel = tr.newSelection;
   const prevHead = tr.startState.selection.main.head;
+  const snap =
+    userEvent === "select.pointer" || userEvent === "select.boundary";
   let changed = false;
   const ranges = sel.ranges.map((r) => {
     if (!r.empty) return r;
-    const head = normaliseCursor(tr.state, prevHead, r.head);
+    const head = normaliseCursor(tr.state, prevHead, r.head, snap);
     if (head === r.head) return r;
     changed = true;
     return EditorSelection.cursor(head, undefined, undefined, r.goalColumn);
@@ -346,19 +390,23 @@ function rewriteEdit(state: EditorState, ue: string, e: Edit): boolean {
             e.cursor = e.from;
           }
         } else if (side === "open") {
-          // Backspace at the content start: the character before the construct.
-          if (c.open.from === line.from) unwrap();
+          // Backspace at the content start: the character before the
+          // construct — before ALL the constructs whose openers abut here
+          // ("***|x***"), or one of the outer markers would lose a character.
+          const edge = outerOpenEdge(state, c.open.from);
+          if (edge === line.from) unwrap();
           else {
-            e.from = c.open.from - 1;
-            e.to = c.open.from;
+            e.from = edge - 1;
+            e.to = edge;
             e.cursor = e.from;
           }
         } else {
-          // Delete at the content end: the character after the construct.
-          if (c.close.to === line.to) unwrap();
+          // Delete at the content end: the character after the construct(s).
+          const edge = outerCloseEdge(state, c.close.to);
+          if (edge === line.to) unwrap();
           else {
-            e.from = c.close.to;
-            e.to = c.close.to + 1;
+            e.from = edge;
+            e.to = edge + 1;
             e.cursor = c.close.from;
           }
         }
@@ -408,21 +456,7 @@ function rewriteEdit(state: EditorState, ue: string, e: Edit): boolean {
     // A space typed right inside a marker ("**bold |**", "**| bold**") breaks
     // the construct (GFM forbids whitespace just inside delimiters) — and the
     // position is indistinguishable from just outside it. Type it outside.
-    let pos = e.from;
-    for (let guard = 0; guard < 8; guard++) {
-      const c = inlineConstructsAt(state, pos).find(
-        (k) => k.close.from === pos,
-      );
-      if (c === undefined) break;
-      pos = c.close.to;
-    }
-    if (pos === e.from) {
-      for (let guard = 0; guard < 8; guard++) {
-        const c = inlineConstructsAt(state, pos).find((k) => k.open.to === pos);
-        if (c === undefined) break;
-        pos = c.open.from;
-      }
-    }
+    const pos = outsideConstructEdge(state, e.from);
     if (pos !== e.from) {
       e.from = e.to = pos;
       e.cursor = -1;
@@ -438,7 +472,7 @@ function repairTransaction(
   const ue = tr.annotation(Transaction.userEvent) ?? "";
   if (!tr.docChanged) {
     if (tr.selection === undefined) return tr;
-    const fixed = normaliseSelection(tr);
+    const fixed = normaliseSelection(tr, ue);
     return fixed === null ? tr : [tr, fixed];
   }
   if (
