@@ -164,6 +164,59 @@ jobs:
 
       - run: npm ci
 
+      - name: Extract release notes from CHANGELOG.md
+        # The changelog is the source of truth for what changed; this pulls the
+        # section for the tag's version so the in-app updater's "What's new"
+        # popup (fed by the GitHub Release body) shows real notes instead of a
+        # copy of the platform caveats below. Node, not awk/sed: this step runs
+        # on all three platforms in the release matrix, and Node is the one
+        # text tool already guaranteed present everywhere (via setup-node
+        # above) — awk in particular isn't a given on windows-latest.
+        id: notes
+        shell: bash
+        run: |
+          tag="$GITHUB_REF_NAME"
+          version="${tag#v}"
+          version="${version%%-*}"
+
+          # A failed extraction must not fall back to an empty or stale body
+          # silently, for the same reason the version-match step above fails
+          # loud: a release with no notes is easy to miss until someone asks
+          # why the popup is blank.
+          notes=$(node -e '
+            const fs = require("fs");
+            const version = process.argv[1];
+            const changelog = fs.readFileSync("CHANGELOG.md", "utf8");
+            const escaped = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+            const heading = new RegExp("^## \\[" + escaped + "\\].*$", "m");
+            const match = heading.exec(changelog);
+            if (!match) {
+              console.error("No CHANGELOG.md entry found for version " + version);
+              process.exit(1);
+            }
+            const rest = changelog.slice(match.index + match[0].length);
+            const next = rest.search(/^## \[/m);
+            process.stdout.write((next === -1 ? rest : rest.slice(0, next)).trim());
+          ' "$version") || { echo "::error::Could not extract a CHANGELOG.md entry for version $version"; exit 1; }
+
+          # The delimiter must not be a predictable string: $notes is changelog
+          # text, which reviewers read for content, not for stray lines that
+          # happen to match a heredoc terminator. A fixed delimiter would let
+          # such a line close the heredoc early and inject arbitrary
+          # $GITHUB_OUTPUT key=value pairs. $RANDOM is a bash builtin, not an
+          # external binary, so it needs no availability assumption across
+          # the three platforms in this matrix.
+          delim="NOTES_EOF_${GITHUB_RUN_ID}_${RANDOM}${RANDOM}${RANDOM}"
+          {
+            echo "body<<$delim"
+            printf '%s\n' "$notes"
+            echo
+            echo "---"
+            echo
+            echo 'See the assets below to download and install. The Windows installer is unsigned (SmartScreen may warn: More info → Run anyway). The macOS .dmg is unsigned and unnotarized (no Apple Developer account) — Gatekeeper will refuse to open it as "damaged" on a plain double-click; right-click (or Control-click) the app in the .dmg and choose Open, then confirm Open again in the dialog that follows. The Linux AppImage is community-tested, best-effort. Please file an issue if you hit a problem with either.'
+            echo "$delim"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # v1.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -188,15 +241,7 @@ jobs:
           args: --config ${{ github.workspace }}/src-tauri/tauri.release.conf.json5
           tagName: ${{ github.ref_name }}
           releaseName: "Monoleaf ${{ github.ref_name }}"
-          releaseBody: >-
-            See the assets below to download and install. The Windows installer
-            is unsigned (SmartScreen may warn: More info → Run anyway). The
-            macOS .dmg is unsigned and unnotarized (no Apple Developer account)
-            — Gatekeeper will refuse to open it as "damaged" on a plain
-            double-click; right-click (or Control-click) the app in the .dmg
-            and choose Open, then confirm Open again in the dialog that
-            follows. The Linux AppImage is community-tested, best-effort.
-            Please file an issue if you hit a problem with either.
+          releaseBody: ${{ steps.notes.outputs.body }}
           # Draft is unconditional: it is the safety property, so nothing gets
           # to make it depend on the tag.
           releaseDraft: true
