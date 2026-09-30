@@ -1,12 +1,20 @@
 import { syntaxTree } from "@codemirror/language";
 import type { SyntaxNode } from "@lezer/common";
 import {
+  ChangeSpec,
   EditorSelection,
   EditorState,
   StateCommand,
   TransactionSpec,
 } from "@codemirror/state";
+import type { Command } from "@codemirror/view";
 import { trimRange } from "./ranges";
+import {
+  hardBreakLineEnd,
+  inlineConstructsAt,
+  outsideConstructEdge,
+  type InlineConstruct,
+} from "./repair";
 import { hideCommentSyntax } from "./comments";
 import type { AdmonitionKind } from "./admonitions";
 
@@ -805,10 +813,80 @@ export const paragraphEnter: StateCommand = ({ state, dispatch }) => {
   const range = state.selection.main;
   if (inBlockContext(state, range.from)) return false;
   const nl = state.lineBreak;
+  const changes: ChangeSpec[] = [];
+
+  // Enter on the empty line after a Shift+Enter: the hard-break "\" above
+  // would dangle at the end of the paragraph and print literally. The user
+  // wanted a paragraph break after all — drop the "\" and its newline so the
+  // blank line inserted below is the only separator.
+  const line = state.doc.lineAt(range.from);
+  if (range.empty && line.length === 0 && line.number > 1) {
+    const prev = state.doc.line(line.number - 1);
+    if (hardBreakLineEnd(state, prev)) {
+      changes.push({ from: prev.to - 1, to: line.from });
+    }
+  }
+
+  // Inside bold/italic/… the split must close the construct before the
+  // break and reopen it after (Word splits a bold run into two bold runs);
+  // a marker pair spanning the blank line would never parse and both halves
+  // would show raw. Whitespace at the split goes, so no delimiter ends up
+  // against a space.
+  const constructs = range.empty ? inlineConstructsAt(state, range.from) : [];
+  let from = range.from;
+  let to = range.to;
+  let left = "";
+  let right = "";
+  if (constructs.length > 0) {
+    // Grow the replaced span over whitespace at the split and over any
+    // marker with no content on its side of the split (that marker is
+    // re-emitted on the other side), until it settles.
+    const leftEmpty = new Set<InlineConstruct>();
+    const rightEmpty = new Set<InlineConstruct>();
+    for (let grown = true; grown;) {
+      grown = false;
+      while (from > line.from && /[ \t]/.test(state.sliceDoc(from - 1, from))) {
+        from--;
+        grown = true;
+      }
+      while (to < line.to && /[ \t]/.test(state.sliceDoc(to, to + 1))) {
+        to++;
+        grown = true;
+      }
+      for (const c of constructs) {
+        if (!leftEmpty.has(c) && c.open.to === from) {
+          leftEmpty.add(c);
+          from = c.open.from;
+          grown = true;
+        }
+        if (!rightEmpty.has(c) && c.close.from === to) {
+          rightEmpty.add(c);
+          to = c.close.to;
+          grown = true;
+        }
+      }
+    }
+    for (const c of constructs) {
+      // outermost first: closers innermost-first on the left, openers
+      // outermost-first on the right.
+      const open = state.sliceDoc(c.open.from, c.open.to);
+      const close = state.sliceDoc(c.close.from, c.close.to);
+      const l = leftEmpty.has(c);
+      const r = rightEmpty.has(c);
+      if (l && r) continue; // empty pair at the split: drop it
+      if (!l) left = close + left;
+      if (!r) right += open;
+    }
+  }
+  const insert = left + nl + nl + right;
+  changes.push({ from, to, insert });
+  const changeSet = state.changes(changes);
   dispatch(
     state.update({
-      changes: { from: range.from, to: range.to, insert: nl + nl },
-      selection: EditorSelection.cursor(range.from + 2),
+      changes: changeSet,
+      selection: EditorSelection.cursor(
+        changeSet.mapPos(from, -1) + insert.length,
+      ),
       userEvent: "input.type",
       scrollIntoView: true,
     }),
@@ -844,18 +922,53 @@ export const hardBreakEnter: StateCommand = ({ state, dispatch }) => {
     return true;
   }
   const insert = inBlockContext(state, range.from) ? nl : `\\${nl}`;
+  // At the very edge of a bold/italic/… run the break goes OUTSIDE the
+  // markers: "**bold\<nl>**" leaves the closer at a line start, where it no
+  // longer closes anything and shows raw. Inside the run, a hard break is
+  // fine — emphasis may span lines within a paragraph.
+  const pos = range.empty
+    ? outsideConstructEdge(state, range.from)
+    : range.from;
+  const from = pos === range.from ? range.from : pos;
+  const to = pos === range.from ? range.to : pos;
   dispatch(
     state.update({
-      changes: { from: range.from, to: range.to, insert },
-      selection: EditorSelection.cursor(
-        range.from + insert.length - nl.length + 1,
-      ),
+      changes: { from, to, insert },
+      selection: EditorSelection.cursor(from + insert.length - nl.length + 1),
       userEvent: "input.type",
       scrollIntoView: true,
     }),
   );
   return true;
 };
+
+/**
+ * Home / End (and ⌘← / ⌘→ on a Mac). CodeMirror's own line-boundary commands
+ * dispatch the same "select" event as the arrow keys, so the repair layer
+ * could not tell End pressed while already before a hidden hard-break "\"
+ * (stay put) from ArrowRight (step onto the next line) — pressing End twice
+ * used to jump a line. These dispatch "select.boundary", which repair.ts
+ * treats as "snap to the typing side" (see normaliseCursor).
+ */
+function lineBoundary(forward: boolean): Command {
+  return (view) => {
+    const { state } = view;
+    const selection = EditorSelection.create(
+      state.selection.ranges.map((r) => view.moveToLineBoundary(r, forward)),
+      state.selection.mainIndex,
+    );
+    if (!selection.eq(state.selection)) {
+      view.dispatch({
+        selection,
+        scrollIntoView: true,
+        userEvent: "select.boundary",
+      });
+    }
+    return true;
+  };
+}
+export const cursorLineStart: Command = lineBoundary(false);
+export const cursorLineEnd: Command = lineBoundary(true);
 
 /**
  * Backspace at the start of a line whose previous line ends with a hard-break

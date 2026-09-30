@@ -8,6 +8,7 @@
  * text in the .md and renders on GitHub too.
  */
 import { syntaxTree } from "@codemirror/language";
+import { formatShortcut } from "./platform";
 import { EditorState, Extension, RangeSetBuilder } from "@codemirror/state";
 import {
   Decoration,
@@ -48,10 +49,11 @@ class FootnoteWidget extends WidgetType {
       "data-url",
       this.kind === "ref" ? `#fn:${this.label}` : `#fnref:${this.label}`,
     );
-    sup.title =
+    sup.title = formatShortcut(
       this.kind === "ref"
         ? `Footnote ${this.label}: Ctrl+click to jump to the note`
-        : `Note ${this.label}: Ctrl+click to jump back to the reference`;
+        : `Note ${this.label}: Ctrl+click to jump back to the reference`,
+    );
     return sup;
   }
 

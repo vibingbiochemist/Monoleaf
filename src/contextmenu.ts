@@ -1,7 +1,10 @@
+import { formatShortcut } from "./platform";
+
 /**
  * A small generic context-menu popup. The caller supplies the items; this
  * module only renders, positions within the viewport, and handles dismissal
- * (outside click, Escape, scroll, window blur).
+ * (outside click, Escape, scroll, window blur). Shortcut hints and tooltips
+ * are written in Windows form and shown in ⌘ form on macOS.
  */
 
 export type MenuItem =
@@ -55,7 +58,7 @@ function buildItems(menu: HTMLElement, items: MenuItem[]) {
       for (const b of item.buttons) {
         const btn = document.createElement("button");
         btn.className = "icon-btn glyph";
-        btn.title = b.title;
+        btn.title = formatShortcut(b.title);
         btn.innerHTML = b.html;
         btn.addEventListener("click", () => {
           closeContextMenu();
@@ -111,7 +114,7 @@ function buildItems(menu: HTMLElement, items: MenuItem[]) {
     if (item.hint !== undefined) {
       const hint = document.createElement("span");
       hint.className = "menu-hint";
-      hint.textContent = item.hint;
+      hint.textContent = formatShortcut(item.hint);
       btn.appendChild(hint);
     }
     btn.addEventListener("mouseenter", closeSubmenu);

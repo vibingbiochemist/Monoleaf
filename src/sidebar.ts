@@ -1,4 +1,5 @@
 import { CommentEntry, CommentThread } from "./comments";
+import { formatShortcut } from "./platform";
 
 export interface SidebarHandlers {
   onChangeName(): void;
@@ -88,7 +89,9 @@ export function renderSidebar(
       el(
         "p",
         "sidebar-empty",
-        "No comments yet. Select text and press Ctrl+Shift+M or use the Comment button.",
+        formatShortcut(
+          "No comments yet. Select text and press Ctrl+Shift+M or use the Comment button.",
+        ),
       ),
     );
     return;

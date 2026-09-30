@@ -39,6 +39,8 @@ import { pageBreaksField } from "./pagination";
 import { tableExtensions } from "./tablewidget";
 import { mathExtensions } from "./math";
 import { footnoteExtensions } from "./footnotes";
+import { markupRepair } from "./repair";
+import { formatShortcut } from "./platform";
 
 /**
  * Silent WYSIWYG live preview: the raw markdown is the document, formatting
@@ -403,7 +405,9 @@ function linkDeco(url: string | null): Decoration {
   return Decoration.mark({
     class: "cm-live-link",
     attributes: {
-      title: `Ctrl+click to open in your default browser:\n${url}`,
+      title: formatShortcut(
+        `Ctrl+click to open in your default browser:\n${url}`,
+      ),
       "data-url": url,
     },
   });
@@ -557,7 +561,12 @@ export function buildLivePreviewDecorations(
 
         case "Escape":
           // A backslash escape ("\*", "\#", …): hide the "\", show the char.
-          hideRange(node.from, node.from + 1);
+          // The atomic range covers BOTH characters, so Backspace after the
+          // visible char removes the escape as one unit instead of leaving a
+          // bare backslash behind (which would then show, un-escaping
+          // nothing).
+          ranges.push(hide.range(node.from, node.from + 1));
+          atomics.push(hide.range(node.from, node.to));
           break;
 
         case "HeaderMark":
@@ -1213,6 +1222,7 @@ export function livePreviewExtensions(): Extension {
     pageBreaksField,
     tableExtensions(),
     paragraphGuard,
+    markupRepair,
     // Native (Chromium/WebView2) spellcheck in the writing view.
     EditorView.contentAttributes.of({ spellcheck: "true" }),
     hideCommentSyntax.of(true),
