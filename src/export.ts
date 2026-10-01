@@ -20,6 +20,7 @@ import { PortabilityMode } from "./portability";
 import { ADMONITIONS, admonitionKind } from "./admonitions";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
 import { escapeDashes } from "./htmlcomment";
+import { IMAGE_PAGE_SLACK_PT } from "./imagefit";
 import {
   DEFAULT_FONT_ID,
   fontStack,
@@ -944,14 +945,14 @@ ${root} table th {
 }
 /* An image cannot be fragmented across pages, so one taller than the page body
    used to be clipped at the page edge (and the in-editor page count, measured
-   with this same sheet, undercounted). Cap it to the body height — Paged.js
-   publishes the @page geometry as CSS variables on :root — and let the width
-   follow, so a tall photo scales down onto one page. The 12pt of slack covers
-   the paragraph's bottom margin and the inline line box around the image;
+   with this same sheet, undercounted). Cap it just under the body height —
+   Paged.js publishes the @page geometry as CSS variables on :root — and let
+   the width follow, so a tall photo scales down onto one page with room left
+   for a lead-in line or a caption (IMAGE_PAGE_SLACK_PT, imagefit.ts);
    object-fit keeps a drag-resized image (explicit width) undistorted. */
 ${root} img {
   max-width: 100%;
-  max-height: calc(var(--pagedjs-height) - var(--pagedjs-margin-top) - var(--pagedjs-margin-bottom) - 12pt);
+  max-height: calc(var(--pagedjs-height) - var(--pagedjs-margin-top) - var(--pagedjs-margin-bottom) - ${IMAGE_PAGE_SLACK_PT}pt);
   height: auto;
   object-fit: contain;
   break-inside: avoid;

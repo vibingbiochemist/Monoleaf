@@ -109,7 +109,7 @@ import {
   setPageConfigSpec,
   renderDocumentHtmlAsync,
 } from "./export";
-import { fitImagesToPage } from "./imagefit";
+import { fitImagesToPage, IMAGE_PAGE_SLACK_PX } from "./imagefit";
 import { embedFontsForExport } from "./fontEmbeds";
 import {
   DEFAULT_FONT_ID,
@@ -1112,10 +1112,12 @@ function applyPageVars() {
 }
 
 /** The tallest an image may be, in unzoomed px: the page body (paper minus
- * top and bottom margins) less the 12pt the print sheet keeps as slack for
- * the paragraph margin and the inline line box. Mirrors buildPrintCss. */
+ * top and bottom margins) less the slack the print sheet keeps for a lead-in
+ * line or caption (IMAGE_PAGE_SLACK_PT, imagefit.ts). Mirrors buildPrintCss. */
 function pageBodyHeightPx(): number {
-  return paperDims.h - pageMarginPx.top - pageMarginPx.bottom - 16;
+  return (
+    paperDims.h - pageMarginPx.top - pageMarginPx.bottom - IMAGE_PAGE_SLACK_PX
+  );
 }
 
 /** Width of the page body in px, for percentage image widths. */

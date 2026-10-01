@@ -14,6 +14,19 @@
  */
 
 /**
+ * How far below the page body the image height cap sits, so a line of text
+ * above the picture or a short caption below it can stay on the same page.
+ * At 11pt/1.5 a line is 16.5pt and a paragraph adds 8pt, so 40pt leaves room
+ * for two lines; a cap of just the paragraph margin (the first attempt) made
+ * every page-tall picture evict even a one-line lead-in to the next page,
+ * and the orphan rule then dragged that line along, leaving a page holding
+ * one word. Same value in the print sheet (buildPrintCss, export.ts) and
+ * the editor's page card (applyPageVars, main.ts).
+ */
+export const IMAGE_PAGE_SLACK_PT = 40;
+export const IMAGE_PAGE_SLACK_PX = IMAGE_PAGE_SLACK_PT / 0.75;
+
+/**
  * The width an image with an explicit `requested` width should get under a
  * page-body cap of `capHeight` px: the requested width while the picture
  * fits, else the width at which its height is exactly the cap. Dimensions
