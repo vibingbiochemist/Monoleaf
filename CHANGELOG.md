@@ -7,8 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Local images now render in the editor.** A reference to a file on disk,
+  whether relative to the document (`![Plot](./figures/plot.png)`,
+  `<img src="../x.png">`) or an absolute path, shows the picture inline
+  instead of its alt text. Relative references resolve against the saved
+  document's folder, so in a brand-new document that has never been saved
+  they show a quiet placeholder until the first save, then fill in on their
+  own. Network (UNC) paths follow the same opt-in as opening files from them.
+- **Insert Image can browse for a file, and image files can be dropped onto
+  the window.** Browse… opens the native file picker; dropping one or more
+  images inserts a reference for each at the drop position. Both write a
+  path relative to the document when the file sits beneath its folder, and
+  an absolute path otherwise.
+
 ### Fixed
 
+- **Image paths containing a space or parenthesis now work.** A path such as
+  `OneDrive - Some Company\pic.jpg` or `Screenshot (1).png` used to break the
+  image reference entirely, whether typed, browsed or dropped; such paths
+  are now written in the `<…>` form Markdown requires for them.
 - **Keyboard shortcuts now work and read correctly on macOS.** Four
   bindings collided with keys macOS reserves for itself and never reached
   the editor: Cmd+Q (quits) now has the writing/source toggle on ⌘/,
