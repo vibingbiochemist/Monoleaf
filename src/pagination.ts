@@ -7,6 +7,7 @@ import {
 } from "@codemirror/view";
 import { splitRowWithPositions } from "./table";
 import { cellDisplayTextWithMap } from "./tablecell";
+import { IMAGE_SOURCE_ATTR } from "./export";
 
 /**
  * Accurate in-editor page awareness. A background job (main.ts) runs the
@@ -159,6 +160,18 @@ export function resolveExactBreakPos(
 
   const sourceText = state.doc.sliceString(blockFrom, blockTo);
 
+  // A break that lands on an embedded image: the picture moved to the next
+  // page because it did not fit after the lines above it. The text
+  // comparison below cannot see an image at all (and bails on the markup in
+  // the source), so anchor straight to the image's markup, found through
+  // the reference the renderer kept on the element for exactly this
+  // (IMAGE_SOURCE_ATTR, export.ts).
+  const img = imageAtBreak(token);
+  if (img !== null) {
+    const at = imageSourceOffset(img, sourceText);
+    if (at !== null) return blockFrom + at;
+  }
+
   // Collapse whitespace runs to a single space, the same way CommonMark
   // renders a soft line break, recording each output character's original
   // source index so a match can be mapped back exactly.
@@ -193,6 +206,45 @@ export function resolveExactBreakPos(
       ? toOriginal[renderedOffset]
       : sourceText.length;
   return blockFrom + originalIndex;
+}
+
+/** The <img> a break token points at: the node itself, or the first thing
+ * inside an element-type token when nothing but whitespace precedes it. */
+function imageAtBreak(token: BreakToken): Element | null {
+  const node = token.node;
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  const el = node as Element;
+  if (el.tagName === "IMG") return el;
+  const img = el.querySelector("img");
+  if (img === null) return null;
+  const range = document.createRange();
+  range.setStart(el, 0);
+  range.setEndBefore(img);
+  return range.toString().trim() === "" ? img : null;
+}
+
+/** Offset of the image's markup (`![` or `<img`) inside `sourceText`, found
+ * by the reference the element carries, as written or percent-encoded the
+ * way markdown-it reports it; null when it cannot be found. */
+function imageSourceOffset(img: Element, sourceText: string): number | null {
+  const ref = img.getAttribute(IMAGE_SOURCE_ATTR) ?? img.getAttribute("src");
+  if (ref === null || ref === "" || /^data:/i.test(ref)) return null;
+  let decoded = ref;
+  try {
+    decoded = decodeURIComponent(ref);
+  } catch {
+    // Not percent-encoded: search for it as written only.
+  }
+  for (const candidate of new Set([ref, decoded])) {
+    const at = sourceText.indexOf(candidate);
+    if (at === -1) continue;
+    const start = Math.max(
+      sourceText.lastIndexOf("![", at),
+      sourceText.lastIndexOf("<img", at),
+    );
+    return start === -1 ? at : start;
+  }
+  return null;
 }
 
 /**

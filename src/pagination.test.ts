@@ -351,6 +351,74 @@ describe("resolveExactBreakPos", () => {
   });
 });
 
+describe("resolveExactBreakPos: images", () => {
+  // A hard-break paragraph whose last line is a drag-resized image that did
+  // not fit: Paged.js moves the <img> to the next page and hands back a token
+  // pointing at it. The text comparison cannot see an image, so the break
+  // anchors to the image's markup through the reference the renderer kept on
+  // the element (data-ml-src, emitted for page measurement only).
+  const doc =
+    'test test\\\ntest\\\n<img src="C:\\pics\\shared image (5).jpg" alt="s" width="572">\n\nafter\n';
+
+  function block(): HTMLElement {
+    const p = document.createElement("p");
+    p.setAttribute("data-srcline", "0");
+    p.setAttribute("data-srcline-end", "3");
+    p.append(
+      "test test",
+      document.createElement("br"),
+      "test",
+      document.createElement("br"),
+    );
+    const img = document.createElement("img");
+    img.setAttribute("src", "data:image/jpeg;base64,AAAA");
+    img.setAttribute("data-ml-src", "C:\\pics\\shared image (5).jpg");
+    p.append(img);
+    return p;
+  }
+
+  it("anchors a break on the image to the start of its markup", () => {
+    const state = EditorState.create({ doc });
+    const img = block().querySelector("img")!;
+    expect(resolveExactBreakPos({ node: img, offset: 0 }, state)).toBe(
+      doc.indexOf("<img"),
+    );
+  });
+
+  it("accepts a percent-encoded reference (how markdown-it reports a destination)", () => {
+    const md = "intro\\\n![s](<C:\\pics\\shared image (5).jpg>)\n";
+    const state = EditorState.create({ doc: md });
+    const p = document.createElement("p");
+    p.setAttribute("data-srcline", "0");
+    p.setAttribute("data-srcline-end", "2");
+    const img = document.createElement("img");
+    img.setAttribute("src", "data:image/jpeg;base64,AAAA");
+    img.setAttribute("data-ml-src", "C:%5Cpics%5Cshared%20image%20(5).jpg");
+    p.append("intro", document.createElement("br"), img);
+    expect(resolveExactBreakPos({ node: img, offset: 0 }, state)).toBe(
+      md.indexOf("!["),
+    );
+  });
+
+  it("also anchors an element-type token whose fragment begins with the image", () => {
+    const state = EditorState.create({ doc });
+    const frag = document.createElement("p");
+    frag.setAttribute("data-srcline", "0");
+    frag.setAttribute("data-srcline-end", "3");
+    frag.append(block().querySelector("img")!);
+    expect(resolveExactBreakPos({ node: frag, offset: 0 }, state)).toBe(
+      doc.indexOf("<img"),
+    );
+  });
+
+  it("falls back (null) when the reference is not in the block's source", () => {
+    const state = EditorState.create({ doc });
+    const img = block().querySelector("img")!;
+    img.setAttribute("data-ml-src", "elsewhere.png");
+    expect(resolveExactBreakPos({ node: img, offset: 0 }, state)).toBe(null);
+  });
+});
+
 describe("resolveExactBreakPos: table rows", () => {
   // "Line 1<br>Line 2<br>Line 3" split across 3 text nodes by 2 real <br>
   // elements — the shape a browser gives a rendered table cell with forced

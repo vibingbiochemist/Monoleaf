@@ -359,6 +359,8 @@ const NO_LOCAL_IMAGES: ReadonlyMap<string, string> = new Map();
 // markdown-it's own Env is an open record; plugins (footnotes) write to it.
 type RenderEnv = Record<PropertyKey, unknown> & {
   localImages: ReadonlyMap<string, string>;
+  /** Emit IMAGE_SOURCE_ATTR on embedded images (page measurement only). */
+  keepImageSource?: boolean;
 };
 
 /** The slice of markdown-it's Token the image pass needs; structural, so no
@@ -376,17 +378,38 @@ interface TokenLike {
 // image context menu already parse.
 const IMG_SRC_RE = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)')/gi;
 
+/**
+ * The attribute that keeps an embedded image's reference as written, so the
+ * page-break mapping (resolveExactBreakPos, pagination.ts) can find the
+ * image's markup in the source once `src` holds a data: URL. Emitted only
+ * for the editor's page measurement (`sourceLines`), never into an export:
+ * a local path in a shared .html would name the author's user folder.
+ */
+export const IMAGE_SOURCE_ATTR = "data-ml-src";
+
+function escapeAttr(value: string): string {
+  return value.replace(
+    /[&"<]/g,
+    (c) => ({ "&": "&amp;", '"': "&quot;", "<": "&lt;" })[c] ?? c,
+  );
+}
+
 function rewriteImgSrc(
   html: string,
   images: ReadonlyMap<string, string>,
+  keepSource: boolean,
 ): string {
   return html.replace(
     IMG_SRC_RE,
     (whole: string, head: string, dq?: string, sq?: string) => {
-      const data = images.get(dq ?? sq ?? "");
+      const src = dq ?? sq ?? "";
+      const data = images.get(src);
       if (data === undefined) return whole;
       const quote = dq !== undefined ? '"' : "'";
-      return `${head}${quote}${data}${quote}`;
+      const source = keepSource
+        ? ` ${IMAGE_SOURCE_ATTR}="${escapeAttr(src)}"`
+        : "";
+      return `${head}${quote}${data}${quote}${source}`;
     },
   );
 }
@@ -423,16 +446,26 @@ function renderTokens(
   tokens: TokenLike[],
   env: RenderEnv,
   localImages: ReadonlyMap<string, string>,
+  keepImageSource: boolean,
 ): string {
   env.localImages = localImages;
+  env.keepImageSource = keepImageSource;
   if (localImages.size > 0) {
     for (const token of tokens) {
       if (token.type === "html_block") {
-        token.content = rewriteImgSrc(token.content, localImages);
+        token.content = rewriteImgSrc(
+          token.content,
+          localImages,
+          keepImageSource,
+        );
       }
       for (const child of token.children ?? []) {
         if (child.type === "html_inline") {
-          child.content = rewriteImgSrc(child.content, localImages);
+          child.content = rewriteImgSrc(
+            child.content,
+            localImages,
+            keepImageSource,
+          );
         }
       }
     }
@@ -528,11 +561,13 @@ function buildRenderer(
     if (/^https?:\/\//i.test(src)) {
       return defaultImage(tokens, idx, opts, env, self);
     }
-    const local = (env as Partial<RenderEnv> | undefined)?.localImages?.get(
-      src,
-    );
+    const renderEnv = env as Partial<RenderEnv> | undefined;
+    const local = renderEnv?.localImages?.get(src);
     if (local !== undefined) {
       tokens[idx].attrSet("src", local);
+      if (renderEnv?.keepImageSource === true) {
+        tokens[idx].attrSet(IMAGE_SOURCE_ATTR, src);
+      }
       return defaultImage(tokens, idx, opts, env, self);
     }
     return tokens[idx].content ?? "";
@@ -586,7 +621,7 @@ export function renderDocumentHtml(
   const { md, text } = buildRenderer(markdown, mode, sourceLines);
   const env: RenderEnv = { localImages: NO_LOCAL_IMAGES };
   const tokens = md.parse(text, env);
-  return renderTokens(md, tokens, env, localImages);
+  return renderTokens(md, tokens, env, localImages, sourceLines);
 }
 
 /**
@@ -611,7 +646,7 @@ export async function renderDocumentHtmlAsync(
   const sources = collectImageSources(tokens);
   const images =
     sources.length === 0 ? NO_LOCAL_IMAGES : await loadImages(sources);
-  return renderTokens(md, tokens, env, images);
+  return renderTokens(md, tokens, env, images, sourceLines);
 }
 
 // ---------------------------------------------------------------------------
