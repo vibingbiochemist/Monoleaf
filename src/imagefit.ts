@@ -63,10 +63,12 @@ export async function fitImagesToPage(
     imgs.map(async (img) => {
       const attr = img.getAttribute("width") ?? img.style.width;
       if (attr === "") return; // no explicit size: CSS fits it on its own
-      try {
-        await img.decode();
-      } catch {
-        return;
+      if (!(img.complete && img.naturalWidth > 0)) {
+        try {
+          await img.decode();
+        } catch {
+          return;
+        }
       }
       const requested = requestedImageWidth(attr, contentWidth);
       if (!Number.isFinite(requested)) return;
