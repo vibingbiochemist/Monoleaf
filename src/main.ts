@@ -1036,6 +1036,7 @@ let currentFontId = DEFAULT_FONT_ID;
 // scaled by editing the actual rule's literal values through the CSSOM.
 let liveContentRule: CSSStyleRule | null = null;
 let editorFontRule: CSSStyleRule | null = null;
+let liveImageRule: CSSStyleRule | null = null;
 
 function findRule(selector: string): CSSStyleRule | null {
   for (const sheet of Array.from(document.styleSheets)) {
@@ -1092,6 +1093,16 @@ function applyPageVars() {
       editorFontRule = findRule("#editor .cm-editor");
     }
     editorFontRule?.style.setProperty("font-size", `${PRINT_FONT_PX * z}px`);
+    // Images are capped to the page body here exactly as the print sheet
+    // caps them (buildPrintCss, export.ts): an image cannot cross a page, so
+    // both views scale a tall one down to a page — otherwise the editor shows
+    // a photo spanning several pages that the PDF fits onto one. 16px is the
+    // print rule's 12pt of slack at 96dpi, scaled with the page.
+    if (liveImageRule?.parentStyleSheet == null) {
+      liveImageRule = findRule(".cm-live-image");
+    }
+    const body = paperDims.h - pageMarginPx.top - pageMarginPx.bottom - 16;
+    liveImageRule?.style.setProperty("max-height", `${body * z}px`);
   } catch (err) {
     console.error("[monoleaf] applyPageVars failed:", err);
   }
