@@ -453,6 +453,31 @@ describe("renderDocumentHtml", () => {
     expect(html).toContain("Foot");
   });
 
+  it("keeps the image's written reference on the element only for page measurement", () => {
+    const images = new Map([
+      ["x.png", "data:image/png;base64,AAAA"],
+      ['C:\\pics\\a "b".png', "data:image/png;base64,BBBB"],
+    ]);
+    const doc =
+      '![a](x.png)\n\n<img src=\'C:\\pics\\a "b".png\' width="300">\n';
+    // sourceLines = true is the editor's page measurement: the reference is
+    // needed to map a page break that lands on the image back to its line.
+    const measured = renderDocumentHtml(doc, "strict", true, images);
+    expect(measured).toContain(
+      '<img src="data:image/png;base64,AAAA" alt="a" data-ml-src="x.png">',
+    );
+    expect(measured).toContain(
+      '<img src=\'data:image/png;base64,BBBB\' data-ml-src="C:\\pics\\a &quot;b&quot;.png" width="300">',
+    );
+    // An export (sourceLines = false) must not carry a local path: a shared
+    // .html would otherwise name the author's user folder.
+    const exported = renderDocumentHtml(doc, "strict", false, images);
+    expect(exported).not.toContain("data-ml-src");
+    expect(exported).toContain(
+      '<img src="data:image/png;base64,AAAA" alt="a">',
+    );
+  });
+
   it("keeps CriticMarkup as literal text (dumb-viewer parity)", () => {
     const html = renderDocumentHtml("a {++new++} b\n", "strict");
     expect(html).toContain("{++new++}");
@@ -492,6 +517,19 @@ describe("buildPrintCss", () => {
     );
     expect(css).not.toContain("@top-center");
     expect(css).not.toContain("@bottom-center");
+  });
+
+  it("caps images to the page body height, from Paged.js's own geometry", () => {
+    // An image cannot be fragmented; without this a tall photo is clipped at
+    // the page edge in the PDF and undercounted in the editor's page count.
+    const css = buildPrintCss(DEFAULT_PAGE_CONFIG, VARS, ".ml-measure");
+    const rule = /\.ml-measure img \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toContain(
+      "max-height: calc(var(--pagedjs-height) - var(--pagedjs-margin-top) - var(--pagedjs-margin-bottom)",
+    );
+    expect(rule).toContain("max-width: 100%");
+    expect(rule).toContain("object-fit: contain");
+    expect(rule).toContain("break-inside: avoid");
   });
 
   it("justify config emits justified paragraphs", () => {

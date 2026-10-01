@@ -5,6 +5,7 @@ import {
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
+import { fittedImageWidth, requestedImageWidth } from "./imagefit";
 import {
   AmbiguousImageError,
   getCurrentDocumentPath,
@@ -213,6 +214,34 @@ class ImageWidget extends WidgetType {
         ? `${this.width}px`
         : this.width; // e.g. "100%"
     }
+    img.addEventListener("load", () => {
+      // An explicit width can ask for more height than the page body allows
+      // (.cm-live-image's max-height, set by applyPageVars). CSS would then
+      // keep the box this wide around a letterboxed picture; shrink the width
+      // in step now that the picture's dimensions are known — the same rule
+      // the PDF feed applies (fitImagesToPage, imagefit.ts).
+      if (this.width !== "") {
+        const cap = parseFloat(getComputedStyle(img).maxHeight);
+        const requested = requestedImageWidth(
+          this.width,
+          wrap.parentElement?.clientWidth ?? img.clientWidth,
+        );
+        if (Number.isFinite(cap) && Number.isFinite(requested)) {
+          const fitted = fittedImageWidth(
+            requested,
+            img.naturalWidth,
+            img.naturalHeight,
+            cap,
+          );
+          if (fitted !== requested) img.style.width = `${fitted}px`;
+        }
+      }
+      // The picture only has a height once it has loaded (and, above, may
+      // have just changed width). CodeMirror measured the line before that,
+      // so without a re-measure every click below the image lands on the
+      // wrong line until something else triggers one.
+      view.requestMeasure();
+    });
     wrap.appendChild(img);
 
     // Word-style drag handle (bottom-right corner) to resize by dragging.

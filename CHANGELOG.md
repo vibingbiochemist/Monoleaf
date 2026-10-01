@@ -27,8 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Local images are included in print, PDF and HTML export.** Every local
   reference used to become its alt text in exported output; the image bytes
   are now embedded in the export, and the in-editor page count is measured
-  with them, so a figure that fills most of a page counts as one. The `.md`
-  itself is unchanged and still holds only the reference.
+  with them, so a figure that fills most of a page counts as one. An image
+  taller than the page body is scaled down to fit one page, in the editor
+  and in the export alike, instead of being cut off at the page edge. The
+  `.md` itself is unchanged and still holds only the reference.
 - **Insert Image can browse for a file, and image files can be dropped onto
   the window.** Browse… opens the native file picker; dropping one or more
   images inserts a reference for each at the drop position. Both write a

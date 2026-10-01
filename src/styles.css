@@ -1510,7 +1510,14 @@ html.theme-dark #editor .cm-cursor {
 
 .cm-live-image {
   max-width: 100%;
+  /* Page-body cap, mirroring the print sheet (export.ts buildPrintCss): an
+     image cannot cross a page, so a tall one scales down to fit one, with
+     room left for a lead-in line or caption. A4 / 20mm baseline; set live
+     by applyPageVars (main.ts) for size, margins and zoom. object-fit keeps
+     a drag-resized image undistorted. */
+  max-height: 918px;
   height: auto;
+  object-fit: contain;
   vertical-align: bottom;
   border-radius: 2px;
 }

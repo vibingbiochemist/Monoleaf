@@ -109,6 +109,7 @@ import {
   setPageConfigSpec,
   renderDocumentHtmlAsync,
 } from "./export";
+import { fitImagesToPage, IMAGE_PAGE_SLACK_PX } from "./imagefit";
 import { embedFontsForExport } from "./fontEmbeds";
 import {
   DEFAULT_FONT_ID,
@@ -1036,6 +1037,7 @@ let currentFontId = DEFAULT_FONT_ID;
 // scaled by editing the actual rule's literal values through the CSSOM.
 let liveContentRule: CSSStyleRule | null = null;
 let editorFontRule: CSSStyleRule | null = null;
+let liveImageRule: CSSStyleRule | null = null;
 
 function findRule(selector: string): CSSStyleRule | null {
   for (const sheet of Array.from(document.styleSheets)) {
@@ -1092,9 +1094,35 @@ function applyPageVars() {
       editorFontRule = findRule("#editor .cm-editor");
     }
     editorFontRule?.style.setProperty("font-size", `${PRINT_FONT_PX * z}px`);
+    // Images are capped to the page body here exactly as the print sheet
+    // caps them (buildPrintCss, export.ts): an image cannot cross a page, so
+    // both views scale a tall one down to a page — otherwise the editor shows
+    // a photo spanning several pages that the PDF fits onto one. 16px is the
+    // print rule's 12pt of slack at 96dpi, scaled with the page.
+    if (liveImageRule?.parentStyleSheet == null) {
+      liveImageRule = findRule(".cm-live-image");
+    }
+    liveImageRule?.style.setProperty(
+      "max-height",
+      `${pageBodyHeightPx() * z}px`,
+    );
   } catch (err) {
     console.error("[monoleaf] applyPageVars failed:", err);
   }
+}
+
+/** The tallest an image may be, in unzoomed px: the page body (paper minus
+ * top and bottom margins) less the slack the print sheet keeps for a lead-in
+ * line or caption (IMAGE_PAGE_SLACK_PT, imagefit.ts). Mirrors buildPrintCss. */
+function pageBodyHeightPx(): number {
+  return (
+    paperDims.h - pageMarginPx.top - pageMarginPx.bottom - IMAGE_PAGE_SLACK_PX
+  );
+}
+
+/** Width of the page body in px, for percentage image widths. */
+function pageBodyWidthPx(): number {
+  return paperDims.w - pageMarginPx.left - pageMarginPx.right;
 }
 
 function updatePageMetrics() {
@@ -1354,6 +1382,9 @@ async function exportPdf() {
   printPreview.hidden = false;
   const source = document.createElement("div");
   source.innerHTML = html;
+  // Explicitly sized images: shrink the width where the page-body height cap
+  // would otherwise leave a letterboxed picture in a wide box (imagefit.ts).
+  await fitImagesToPage(source, pageBodyHeightPx(), pageBodyWidthPx());
   const previewer = new Previewer();
   printPreviewer = previewer;
   printPreviewRendering = true;
@@ -1677,6 +1708,8 @@ async function runPagination() {
     measureRoot.innerHTML = "";
     const source = document.createElement("div");
     source.innerHTML = html;
+    // Same image fitting as exportPdf, so the measured breaks match the PDF.
+    await fitImagesToPage(source, pageBodyHeightPx(), pageBodyWidthPx());
     // Tracked immediately (not just after a successful preview) so the
     // finally block below can always tear this instance down properly, even
     // if preview() itself is what throws.
