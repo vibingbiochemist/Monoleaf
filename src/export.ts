@@ -907,7 +907,20 @@ ${root} table th {
   background: #f3f3f1 !important;
   font-weight: 600;
 }
-${root} img { max-width: 100%; }
+/* An image cannot be fragmented across pages, so one taller than the page body
+   used to be clipped at the page edge (and the in-editor page count, measured
+   with this same sheet, undercounted). Cap it to the body height — Paged.js
+   publishes the @page geometry as CSS variables on :root — and let the width
+   follow, so a tall photo scales down onto one page. The 12pt of slack covers
+   the paragraph's bottom margin and the inline line box around the image;
+   object-fit keeps a drag-resized image (explicit width) undistorted. */
+${root} img {
+  max-width: 100%;
+  max-height: calc(var(--pagedjs-height) - var(--pagedjs-margin-top) - var(--pagedjs-margin-bottom) - 12pt);
+  height: auto;
+  object-fit: contain;
+  break-inside: avoid;
+}
 ${root} hr { border: none; border-top: 1pt solid #bbbbbb; margin: 10pt 0; }
 ${root} ul.contains-task-list { list-style: none; padding-left: 1.2em; }
 ${root} a { color: #1a4f8a; text-decoration: none; }

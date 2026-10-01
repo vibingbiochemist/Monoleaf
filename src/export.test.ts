@@ -494,6 +494,19 @@ describe("buildPrintCss", () => {
     expect(css).not.toContain("@bottom-center");
   });
 
+  it("caps images to the page body height, from Paged.js's own geometry", () => {
+    // An image cannot be fragmented; without this a tall photo is clipped at
+    // the page edge in the PDF and undercounted in the editor's page count.
+    const css = buildPrintCss(DEFAULT_PAGE_CONFIG, VARS, ".ml-measure");
+    const rule = /\.ml-measure img \{([^}]*)\}/.exec(css)?.[1] ?? "";
+    expect(rule).toContain(
+      "max-height: calc(var(--pagedjs-height) - var(--pagedjs-margin-top) - var(--pagedjs-margin-bottom)",
+    );
+    expect(rule).toContain("max-width: 100%");
+    expect(rule).toContain("object-fit: contain");
+    expect(rule).toContain("break-inside: avoid");
+  });
+
   it("justify config emits justified paragraphs", () => {
     const on = buildPrintCss(
       {
