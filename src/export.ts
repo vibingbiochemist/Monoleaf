@@ -351,11 +351,105 @@ function installAdmonitions(md: InstanceType<typeof MarkdownIt>): void {
   });
 }
 
-export function renderDocumentHtml(
+const NO_LOCAL_IMAGES: ReadonlyMap<string, string> = new Map();
+
+/** What the renderer is handed alongside the tokens. markdown-it's `env` is
+ * untyped and plugins (footnotes) keep their own state on it, so this is read
+ * defensively in the image rule rather than trusted. */
+// markdown-it's own Env is an open record; plugins (footnotes) write to it.
+type RenderEnv = Record<PropertyKey, unknown> & {
+  localImages: ReadonlyMap<string, string>;
+};
+
+/** The slice of markdown-it's Token the image pass needs; structural, so no
+ * import of the library's internal type paths is required. */
+interface TokenLike {
+  type: string;
+  content: string;
+  children?: TokenLike[] | null;
+  attrGet(name: string): string | number | null;
+}
+
+// `<img … src="…">` in raw HTML, double- or single-quoted, each form matched
+// on its own quote so an apostrophe inside a double-quoted path survives.
+// Deliberately the same closed shape the live preview (parseImgTag) and the
+// image context menu already parse.
+const IMG_SRC_RE = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)')/gi;
+
+function rewriteImgSrc(
+  html: string,
+  images: ReadonlyMap<string, string>,
+): string {
+  return html.replace(
+    IMG_SRC_RE,
+    (whole: string, head: string, dq?: string, sq?: string) => {
+      const data = images.get(dq ?? sq ?? "");
+      if (data === undefined) return whole;
+      const quote = dq !== undefined ? '"' : "'";
+      return `${head}${quote}${data}${quote}`;
+    },
+  );
+}
+
+/** Every local (non-remote, non-data:) image reference in the parsed tokens,
+ * as written, deduplicated — markdown images and raw-HTML `<img>` alike. */
+function collectImageSources(tokens: readonly TokenLike[]): string[] {
+  const out = new Set<string>();
+  const add = (src: string) => {
+    if (src !== "" && !isRemoteUrl(src) && !/^data:/i.test(src)) out.add(src);
+  };
+  const addHtml = (html: string) => {
+    for (const m of html.matchAll(IMG_SRC_RE)) add(m[2] ?? m[3] ?? "");
+  };
+  for (const token of tokens) {
+    if (token.type === "html_block") addHtml(token.content);
+    for (const child of token.children ?? []) {
+      if (child.type === "image") add(String(child.attrGet("src") ?? ""));
+      else if (child.type === "html_inline") addHtml(child.content);
+    }
+  }
+  return [...out];
+}
+
+/**
+ * Render parsed tokens with the given local images embedded. Markdown images
+ * are handled by the image rule (via `env`); raw-HTML `<img>` passes through
+ * markdown-it untouched, so its src is rewritten in the tokens here first.
+ * `env` must be the same object the tokens were parsed with — plugins such
+ * as footnotes keep parse-time state on it that the render reads back.
+ */
+function renderTokens(
+  md: InstanceType<typeof MarkdownIt>,
+  tokens: TokenLike[],
+  env: RenderEnv,
+  localImages: ReadonlyMap<string, string>,
+): string {
+  env.localImages = localImages;
+  if (localImages.size > 0) {
+    for (const token of tokens) {
+      if (token.type === "html_block") {
+        token.content = rewriteImgSrc(token.content, localImages);
+      }
+      for (const child of token.children ?? []) {
+        if (child.type === "html_inline") {
+          child.content = rewriteImgSrc(child.content, localImages);
+        }
+      }
+    }
+  }
+  // Token[] is structurally a TokenLike[]; the cast back is for the library.
+  return md.renderer.render(
+    tokens as Parameters<typeof md.renderer.render>[0],
+    md.options,
+    env,
+  );
+}
+
+function buildRenderer(
   markdown: string,
   mode: PortabilityMode,
-  sourceLines = false,
-): string {
+  sourceLines: boolean,
+): { md: InstanceType<typeof MarkdownIt>; text: string } {
   // Stripping replaces token text only, never newlines, so line indices in
   // the stripped text still match the original document — which is what
   // makes data-srcline usable for mapping page breaks back to the editor.
@@ -411,8 +505,13 @@ export function renderDocumentHtml(
     );
     return self.renderToken(tokens, idx, opts);
   };
-  // https images render; other references (local files, etc.) become their
-  // alt text — the .md holds only the reference, never image bytes.
+  // https images render. A local reference renders only when the caller has
+  // already loaded its bytes into `env.localImages` (loadLocalImagesForExport,
+  // localimages.ts), keyed by the reference exactly as markdown-it reports it
+  // (percent-encoded, see resolveLocalImagePath); otherwise it becomes its
+  // alt text. The renderer itself never touches the disk, and the .md holds
+  // only the reference, never image bytes — the bytes go into the exported
+  // output alone.
   //
   // A remote image also becomes alt text when the reader has not enabled remote
   // content (the default; see ./remoteimages). Degrading to the same alt text a
@@ -427,6 +526,13 @@ export function renderDocumentHtml(
       return tokens[idx].content ?? "";
     }
     if (/^https?:\/\//i.test(src)) {
+      return defaultImage(tokens, idx, opts, env, self);
+    }
+    const local = (env as Partial<RenderEnv> | undefined)?.localImages?.get(
+      src,
+    );
+    if (local !== undefined) {
+      tokens[idx].attrSet("src", local);
       return defaultImage(tokens, idx, opts, env, self);
     }
     return tokens[idx].content ?? "";
@@ -460,7 +566,52 @@ export function renderDocumentHtml(
       }
     });
   }
-  return md.render(text);
+  return { md, text };
+}
+
+/**
+ * Render a document to the HTML body used for print, PDF and HTML export.
+ *
+ * `localImages` maps local image references (as markdown-it reports them,
+ * i.e. percent-encoded) to data: URLs the caller already holds. Without it,
+ * every local reference renders as its alt text. The app itself goes through
+ * renderDocumentHtmlAsync, which loads the images in between parse and render.
+ */
+export function renderDocumentHtml(
+  markdown: string,
+  mode: PortabilityMode,
+  sourceLines = false,
+  localImages: ReadonlyMap<string, string> = NO_LOCAL_IMAGES,
+): string {
+  const { md, text } = buildRenderer(markdown, mode, sourceLines);
+  const env: RenderEnv = { localImages: NO_LOCAL_IMAGES };
+  const tokens = md.parse(text, env);
+  return renderTokens(md, tokens, env, localImages);
+}
+
+/**
+ * renderDocumentHtml with the document's local images embedded: one parse,
+ * then `loadImages` is asked for every local reference the tokens contain
+ * (as written, deduplicated; see loadLocalImagesForExport in localimages.ts),
+ * and the same tokens are rendered with whatever it returns. Not called at
+ * all for a document without local images, so the common case costs nothing
+ * extra over the synchronous render.
+ */
+export async function renderDocumentHtmlAsync(
+  markdown: string,
+  mode: PortabilityMode,
+  sourceLines: boolean,
+  loadImages: (
+    sources: readonly string[],
+  ) => Promise<ReadonlyMap<string, string>>,
+): Promise<string> {
+  const { md, text } = buildRenderer(markdown, mode, sourceLines);
+  const env: RenderEnv = { localImages: NO_LOCAL_IMAGES };
+  const tokens = md.parse(text, env);
+  const sources = collectImageSources(tokens);
+  const images =
+    sources.length === 0 ? NO_LOCAL_IMAGES : await loadImages(sources);
+  return renderTokens(md, tokens, env, images);
 }
 
 // ---------------------------------------------------------------------------

@@ -1515,6 +1515,16 @@ html.theme-dark #editor .cm-cursor {
   border-radius: 2px;
 }
 
+/* A local image found by file name under the document's folder rather than
+   at the referenced path (loadLocalImageWithFallback, localimages.ts). The
+   picture shows, but the reference as written would not work in another
+   tool, so it is marked: a dashed accent edge, with the tooltip saying where
+   the file actually is. */
+.cm-live-image-found {
+  outline: 1.5px dashed var(--accent);
+  outline-offset: 1px;
+}
+
 /* A remote image the reader has not opted into loading. A span, not an <img>,
    so there is no broken-image glyph: it carries the alt text inside a dashed
    frame, with a small camera glyph marking what it stands for. Deliberately

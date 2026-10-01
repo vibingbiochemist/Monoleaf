@@ -52,20 +52,49 @@ export function resolveLocalImagePath(
   url: string,
   documentPath: string | null,
 ): string | null {
-  if (isAbsoluteLocalPath(url)) return url;
+  const path = decodeReference(url);
+  if (isAbsoluteLocalPath(path)) return path;
   if (documentPath === null) return null;
 
-  const sep =
-    documentPath.includes("\\") && !documentPath.includes("/") ? "\\" : "/";
-  const dir = documentPath.split(/[\\/]/);
-  dir.pop(); // drop the document's own file name
-
-  for (const segment of url.split(/[\\/]/)) {
+  const { dir, sep } = documentDirParts(documentPath);
+  for (const segment of path.split(/[\\/]/)) {
     if (segment === "" || segment === ".") continue;
     if (segment === "..") dir.pop();
     else dir.push(segment);
   }
   return dir.join(sep);
+}
+
+/**
+ * The open document's folder as path segments, plus the separator its path
+ * uses — the one place that knows how a document path splits, shared by the
+ * resolver, the relativizer and the by-name search root.
+ */
+function documentDirParts(documentPath: string): {
+  dir: string[];
+  sep: string;
+} {
+  const sep =
+    documentPath.includes("\\") && !documentPath.includes("/") ? "\\" : "/";
+  const dir = documentPath.split(/[\\/]/);
+  dir.pop(); // drop the document's own file name
+  return { dir, sep };
+}
+
+/**
+ * Percent-decode a reference (`Bild_%C3%B6.png`, `my%20plot.png`) into the
+ * file name it stands for. markdown-it percent-encodes destinations when it
+ * parses a document for export, and a browser decodes an HTML `src` the same
+ * way, so this is what the reference means in both places. Text that is not
+ * valid percent-encoding (`100%.png`) is kept as written.
+ */
+function decodeReference(url: string): string {
+  if (!/%[0-9a-f]{2}/i.test(url)) return url;
+  try {
+    return decodeURIComponent(url);
+  } catch {
+    return url;
+  }
 }
 
 /**
@@ -86,8 +115,7 @@ export function relativizeUnderDocument(
 ): string | null {
   if (documentPath === null) return null;
 
-  const dir = documentPath.split(/[\\/]/);
-  dir.pop(); // drop the document's own file name
+  const { dir } = documentDirParts(documentPath);
   const target = absolutePath.split(/[\\/]/);
 
   for (let i = 0; i < dir.length; i++) {
@@ -197,4 +225,182 @@ export function loadLocalImage(resolvedPath: string): Promise<string> {
     });
   }
   return pending;
+}
+
+// ---------------------------------------------------------------------------
+// "Wherever the image is": find-by-name fallback
+
+/** The last path segment, or "" for a path ending in a separator. */
+function baseName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? "";
+}
+
+/** The open document's folder, in the document path's own separator style,
+ * kept absolute: `C:\note.md` → `C:\` (a bare `C:` would mean "the current
+ * directory on C:" to the OS) and `/note.md` → `/`. */
+function documentDir(documentPath: string): string {
+  const { dir, sep } = documentDirParts(documentPath);
+  const joined = dir.join(sep);
+  if (joined === "") return sep;
+  if (/^[a-zA-Z]:$/.test(joined)) return joined + sep;
+  return joined;
+}
+
+function searchKey(documentPath: string, name: string): string {
+  return `${documentDir(documentPath)}\0${name}`;
+}
+
+// (document folder, file name) -> in-flight/completed search. A rejection is
+// evicted for the same reason loadLocalImage's is. A successful but EMPTY
+// result is cached, and that is deliberate: it is the ordinary outcome for a
+// genuinely missing file, and re-walking the folder tree on every reconfigure
+// (autosave: every ~1.5 s while typing) is exactly the cost the caps in Rust
+// exist to avoid. The direct load still retries each time (see
+// `failureCount`), so a file that appears at its referenced path is picked
+// up at once; one that appears somewhere else is found after the document is
+// reopened or the reference is edited.
+const searchCache = new Map<string, Promise<string[]>>();
+
+/**
+ * Files named `name` under the open document's folder (and its subfolders,
+ * to a depth the Rust side caps), shallowest level only — see
+ * `find_image_by_name` in src-tauri/src/lib.rs for the exact rules.
+ */
+export function findLocalImageByName(
+  documentPath: string,
+  name: string,
+): Promise<string[]> {
+  const key = searchKey(documentPath, name);
+  let pending = searchCache.get(key);
+  if (pending === undefined) {
+    pending = invoke<string[]>("find_image_by_name", {
+      dir: documentDir(documentPath),
+      name,
+    });
+    searchCache.set(key, pending);
+    pending.catch(() => searchCache.delete(key));
+  }
+  return pending;
+}
+
+/** Where a local image's bytes came from. `foundAt` is set only when the
+ * reference's own path failed and the file was found elsewhere under the
+ * document's folder — the signal the editor uses to say so. */
+export interface LocalImage {
+  dataUrl: string;
+  foundAt: string | null;
+}
+
+/** Several files under the document's folder share the referenced name. The
+ * editor shows the candidates rather than picking one. */
+export class AmbiguousImageError extends Error {
+  constructor(
+    readonly name: string,
+    readonly candidates: readonly string[],
+  ) {
+    super(`Several files are named ${name}:\n${candidates.join("\n")}`);
+  }
+}
+
+/**
+ * Load a resolved local image, falling back to a search by file name under
+ * the open document's folder when the path itself does not load.
+ *
+ * The fallback is what makes `![](plot.png)` show the picture when the file
+ * actually lives in `figures/`, the way Obsidian finds attachments. It never
+ * rewrites the reference, and it reports `foundAt` so the editor can say
+ * where the bytes came from: a path that only works because Monoleaf went
+ * looking will not work in the reader's own PDF pipeline, and a picture that
+ * quietly appears anyway would hide exactly that.
+ *
+ * A search that itself fails (the name has no image extension, the folder is
+ * unreadable) is treated as "nothing found": the error worth reporting is the
+ * original load failure, not the fallback's.
+ */
+// Resolved path -> the same-named file the search settled on, for references
+// the fallback has already answered. Without it, every re-render of a
+// found-elsewhere image would fail the direct load again first: one wasted
+// IPC per autosave reconfigure, and a `failureCount` bump that makes
+// ImageWidget.eq() see a changed widget and rebuild a picture that is fine.
+// Evicted when the found file itself stops loading, so a file that moves
+// again is searched for afresh.
+const redirects = new Map<string, string>();
+
+export async function loadLocalImageWithFallback(
+  resolvedPath: string,
+  documentPath: string | null,
+): Promise<LocalImage> {
+  const redirect = redirects.get(resolvedPath);
+  if (redirect !== undefined) {
+    try {
+      return { dataUrl: await loadLocalImage(redirect), foundAt: redirect };
+    } catch {
+      redirects.delete(resolvedPath);
+      // Fall through: the file may be back where the reference says.
+    }
+  }
+
+  const failuresBefore = loadFailureCount(resolvedPath);
+  try {
+    return { dataUrl: await loadLocalImage(resolvedPath), foundAt: null };
+  } catch (err) {
+    const name = baseName(resolvedPath);
+    // No search without a folder to search, and none for a name Rust would
+    // refuse anyway (`![](report.pdf)`): that saves the round trip and keeps
+    // the error the user sees about the reference, not about the search.
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    if (documentPath === null || !IMAGE_EXTENSIONS.includes(ext)) throw err;
+    const found = await findLocalImageByName(documentPath, name).catch(
+      () => [] as string[],
+    );
+    if (found.length === 0) throw err;
+    if (found.length > 1) throw new AmbiguousImageError(name, found);
+
+    let dataUrl: string;
+    try {
+      dataUrl = await loadLocalImage(found[0]);
+    } catch {
+      // The search's answer is stale (the file moved or went away since):
+      // forget it so the next attempt searches again, and report the
+      // reference's own failure — the only path the user actually wrote.
+      searchCache.delete(searchKey(documentPath, name));
+      throw err;
+    }
+    redirects.set(resolvedPath, found[0]);
+    // The direct load failed, but the reference IS being shown. Leaving that
+    // failure counted would make ImageWidget.eq() treat the next widget as
+    // changed and rebuild the <img> on every reconfigure.
+    failureCount.set(resolvedPath, failuresBefore);
+    return { dataUrl, foundAt: found[0] };
+  }
+}
+
+/**
+ * Data URLs for the local image references of a document, keyed by the
+ * reference exactly as written, for export and print (renderDocumentHtml's
+ * `localImages`, export.ts). A reference that cannot be resolved (no open
+ * document) or loaded (missing, not an image, ambiguous) is simply absent, and
+ * the exporter renders it as alt text, as every local reference used to be.
+ */
+export async function loadLocalImagesForExport(
+  sources: readonly string[],
+  documentPath: string | null,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  await Promise.all(
+    sources.map(async (src) => {
+      const resolved = resolveLocalImagePath(src, documentPath);
+      if (resolved === null) return;
+      try {
+        const { dataUrl } = await loadLocalImageWithFallback(
+          resolved,
+          documentPath,
+        );
+        out.set(src, dataUrl);
+      } catch {
+        // Alt text in the export, exactly as before local rendering existed.
+      }
+    }),
+  );
+  return out;
 }

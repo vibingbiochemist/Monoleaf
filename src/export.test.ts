@@ -8,6 +8,7 @@ import {
   marginToPx,
   parsePageConfig,
   renderDocumentHtml,
+  renderDocumentHtmlAsync,
   renderStandaloneHtml,
   setPageConfigSpec,
   wrapStandaloneHtml,
@@ -331,7 +332,8 @@ describe("renderDocumentHtml", () => {
   });
 
   it("renders a local image as alt text, an https image as <img> once enabled", () => {
-    // A local reference is always alt text: the .md holds a path, never bytes.
+    // A local reference is alt text unless the caller hands in its bytes (next
+    // test): the .md holds a path, never bytes, and the renderer reads no files.
     const local = renderDocumentHtml("see ![a figure](x.png) here\n", "strict");
     expect(local).not.toContain("<img");
     expect(local).toContain("a figure");
@@ -354,6 +356,101 @@ describe("renderDocumentHtml", () => {
       // Module-level state: leaving it on would silently change later tests.
       setRemoteImagesAllowed(false);
     }
+  });
+
+  it("embeds a local image the caller has loaded, in markdown and raw HTML alike", () => {
+    const images = new Map([
+      ["x.png", "data:image/png;base64,AAAA"],
+      ["figures/plot (1).png", "data:image/png;base64,BBBB"],
+    ]);
+    const doc = [
+      "see ![a figure](x.png) here",
+      "",
+      '<img src="figures/plot (1).png" width="300">',
+      "",
+      'inline <img src="x.png" alt="x"> too, and ![missing](nope.png)',
+      "",
+    ].join("\n");
+    const html = renderDocumentHtml(doc, "strict", false, images);
+    expect(html).toContain(
+      '<img src="data:image/png;base64,AAAA" alt="a figure"',
+    );
+    expect(html).toContain(
+      '<img src="data:image/png;base64,BBBB" width="300">',
+    );
+    expect(html).toContain('<img src="data:image/png;base64,AAAA" alt="x">');
+    // Not in the map: alt text, exactly as before.
+    expect(html).not.toContain("nope.png");
+    expect(html).toContain("missing");
+  });
+
+  it("async render: asks the loader once for every local reference as written, then embeds what comes back", async () => {
+    const doc = [
+      "![a](x.png) ![b](./figures/plot.png) ![a again](x.png) ![u](Bild_ö.png)",
+      "![remote](https://x.com/l.png) ![inline](data:image/png;base64,AAAA)",
+      '<img src="C:\\pics\\abs.png"> <img src="//cdn.test/p.png">',
+      "",
+      "<div><img src='quoted.png' alt='q'></div>",
+      "",
+      '<img src="Martin\'s plot.png" width="300">',
+      "",
+    ].join("\n");
+    const asked: string[][] = [];
+    const html = await renderDocumentHtmlAsync(
+      doc,
+      "strict",
+      false,
+      (sources) => {
+        asked.push([...sources]);
+        return Promise.resolve(
+          new Map([
+            ["x.png", "data:image/png;base64,XXXX"],
+            ["quoted.png", "data:image/png;base64,QQQQ"],
+            ["Martin's plot.png", "data:image/png;base64,PPPP"],
+            // markdown-it reports the destination percent-encoded; the loader
+            // (resolveLocalImagePath) decodes it, the key stays as reported.
+            ["Bild_%C3%B6.png", "data:image/png;base64,UUUU"],
+          ]),
+        );
+      },
+    );
+    expect(asked).toHaveLength(1);
+    expect([...asked[0]].sort()).toEqual(
+      [
+        "./figures/plot.png",
+        "Bild_%C3%B6.png",
+        "C:\\pics\\abs.png",
+        "Martin's plot.png",
+        "quoted.png",
+        "x.png",
+      ].sort(),
+    );
+    expect(html).toContain('<img src="data:image/png;base64,XXXX" alt="a"');
+    expect(html).toContain('<img src="data:image/png;base64,UUUU" alt="u"');
+    expect(html).toContain("<img src='data:image/png;base64,QQQQ' alt='q'>");
+    expect(html).toContain(
+      '<img src="data:image/png;base64,PPPP" width="300">',
+    );
+    // Asked for but not returned: alt text, as before.
+    expect(html).not.toContain("figures/plot.png");
+    expect(html).toContain('alt="a"> b <img');
+  });
+
+  it("async render: does not call the loader for a document without local images", async () => {
+    let calls = 0;
+    const html = await renderDocumentHtmlAsync(
+      "# Title\n\n![remote](https://x.com/l.png) and a [^1] note\n\n[^1]: Foot\n",
+      "strict",
+      false,
+      () => {
+        calls++;
+        return Promise.resolve(new Map());
+      },
+    );
+    expect(calls).toBe(0);
+    // The parse/render split must keep plugin state (footnotes live on env).
+    expect(html).toContain("footnote");
+    expect(html).toContain("Foot");
   });
 
   it("keeps CriticMarkup as literal text (dumb-viewer parity)", () => {

@@ -37,7 +37,9 @@ import { applyMeta, parseMeta, type DocMeta, type MetaFormat } from "./meta";
 import { PortabilityMode, portabilityExtensions } from "./portability";
 import { livePreviewExtensions } from "./livepreview";
 import {
+  getCurrentDocumentPath,
   IMAGE_EXTENSIONS,
+  loadLocalImagesForExport,
   relativizeUnderDocument,
   setCurrentDocumentPath,
 } from "./localimages";
@@ -103,9 +105,9 @@ import {
   marginToPx,
   parsePageConfig,
   PRINT_FONT_PX,
-  renderDocumentHtml,
   wrapStandaloneHtml,
   setPageConfigSpec,
+  renderDocumentHtmlAsync,
 } from "./export";
 import { embedFontsForExport } from "./fontEmbeds";
 import {
@@ -1304,6 +1306,25 @@ function closePreview() {
   view.focus();
 }
 
+// The document's HTML for print, PDF, HTML export and page measurement, with
+// local images embedded. The renderer is synchronous and never touches the
+// disk, so the bytes are gathered first (cached per path in localimages.ts,
+// so a document that was just measured costs nothing to export) and handed
+// in. A reference that cannot be loaded is left out and renders as alt text,
+// as every local reference did before local images rendered at all.
+async function renderDocumentHtmlWithImages(
+  markdown: string,
+  sourceLines = false,
+): Promise<string> {
+  const html = await renderDocumentHtmlAsync(
+    markdown,
+    mode,
+    sourceLines,
+    (sources) => loadLocalImagesForExport(sources, getCurrentDocumentPath()),
+  );
+  return sanitizeDocumentHtml(html);
+}
+
 async function exportPdf() {
   // A previous call's Paged.js render may still be in flight (its own loop
   // isn't cancelled just because that earlier await settled our caller) —
@@ -1320,7 +1341,7 @@ async function exportPdf() {
   const cfg = parsePageConfig(markdown);
   const fileTitle = fileLabel().replace(/\.(md|markdown)$/i, "");
   const { meta } = parseMeta(markdown);
-  const html = sanitizeDocumentHtml(renderDocumentHtml(markdown, mode));
+  const html = await renderDocumentHtmlWithImages(markdown);
   // Header/footer placeholders resolve from the document metadata, falling
   // back to the filename, the saved author name, and today's date.
   const css = buildPrintCss(cfg, {
@@ -1357,7 +1378,7 @@ async function exportHtml() {
     const cfg = parsePageConfig(markdown);
     const fileTitle = fileLabel().replace(/\.(md|markdown)$/i, "");
     const { meta } = parseMeta(markdown);
-    const body = sanitizeDocumentHtml(renderDocumentHtml(markdown, mode));
+    const body = await renderDocumentHtmlWithImages(markdown);
     // Embed only the faces this document actually uses, so a plain-text
     // export doesn't pay for an italic or code face it never renders.
     let embeddedFonts: EmbeddedFontFace[] = [];
@@ -1641,7 +1662,9 @@ async function runPagination() {
       return;
     }
     const cfg = parsePageConfig(markdown);
-    const html = sanitizeDocumentHtml(renderDocumentHtml(markdown, mode, true));
+    // Images included, so the page count the editor shows is measured on the
+    // same layout the PDF gets — a figure is often most of a page.
+    const html = await renderDocumentHtmlWithImages(markdown, true);
     const css = buildPrintCss(
       cfg,
       { title: "", author: "", date: "" },

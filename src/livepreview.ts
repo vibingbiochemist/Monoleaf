@@ -6,9 +6,11 @@ import {
 import { tags } from "@lezer/highlight";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
 import {
+  AmbiguousImageError,
   getCurrentDocumentPath,
   loadFailureCount,
-  loadLocalImage,
+  loadLocalImageWithFallback,
+  relativizeUnderDocument,
   resolveLocalImagePath,
 } from "./localimages";
 import type { Tree } from "@lezer/common";
@@ -285,15 +287,30 @@ class ImageWidget extends WidgetType {
     // data: URL. Returned synchronously with an empty src so toDOM never
     // blocks; the invoke resolves later and sets it.
     const img = this.buildImg(view, wrap, "");
-    loadLocalImage(resolved).then(
-      (dataUrl) => {
+    const documentPath = getCurrentDocumentPath();
+    loadLocalImageWithFallback(resolved, documentPath).then(
+      ({ dataUrl, foundAt }) => {
         img.src = dataUrl;
+        if (foundAt !== null) {
+          // Found by name under the document's folder, not at the path the
+          // reference names. Say so, visibly: the reference as written will
+          // not work in another tool, and a picture that simply appeared
+          // would hide that.
+          img.classList.add("cm-live-image-found");
+          const shown =
+            relativizeUnderDocument(foundAt, documentPath) ?? foundAt;
+          img.title = `Found at ${shown}\nThe reference says ${this.url}`;
+        }
       },
       (err) => {
         // Whole wrap, not just the <img>: the drag handle built alongside it
         // has nothing to resize once the load has failed.
         wrap.replaceChildren(
-          this.placeholder(`Could not load: ${resolved}\n${err}`),
+          this.placeholder(
+            err instanceof AmbiguousImageError
+              ? err.message
+              : `Could not load: ${resolved}\n${err}`,
+          ),
         );
       },
     );
