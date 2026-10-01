@@ -198,3 +198,142 @@ export function loadLocalImage(resolvedPath: string): Promise<string> {
   }
   return pending;
 }
+
+// ---------------------------------------------------------------------------
+// "Wherever the image is": find-by-name fallback
+
+/** The last path segment, or "" for a path ending in a separator. */
+function baseName(path: string): string {
+  return path.split(/[\\/]/).pop() ?? "";
+}
+
+/** The open document's folder, in the document path's own separator style,
+ * kept absolute: `C:\note.md` → `C:\` (a bare `C:` would mean "the current
+ * directory on C:" to the OS) and `/note.md` → `/`. */
+function documentDir(documentPath: string): string {
+  const sep =
+    documentPath.includes("\\") && !documentPath.includes("/") ? "\\" : "/";
+  const parts = documentPath.split(/[\\/]/);
+  parts.pop();
+  const dir = parts.join(sep);
+  if (dir === "") return sep;
+  if (/^[a-zA-Z]:$/.test(dir)) return dir + sep;
+  return dir;
+}
+
+// (document folder, file name) -> in-flight/completed search. A rejection is
+// evicted for the same reason loadLocalImage's is. A successful but EMPTY
+// result is cached, and that is deliberate: it is the ordinary outcome for a
+// genuinely missing file, and re-walking the folder tree on every reconfigure
+// (autosave: every ~1.5 s while typing) is exactly the cost the caps in Rust
+// exist to avoid. The direct load still retries each time (see
+// `failureCount`), so a file that appears at its referenced path is picked
+// up at once; one that appears somewhere else is found after the document is
+// reopened or the reference is edited.
+const searchCache = new Map<string, Promise<string[]>>();
+
+/**
+ * Files named `name` under the open document's folder (and its subfolders,
+ * to a depth the Rust side caps), shallowest level only — see
+ * `find_image_by_name` in src-tauri/src/lib.rs for the exact rules.
+ */
+export function findLocalImageByName(
+  documentPath: string,
+  name: string,
+): Promise<string[]> {
+  const dir = documentDir(documentPath);
+  const key = `${dir}\0${name}`;
+  let pending = searchCache.get(key);
+  if (pending === undefined) {
+    pending = invoke<string[]>("find_image_by_name", { dir, name });
+    searchCache.set(key, pending);
+    pending.catch(() => searchCache.delete(key));
+  }
+  return pending;
+}
+
+/** Where a local image's bytes came from. `foundAt` is set only when the
+ * reference's own path failed and the file was found elsewhere under the
+ * document's folder — the signal the editor uses to say so. */
+export interface LocalImage {
+  dataUrl: string;
+  foundAt: string | null;
+}
+
+/** Several files under the document's folder share the referenced name. The
+ * editor shows the candidates rather than picking one. */
+export class AmbiguousImageError extends Error {
+  constructor(
+    readonly name: string,
+    readonly candidates: readonly string[],
+  ) {
+    super(`Several files are named ${name}:\n${candidates.join("\n")}`);
+  }
+}
+
+/**
+ * Load a resolved local image, falling back to a search by file name under
+ * the open document's folder when the path itself does not load.
+ *
+ * The fallback is what makes `![](plot.png)` show the picture when the file
+ * actually lives in `figures/`, the way Obsidian finds attachments. It never
+ * rewrites the reference, and it reports `foundAt` so the editor can say
+ * where the bytes came from: a path that only works because Monoleaf went
+ * looking will not work in the reader's own PDF pipeline, and a picture that
+ * quietly appears anyway would hide exactly that.
+ *
+ * A search that itself fails (the name has no image extension, the folder is
+ * unreadable) is treated as "nothing found": the error worth reporting is the
+ * original load failure, not the fallback's.
+ */
+export async function loadLocalImageWithFallback(
+  resolvedPath: string,
+  documentPath: string | null,
+): Promise<LocalImage> {
+  try {
+    return { dataUrl: await loadLocalImage(resolvedPath), foundAt: null };
+  } catch (err) {
+    const name = baseName(resolvedPath);
+    // No search without a folder to search, and none for a name Rust would
+    // refuse anyway (`![](report.pdf)`): that saves the round trip and keeps
+    // the error the user sees about the reference, not about the search.
+    const ext = name.split(".").pop()?.toLowerCase() ?? "";
+    if (documentPath === null || !IMAGE_EXTENSIONS.includes(ext)) throw err;
+    const found = await findLocalImageByName(documentPath, name).catch(
+      () => [] as string[],
+    );
+    if (found.length === 0) throw err;
+    if (found.length > 1) throw new AmbiguousImageError(name, found);
+    return { dataUrl: await loadLocalImage(found[0]), foundAt: found[0] };
+  }
+}
+
+/**
+ * Data URLs for the local image references of a document, keyed by the
+ * reference exactly as written, for export and print (renderDocumentHtml's
+ * `localImages`, export.ts). A reference that cannot be resolved (no open
+ * document) or loaded (missing, not an image, ambiguous) is simply absent, and
+ * the exporter renders it as alt text, as every local reference used to be.
+ */
+export async function loadLocalImagesForExport(
+  sources: readonly string[],
+  documentPath: string | null,
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  await Promise.all(
+    sources.map(async (src) => {
+      const resolved = resolveLocalImagePath(src, documentPath);
+      if (resolved === null) return;
+      try {
+        const { dataUrl } = await loadLocalImageWithFallback(
+          resolved,
+          documentPath,
+        );
+        out.set(src, dataUrl);
+      } catch {
+        // Alt text in the export, exactly as before local rendering existed.
+      }
+    }),
+  );
+  return out;
+}

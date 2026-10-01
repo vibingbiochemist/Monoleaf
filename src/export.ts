@@ -351,11 +351,32 @@ function installAdmonitions(md: InstanceType<typeof MarkdownIt>): void {
   });
 }
 
-export function renderDocumentHtml(
+const NO_LOCAL_IMAGES: ReadonlyMap<string, string> = new Map();
+
+// `<img … src="…">` in raw HTML, with the attribute's quote captured so the
+// rewrite can keep it. Deliberately simple: the same closed shape the live
+// preview and the context menu already parse.
+const IMG_SRC_RE = /(<img\b[^>]*?\bsrc\s*=\s*)(["'])([^"']*)\2/gi;
+
+function rewriteImgSrc(
+  html: string,
+  images: ReadonlyMap<string, string>,
+): string {
+  return html.replace(
+    IMG_SRC_RE,
+    (whole, head: string, quote: string, src: string) => {
+      const data = images.get(src);
+      return data === undefined ? whole : `${head}${quote}${data}${quote}`;
+    },
+  );
+}
+
+function buildRenderer(
   markdown: string,
   mode: PortabilityMode,
-  sourceLines = false,
-): string {
+  sourceLines: boolean,
+  localImages: ReadonlyMap<string, string>,
+): { md: InstanceType<typeof MarkdownIt>; text: string } {
   // Stripping replaces token text only, never newlines, so line indices in
   // the stripped text still match the original document — which is what
   // makes data-srcline usable for mapping page breaks back to the editor.
@@ -411,8 +432,12 @@ export function renderDocumentHtml(
     );
     return self.renderToken(tokens, idx, opts);
   };
-  // https images render; other references (local files, etc.) become their
-  // alt text — the .md holds only the reference, never image bytes.
+  // https images render. A local reference renders only when the caller has
+  // already loaded its bytes into `localImages` (loadLocalImagesForExport,
+  // localimages.ts), keyed by the reference exactly as written; otherwise it
+  // becomes its alt text. The renderer itself never touches the disk, and the
+  // .md holds only the reference, never image bytes — the bytes go into the
+  // exported output alone.
   //
   // A remote image also becomes alt text when the reader has not enabled remote
   // content (the default; see ./remoteimages). Degrading to the same alt text a
@@ -429,8 +454,31 @@ export function renderDocumentHtml(
     if (/^https?:\/\//i.test(src)) {
       return defaultImage(tokens, idx, opts, env, self);
     }
+    const local = localImages.get(src);
+    if (local !== undefined) {
+      tokens[idx].attrSet("src", local);
+      return defaultImage(tokens, idx, opts, env, self);
+    }
     return tokens[idx].content ?? "";
   };
+  // Raw-HTML images (`<img src="x.png" width="300">`, what a drag-resize
+  // writes) pass through markdown-it untouched, so their src is rewritten in
+  // place here. Only when there is something to rewrite: the rule costs a
+  // pass over every token.
+  if (localImages.size > 0) {
+    md.core.ruler.push("local_images_html", (state) => {
+      for (const token of state.tokens) {
+        if (token.type === "html_block") {
+          token.content = rewriteImgSrc(token.content, localImages);
+        }
+        for (const child of token.children ?? []) {
+          if (child.type === "html_inline") {
+            child.content = rewriteImgSrc(child.content, localImages);
+          }
+        }
+      }
+    });
+  }
   md.renderer.rules.th_open = (tokens, idx, opts, _env, self) => {
     const cur = tokens[idx].attrGet("style");
     tokens[idx].attrSet(
@@ -460,7 +508,54 @@ export function renderDocumentHtml(
       }
     });
   }
+  return { md, text };
+}
+
+/**
+ * Render a document to the HTML body used for print, PDF and HTML export.
+ *
+ * `localImages` maps local image references (as written in the markdown) to
+ * data: URLs already loaded by the caller — see collectLocalImageSources and
+ * loadLocalImagesForExport (localimages.ts). Without it, every local
+ * reference renders as its alt text.
+ */
+export function renderDocumentHtml(
+  markdown: string,
+  mode: PortabilityMode,
+  sourceLines = false,
+  localImages: ReadonlyMap<string, string> = NO_LOCAL_IMAGES,
+): string {
+  const { md, text } = buildRenderer(markdown, mode, sourceLines, localImages);
   return md.render(text);
+}
+
+/**
+ * Every local (non-remote, non-data:) image reference the renderer would
+ * see in `markdown`, as written, deduplicated — markdown images and raw-HTML
+ * `<img>` alike. Parsed with the same configuration renderDocumentHtml uses,
+ * so a reference inside a construct a plugin owns is found or ignored exactly
+ * as the render would treat it.
+ */
+export function collectLocalImageSources(
+  markdown: string,
+  mode: PortabilityMode,
+): string[] {
+  const { md, text } = buildRenderer(markdown, mode, false, NO_LOCAL_IMAGES);
+  const out = new Set<string>();
+  const add = (src: string) => {
+    if (src !== "" && !isRemoteUrl(src) && !/^data:/i.test(src)) out.add(src);
+  };
+  const addHtml = (html: string) => {
+    for (const m of html.matchAll(IMG_SRC_RE)) add(m[3]);
+  };
+  for (const token of md.parse(text, {})) {
+    if (token.type === "html_block") addHtml(token.content);
+    for (const child of token.children ?? []) {
+      if (child.type === "image") add(String(child.attrGet("src") ?? ""));
+      else if (child.type === "html_inline") addHtml(child.content);
+    }
+  }
+  return [...out];
 }
 
 // ---------------------------------------------------------------------------

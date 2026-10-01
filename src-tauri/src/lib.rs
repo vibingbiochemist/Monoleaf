@@ -423,6 +423,87 @@ fn read_image_as_data_url(path: String) -> Result<String, String> {
     Ok(format!("data:{mime};base64,{encoded}"))
 }
 
+/// How deep below the document's folder [`find_image_by_name`] looks, and how
+/// many directory entries it visits before giving up. Both are caps on cost,
+/// not tuning knobs: a document's figures sit beside it or a folder or two
+/// down, and a tree that needs more than this is not one a stray image
+/// reference should make the editor crawl for every missing picture.
+const IMAGE_SEARCH_MAX_DEPTH: usize = 4;
+const IMAGE_SEARCH_MAX_ENTRIES: usize = 20_000;
+
+/// Find files named `name` beneath `dir` (the open document's folder), for a
+/// reference whose own path did not load — the Obsidian-style "wherever the
+/// image is" fallback, bounded to the document's own tree.
+///
+/// Breadth-first, so the shallowest matches win: the search stops at the end
+/// of the first depth level holding any match and returns everything found on
+/// that level. One result is the answer; several mean the name is ambiguous,
+/// and the caller says so instead of guessing. Hidden folders (`.git`,
+/// `.obsidian`), `node_modules` and symlinks are skipped — the first two
+/// because figures never live there, the last so a link loop cannot defeat
+/// the depth cap. Matching is case-insensitive: the user who typed `Plot.PNG`
+/// for `plot.png` meant that file.
+///
+/// `name` must be a bare file name with an image extension. This command
+/// reads no file itself, but what it returns feeds `read_image_as_data_url`,
+/// and a caller handing it a path segment would be a bug worth failing on
+/// rather than searching for.
+#[tauri::command]
+fn find_image_by_name(dir: String, name: String) -> Result<Vec<String>, String> {
+    validate_path(&dir, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
+    if name.is_empty() || name.contains(['/', '\\']) {
+        return Err(format!("{name:?} is not a file name"));
+    }
+    let ext = std::path::Path::new(&name)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    if ext.as_deref().and_then(image_mime_type).is_none() {
+        return Err(format!("{name} is not a supported image type"));
+    }
+    let wanted = name.to_lowercase();
+
+    let mut level = vec![std::path::PathBuf::from(&dir)];
+    let mut visited = 0usize;
+    for _depth in 0..=IMAGE_SEARCH_MAX_DEPTH {
+        let mut matches = Vec::new();
+        let mut next = Vec::new();
+        for folder in &level {
+            let Ok(entries) = fs::read_dir(folder) else {
+                continue;
+            };
+            for entry in entries.flatten() {
+                visited += 1;
+                if visited > IMAGE_SEARCH_MAX_ENTRIES {
+                    matches.sort();
+                    return Ok(matches);
+                }
+                let Ok(kind) = entry.file_type() else {
+                    continue;
+                };
+                let file_name = entry.file_name();
+                let file_name = file_name.to_string_lossy();
+                if kind.is_dir() {
+                    if !file_name.starts_with('.') && file_name != "node_modules" {
+                        next.push(entry.path());
+                    }
+                } else if kind.is_file() && file_name.to_lowercase() == wanted {
+                    matches.push(entry.path().to_string_lossy().into_owned());
+                }
+            }
+        }
+        if !matches.is_empty() {
+            matches.sort();
+            return Ok(matches);
+        }
+        if next.is_empty() {
+            break;
+        }
+        level = next;
+    }
+    Ok(Vec::new())
+}
+
 /// Convert a PDF to Markdown for opening as a new, unsaved document.
 ///
 /// Unlike `read_file` this is not a passthrough: there is no lossless round trip
@@ -1011,6 +1092,7 @@ pub fn run() {
             read_file,
             write_file,
             read_image_as_data_url,
+            find_image_by_name,
             set_allow_network_paths,
             import_pdf_as_markdown,
             spell_suggest,
@@ -1168,6 +1250,48 @@ mod tests {
                 "not rejected: {path}"
             );
         }
+    }
+
+    #[test]
+    fn find_image_by_name_prefers_the_shallowest_match_and_reports_duplicates() {
+        let root = std::env::temp_dir().join("monoleaf_find_image_test");
+        let _ = fs::remove_dir_all(&root);
+        for sub in ["figures/sub", ".hidden", "node_modules/pkg", "a/b/c/d/e"] {
+            fs::create_dir_all(root.join(sub)).unwrap();
+        }
+        for file in [
+            "figures/plot.png",
+            "figures/sub/plot.png", // deeper than the first: not reported
+            ".hidden/secret.png",   // hidden folder: skipped
+            "node_modules/pkg/logo.png",
+            "a/b/c/d/e/deep.png", // depth 5, beyond the cap of 4
+            "figures/Dup.PNG",
+            "a/dup.png",
+        ] {
+            fs::write(root.join(file), b"x").unwrap();
+        }
+        let dir = root.to_string_lossy().into_owned();
+        let find = |name: &str| find_image_by_name(dir.clone(), name.to_string());
+
+        // Joined segment by segment: `join("figures/plot.png")` would keep the
+        // forward slash on Windows and never equal what read_dir hands back.
+        let expected = root.join("figures").join("plot.png");
+        assert_eq!(
+            find("plot.png").unwrap(),
+            vec![expected.to_string_lossy().into_owned()]
+        );
+        // Case-insensitive, and two files on the same level are both reported.
+        let dups = find("dup.png").unwrap();
+        assert_eq!(dups.len(), 2, "{dups:?}");
+        for name in ["secret.png", "logo.png", "deep.png", "missing.png"] {
+            assert!(find(name).unwrap().is_empty(), "{name} should not be found");
+        }
+        // Not a bare image file name: refused before any directory is read.
+        assert!(find("notes.md").is_err());
+        assert!(find("sub/plot.png").is_err());
+        assert!(find("").is_err());
+
+        let _ = fs::remove_dir_all(&root);
     }
 
     /// Both file commands refuse UNC/network paths *unless the user has opted

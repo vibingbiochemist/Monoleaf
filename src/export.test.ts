@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { EditorState } from "@codemirror/state";
 import {
   buildPrintCss,
+  collectLocalImageSources,
   contentExpression,
   cssLengthToPx,
   DEFAULT_PAGE_CONFIG,
@@ -331,7 +332,8 @@ describe("renderDocumentHtml", () => {
   });
 
   it("renders a local image as alt text, an https image as <img> once enabled", () => {
-    // A local reference is always alt text: the .md holds a path, never bytes.
+    // A local reference is alt text unless the caller hands in its bytes (next
+    // test): the .md holds a path, never bytes, and the renderer reads no files.
     const local = renderDocumentHtml("see ![a figure](x.png) here\n", "strict");
     expect(local).not.toContain("<img");
     expect(local).toContain("a figure");
@@ -354,6 +356,46 @@ describe("renderDocumentHtml", () => {
       // Module-level state: leaving it on would silently change later tests.
       setRemoteImagesAllowed(false);
     }
+  });
+
+  it("embeds a local image the caller has loaded, in markdown and raw HTML alike", () => {
+    const images = new Map([
+      ["x.png", "data:image/png;base64,AAAA"],
+      ["figures/plot (1).png", "data:image/png;base64,BBBB"],
+    ]);
+    const doc = [
+      "see ![a figure](x.png) here",
+      "",
+      '<img src="figures/plot (1).png" width="300">',
+      "",
+      'inline <img src="x.png" alt="x"> too, and ![missing](nope.png)',
+      "",
+    ].join("\n");
+    const html = renderDocumentHtml(doc, "strict", false, images);
+    expect(html).toContain(
+      '<img src="data:image/png;base64,AAAA" alt="a figure"',
+    );
+    expect(html).toContain(
+      '<img src="data:image/png;base64,BBBB" width="300">',
+    );
+    expect(html).toContain('<img src="data:image/png;base64,AAAA" alt="x">');
+    // Not in the map: alt text, exactly as before.
+    expect(html).not.toContain("nope.png");
+    expect(html).toContain("missing");
+  });
+
+  it("collects every local image reference as written, once, skipping remote and data: ones", () => {
+    const doc = [
+      "![a](x.png) ![b](./figures/plot.png) ![a again](x.png)",
+      "![remote](https://x.com/l.png) ![inline](data:image/png;base64,AAAA)",
+      '<img src="C:\\pics\\abs.png"> <img src="//cdn.test/p.png">',
+      "",
+      "<div><img src='quoted.png' alt='q'></div>",
+      "",
+    ].join("\n");
+    expect(collectLocalImageSources(doc, "strict").sort()).toEqual(
+      ["./figures/plot.png", "C:\\pics\\abs.png", "quoted.png", "x.png"].sort(),
+    );
   });
 
   it("keeps CriticMarkup as literal text (dumb-viewer parity)", () => {

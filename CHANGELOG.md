@@ -16,6 +16,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   document's folder, so in a brand-new document that has never been saved
   they show a quiet placeholder until the first save, then fill in on their
   own. Network (UNC) paths follow the same opt-in as opening files from them.
+- **A local image that is not at the referenced path is looked up by name.**
+  When `![Plot](plot.png)` does not exist beside the document but a
+  `plot.png` sits in `figures/` or another subfolder (up to four levels
+  down), the editor shows that file, the way Obsidian finds attachments. The
+  reference itself is never rewritten, and the picture carries a tooltip
+  saying where it was found, because the reference as written will not work
+  in other tools. Two files of the same name are reported as a choice rather
+  than guessed between.
+- **Local images are included in print, PDF and HTML export.** Every local
+  reference used to become its alt text in exported output; the image bytes
+  are now embedded in the export, and the in-editor page count is measured
+  with them, so a figure that fills most of a page counts as one. The `.md`
+  itself is unchanged and still holds only the reference.
 - **Insert Image can browse for a file, and image files can be dropped onto
   the window.** Browse… opens the native file picker; dropping one or more
   images inserts a reference for each at the drop position. Both write a

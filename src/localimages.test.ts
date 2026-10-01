@@ -4,7 +4,10 @@ const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 
 import {
+  AmbiguousImageError,
   loadLocalImage,
+  loadLocalImagesForExport,
+  loadLocalImageWithFallback,
   relativizeUnderDocument,
   resolveLocalImagePath,
 } from "./localimages";
@@ -136,5 +139,141 @@ describe("loadLocalImage", () => {
       "data:image/png;base64,DDDD",
     );
     expect(invokeMock).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Each case below uses its own file names: the resolved-path cache and the
+// search cache in localimages.ts are module-global.
+describe("loadLocalImageWithFallback", () => {
+  it("returns the direct load, searching nothing, when the path loads", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockResolvedValue("data:image/png;base64,EEEE");
+    await expect(
+      loadLocalImageWithFallback("/docs/direct.png", "/docs/notes.md"),
+    ).resolves.toEqual({
+      dataUrl: "data:image/png;base64,EEEE",
+      foundAt: null,
+    });
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledWith("read_image_as_data_url", {
+      path: "/docs/direct.png",
+    });
+  });
+
+  it("searches the document's folder by name when the path fails, and says where the file was", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "find_image_by_name") {
+          return Promise.resolve(["/docs/figures/plot.png"]);
+        }
+        return args?.path === "/docs/figures/plot.png"
+          ? Promise.resolve("data:image/png;base64,FFFF")
+          : Promise.reject("ENOENT: no such file");
+      },
+    );
+    await expect(
+      loadLocalImageWithFallback("/docs/plot.png", "/docs/notes.md"),
+    ).resolves.toEqual({
+      dataUrl: "data:image/png;base64,FFFF",
+      foundAt: "/docs/figures/plot.png",
+    });
+    expect(invokeMock).toHaveBeenCalledWith("find_image_by_name", {
+      dir: "/docs",
+      name: "plot.png",
+    });
+  });
+
+  it("refuses to guess between several files of that name", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "find_image_by_name"
+        ? Promise.resolve(["C:\\docs\\a\\dup.png", "C:\\docs\\b\\dup.png"])
+        : Promise.reject("ENOENT"),
+    );
+    const err: unknown = await loadLocalImageWithFallback(
+      "C:\\docs\\dup.png",
+      "C:\\docs\\note.md",
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AmbiguousImageError);
+    expect((err as AmbiguousImageError).candidates).toHaveLength(2);
+    // The search root is the document's folder, in its own separator style.
+    expect(invokeMock).toHaveBeenCalledWith("find_image_by_name", {
+      dir: "C:\\docs",
+      name: "dup.png",
+    });
+  });
+
+  it("rethrows the original error when nothing is found, when the search fails, and without a document", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "find_image_by_name"
+        ? Promise.resolve([])
+        : Promise.reject("ENOENT: gone.png"),
+    );
+    await expect(
+      loadLocalImageWithFallback("/docs/gone.png", "/docs/notes.md"),
+    ).rejects.toBe("ENOENT: gone.png");
+
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "find_image_by_name"
+        ? Promise.reject("not a supported image type")
+        : Promise.reject("ENOENT: gone2.pdf"),
+    );
+    await expect(
+      loadLocalImageWithFallback("/docs/gone2.pdf", "/docs/notes.md"),
+    ).rejects.toBe("ENOENT: gone2.pdf");
+
+    invokeMock.mockReset();
+    invokeMock.mockRejectedValue("ENOENT: nodoc.png");
+    await expect(
+      loadLocalImageWithFallback("/abs/nodoc.png", null),
+    ).rejects.toBe("ENOENT: nodoc.png");
+    expect(invokeMock).toHaveBeenCalledTimes(1); // no search without a folder
+  });
+
+  it("runs one search per folder and name, even across repeated failing loads", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "find_image_by_name"
+        ? Promise.resolve([])
+        : Promise.reject("ENOENT"),
+    );
+    for (let i = 0; i < 3; i++) {
+      await loadLocalImageWithFallback(
+        "/docs/once.png",
+        "/docs/notes.md",
+      ).catch(() => undefined);
+    }
+    const searches = invokeMock.mock.calls.filter(
+      (call: unknown[]) => call[0] === "find_image_by_name",
+    );
+    expect(searches).toHaveLength(1);
+  });
+});
+
+describe("loadLocalImagesForExport", () => {
+  it("maps each loadable reference to its data URL and leaves the rest out", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "find_image_by_name") return Promise.resolve([]);
+        return args?.path === "/docs/ok.png"
+          ? Promise.resolve("data:image/png;base64,GGGG")
+          : Promise.reject("ENOENT");
+      },
+    );
+    const map = await loadLocalImagesForExport(
+      ["ok.png", "./missing.png", "/abs/also-missing.png"],
+      "/docs/notes.md",
+    );
+    expect([...map]).toEqual([["ok.png", "data:image/png;base64,GGGG"]]);
+  });
+
+  it("resolves nothing without an open document", async () => {
+    invokeMock.mockReset();
+    const map = await loadLocalImagesForExport(["rel.png"], null);
+    expect(map.size).toBe(0);
+    expect(invokeMock).not.toHaveBeenCalled();
   });
 });

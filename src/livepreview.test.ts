@@ -882,3 +882,54 @@ describe("toggling remote images on rebuilds an already-blocked widget", () => {
     view.destroy();
   });
 });
+
+describe("local image lookup by name", () => {
+  afterEach(() => setCurrentDocumentPath(null));
+
+  it("falls back to a same-named file under the document's folder and says where it was", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "find_image_by_name") {
+          return Promise.resolve(["/docs/figures/moved.png"]);
+        }
+        return args?.path === "/docs/figures/moved.png"
+          ? Promise.resolve("data:image/png;base64,MMMM")
+          : Promise.reject("ENOENT: no such file");
+      },
+    );
+    setCurrentDocumentPath("/docs/notes.md");
+
+    const view = mountLive("![fig](moved.png)");
+    await flush();
+    await flush(); // the fallback is a second round trip
+
+    const img = view.dom.querySelector<HTMLImageElement>("img.cm-live-image");
+    expect(img?.getAttribute("src")).toBe("data:image/png;base64,MMMM");
+    expect(img?.classList.contains("cm-live-image-found")).toBe(true);
+    expect(img?.title).toContain("Found at figures/moved.png");
+    expect(img?.title).toContain("The reference says moved.png");
+    view.destroy();
+  });
+
+  it("shows the candidates instead of guessing when the name is ambiguous", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation((cmd: string) =>
+      cmd === "find_image_by_name"
+        ? Promise.resolve(["/docs/a/twice.png", "/docs/b/twice.png"])
+        : Promise.reject("ENOENT"),
+    );
+    setCurrentDocumentPath("/docs/notes.md");
+
+    const view = mountLive("![fig](twice.png)");
+    await flush();
+    await flush();
+
+    expect(view.dom.querySelector("img.cm-live-image")).toBeNull();
+    const placeholder =
+      view.dom.querySelector<HTMLElement>(".cm-image-blocked");
+    expect(placeholder?.title).toContain("Several files are named twice.png");
+    expect(placeholder?.title).toContain("/docs/a/twice.png");
+    view.destroy();
+  });
+});
