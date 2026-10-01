@@ -5,6 +5,7 @@ import {
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
+import { fittedImageWidth, requestedImageWidth } from "./imagefit";
 import {
   AmbiguousImageError,
   getCurrentDocumentPath,
@@ -212,6 +213,26 @@ class ImageWidget extends WidgetType {
       img.style.width = /^\d+$/.test(this.width)
         ? `${this.width}px`
         : this.width; // e.g. "100%"
+      // An explicit width can ask for more height than the page body allows
+      // (.cm-live-image's max-height, set by applyPageVars). CSS would then
+      // keep the box this wide around a letterboxed picture; shrink the width
+      // in step once the picture's dimensions are known — the same rule the
+      // PDF feed applies (fitImagesToPage, imagefit.ts).
+      img.addEventListener("load", () => {
+        const cap = parseFloat(getComputedStyle(img).maxHeight);
+        const requested = requestedImageWidth(
+          this.width,
+          wrap.parentElement?.clientWidth ?? img.clientWidth,
+        );
+        if (!Number.isFinite(cap) || !Number.isFinite(requested)) return;
+        const fitted = fittedImageWidth(
+          requested,
+          img.naturalWidth,
+          img.naturalHeight,
+          cap,
+        );
+        if (fitted !== requested) img.style.width = `${fitted}px`;
+      });
     }
     wrap.appendChild(img);
 

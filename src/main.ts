@@ -109,6 +109,7 @@ import {
   setPageConfigSpec,
   renderDocumentHtmlAsync,
 } from "./export";
+import { fitImagesToPage } from "./imagefit";
 import { embedFontsForExport } from "./fontEmbeds";
 import {
   DEFAULT_FONT_ID,
@@ -1101,11 +1102,25 @@ function applyPageVars() {
     if (liveImageRule?.parentStyleSheet == null) {
       liveImageRule = findRule(".cm-live-image");
     }
-    const body = paperDims.h - pageMarginPx.top - pageMarginPx.bottom - 16;
-    liveImageRule?.style.setProperty("max-height", `${body * z}px`);
+    liveImageRule?.style.setProperty(
+      "max-height",
+      `${pageBodyHeightPx() * z}px`,
+    );
   } catch (err) {
     console.error("[monoleaf] applyPageVars failed:", err);
   }
+}
+
+/** The tallest an image may be, in unzoomed px: the page body (paper minus
+ * top and bottom margins) less the 12pt the print sheet keeps as slack for
+ * the paragraph margin and the inline line box. Mirrors buildPrintCss. */
+function pageBodyHeightPx(): number {
+  return paperDims.h - pageMarginPx.top - pageMarginPx.bottom - 16;
+}
+
+/** Width of the page body in px, for percentage image widths. */
+function pageBodyWidthPx(): number {
+  return paperDims.w - pageMarginPx.left - pageMarginPx.right;
 }
 
 function updatePageMetrics() {
@@ -1365,6 +1380,9 @@ async function exportPdf() {
   printPreview.hidden = false;
   const source = document.createElement("div");
   source.innerHTML = html;
+  // Explicitly sized images: shrink the width where the page-body height cap
+  // would otherwise leave a letterboxed picture in a wide box (imagefit.ts).
+  await fitImagesToPage(source, pageBodyHeightPx(), pageBodyWidthPx());
   const previewer = new Previewer();
   printPreviewer = previewer;
   printPreviewRendering = true;
@@ -1688,6 +1706,8 @@ async function runPagination() {
     measureRoot.innerHTML = "";
     const source = document.createElement("div");
     source.innerHTML = html;
+    // Same image fitting as exportPdf, so the measured breaks match the PDF.
+    await fitImagesToPage(source, pageBodyHeightPx(), pageBodyWidthPx());
     // Tracked immediately (not just after a successful preview) so the
     // finally block below can always tear this instance down properly, even
     // if preview() itself is what throws.
