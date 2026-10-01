@@ -448,13 +448,24 @@ const IMAGE_SEARCH_MAX_ENTRIES: usize = 20_000;
 /// reads no file itself, but what it returns feeds `read_image_as_data_url`,
 /// and a caller handing it a path segment would be a bug worth failing on
 /// rather than searching for.
+///
+/// Async, on a blocking-task thread, like `import_pdf_as_markdown`: a
+/// synchronous command runs on the main thread, and a walk of up to 20 000
+/// entries — each a stat, possibly over SMB when network paths are allowed —
+/// would freeze every window for its duration, once per broken reference.
 #[tauri::command]
-fn find_image_by_name(dir: String, name: String) -> Result<Vec<String>, String> {
-    validate_path(&dir, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
+async fn find_image_by_name(dir: String, name: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || find_images_named(&dir, &name))
+        .await
+        .unwrap_or_else(|_| Err("The image search failed unexpectedly.".into()))
+}
+
+fn find_images_named(dir: &str, name: &str) -> Result<Vec<String>, String> {
+    validate_path(dir, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
     if name.is_empty() || name.contains(['/', '\\']) {
         return Err(format!("{name:?} is not a file name"));
     }
-    let ext = std::path::Path::new(&name)
+    let ext = std::path::Path::new(name)
         .extension()
         .and_then(|e| e.to_str())
         .map(str::to_ascii_lowercase);
@@ -463,7 +474,7 @@ fn find_image_by_name(dir: String, name: String) -> Result<Vec<String>, String> 
     }
     let wanted = name.to_lowercase();
 
-    let mut level = vec![std::path::PathBuf::from(&dir)];
+    let mut level = vec![std::path::PathBuf::from(dir)];
     let mut visited = 0usize;
     for _depth in 0..=IMAGE_SEARCH_MAX_DEPTH {
         let mut matches = Vec::new();
@@ -1271,7 +1282,7 @@ mod tests {
             fs::write(root.join(file), b"x").unwrap();
         }
         let dir = root.to_string_lossy().into_owned();
-        let find = |name: &str| find_image_by_name(dir.clone(), name.to_string());
+        let find = |name: &str| find_images_named(&dir, name);
 
         // Joined segment by segment: `join("figures/plot.png")` would keep the
         // forward slash on Windows and never equal what read_dir hands back.

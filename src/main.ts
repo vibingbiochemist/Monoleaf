@@ -105,10 +105,9 @@ import {
   marginToPx,
   parsePageConfig,
   PRINT_FONT_PX,
-  renderDocumentHtml,
   wrapStandaloneHtml,
   setPageConfigSpec,
-  collectLocalImageSources,
+  renderDocumentHtmlAsync,
 } from "./export";
 import { embedFontsForExport } from "./fontEmbeds";
 import {
@@ -1317,13 +1316,13 @@ async function renderDocumentHtmlWithImages(
   markdown: string,
   sourceLines = false,
 ): Promise<string> {
-  const images = await loadLocalImagesForExport(
-    collectLocalImageSources(markdown, mode),
-    getCurrentDocumentPath(),
+  const html = await renderDocumentHtmlAsync(
+    markdown,
+    mode,
+    sourceLines,
+    (sources) => loadLocalImagesForExport(sources, getCurrentDocumentPath()),
   );
-  return sanitizeDocumentHtml(
-    renderDocumentHtml(markdown, mode, sourceLines, images),
-  );
+  return sanitizeDocumentHtml(html);
 }
 
 async function exportPdf() {

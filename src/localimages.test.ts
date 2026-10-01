@@ -5,6 +5,7 @@ vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 
 import {
   AmbiguousImageError,
+  loadFailureCount,
   loadLocalImage,
   loadLocalImagesForExport,
   loadLocalImageWithFallback,
@@ -275,5 +276,77 @@ describe("loadLocalImagesForExport", () => {
     const map = await loadLocalImagesForExport(["rel.png"], null);
     expect(map.size).toBe(0);
     expect(invokeMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("percent-encoded references", () => {
+  it("resolve to the file name they stand for; text that is not an encoding stays as written", () => {
+    expect(resolveLocalImagePath("Bild_%C3%B6.png", "/docs/n.md")).toBe(
+      "/docs/Bild_ö.png",
+    );
+    expect(resolveLocalImagePath("my%20plot.png", "/docs/n.md")).toBe(
+      "/docs/my plot.png",
+    );
+    expect(resolveLocalImagePath("100%.png", "/docs/n.md")).toBe(
+      "/docs/100%.png",
+    );
+    expect(resolveLocalImagePath("C:%5Cpics%5Cx.png", null)).toBe(
+      "C:\\pics\\x.png",
+    );
+  });
+});
+
+describe("a found-elsewhere image across re-renders", () => {
+  it("is loaded straight from where it was found, with the reference's failure count left at rest", async () => {
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "find_image_by_name") {
+          return Promise.resolve(["/docs/figures/stable.png"]);
+        }
+        return args?.path === "/docs/figures/stable.png"
+          ? Promise.resolve("data:image/png;base64,SSSS")
+          : Promise.reject("ENOENT");
+      },
+    );
+    const first = await loadLocalImageWithFallback(
+      "/docs/stable.png",
+      "/docs/notes.md",
+    );
+    expect(first.foundAt).toBe("/docs/figures/stable.png");
+    // The direct load did fail, but the picture is showing: ImageWidget.eq()
+    // must not see a changed widget on the next reconfigure.
+    expect(loadFailureCount("/docs/stable.png")).toBe(0);
+
+    invokeMock.mockClear();
+    const second = await loadLocalImageWithFallback(
+      "/docs/stable.png",
+      "/docs/notes.md",
+    );
+    expect(second).toEqual(first);
+    // No failing direct read, no search: the cached data URL is all it took.
+    expect(invokeMock).not.toHaveBeenCalled();
+  });
+
+  it("forgets a search result whose file does not load, reports the reference's own error, and searches again next time", async () => {
+    invokeMock.mockReset();
+    let searches = 0;
+    invokeMock.mockImplementation(
+      (cmd: string, args?: Record<string, unknown>) => {
+        if (cmd === "find_image_by_name") {
+          searches++;
+          // The file was moved or deleted between the search and the read.
+          return Promise.resolve(["/docs/figures/stale.png"]);
+        }
+        return Promise.reject(`ENOENT: ${String(args?.path)}`);
+      },
+    );
+    const call = () =>
+      loadLocalImageWithFallback("/docs/stale.png", "/docs/notes.md");
+    // The error names the path the user wrote, not the search's stale answer.
+    await expect(call()).rejects.toBe("ENOENT: /docs/stale.png");
+    await expect(call()).rejects.toBe("ENOENT: /docs/stale.png");
+    // An empty result would have been cached; a wrong one is not.
+    expect(searches).toBe(2);
   });
 });

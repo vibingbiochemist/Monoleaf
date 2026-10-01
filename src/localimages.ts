@@ -52,20 +52,49 @@ export function resolveLocalImagePath(
   url: string,
   documentPath: string | null,
 ): string | null {
-  if (isAbsoluteLocalPath(url)) return url;
+  const path = decodeReference(url);
+  if (isAbsoluteLocalPath(path)) return path;
   if (documentPath === null) return null;
 
-  const sep =
-    documentPath.includes("\\") && !documentPath.includes("/") ? "\\" : "/";
-  const dir = documentPath.split(/[\\/]/);
-  dir.pop(); // drop the document's own file name
-
-  for (const segment of url.split(/[\\/]/)) {
+  const { dir, sep } = documentDirParts(documentPath);
+  for (const segment of path.split(/[\\/]/)) {
     if (segment === "" || segment === ".") continue;
     if (segment === "..") dir.pop();
     else dir.push(segment);
   }
   return dir.join(sep);
+}
+
+/**
+ * The open document's folder as path segments, plus the separator its path
+ * uses — the one place that knows how a document path splits, shared by the
+ * resolver, the relativizer and the by-name search root.
+ */
+function documentDirParts(documentPath: string): {
+  dir: string[];
+  sep: string;
+} {
+  const sep =
+    documentPath.includes("\\") && !documentPath.includes("/") ? "\\" : "/";
+  const dir = documentPath.split(/[\\/]/);
+  dir.pop(); // drop the document's own file name
+  return { dir, sep };
+}
+
+/**
+ * Percent-decode a reference (`Bild_%C3%B6.png`, `my%20plot.png`) into the
+ * file name it stands for. markdown-it percent-encodes destinations when it
+ * parses a document for export, and a browser decodes an HTML `src` the same
+ * way, so this is what the reference means in both places. Text that is not
+ * valid percent-encoding (`100%.png`) is kept as written.
+ */
+function decodeReference(url: string): string {
+  if (!/%[0-9a-f]{2}/i.test(url)) return url;
+  try {
+    return decodeURIComponent(url);
+  } catch {
+    return url;
+  }
 }
 
 /**
@@ -86,8 +115,7 @@ export function relativizeUnderDocument(
 ): string | null {
   if (documentPath === null) return null;
 
-  const dir = documentPath.split(/[\\/]/);
-  dir.pop(); // drop the document's own file name
+  const { dir } = documentDirParts(documentPath);
   const target = absolutePath.split(/[\\/]/);
 
   for (let i = 0; i < dir.length; i++) {
@@ -211,14 +239,15 @@ function baseName(path: string): string {
  * kept absolute: `C:\note.md` → `C:\` (a bare `C:` would mean "the current
  * directory on C:" to the OS) and `/note.md` → `/`. */
 function documentDir(documentPath: string): string {
-  const sep =
-    documentPath.includes("\\") && !documentPath.includes("/") ? "\\" : "/";
-  const parts = documentPath.split(/[\\/]/);
-  parts.pop();
-  const dir = parts.join(sep);
-  if (dir === "") return sep;
-  if (/^[a-zA-Z]:$/.test(dir)) return dir + sep;
-  return dir;
+  const { dir, sep } = documentDirParts(documentPath);
+  const joined = dir.join(sep);
+  if (joined === "") return sep;
+  if (/^[a-zA-Z]:$/.test(joined)) return joined + sep;
+  return joined;
+}
+
+function searchKey(documentPath: string, name: string): string {
+  return `${documentDir(documentPath)}\0${name}`;
 }
 
 // (document folder, file name) -> in-flight/completed search. A rejection is
@@ -241,11 +270,13 @@ export function findLocalImageByName(
   documentPath: string,
   name: string,
 ): Promise<string[]> {
-  const dir = documentDir(documentPath);
-  const key = `${dir}\0${name}`;
+  const key = searchKey(documentPath, name);
   let pending = searchCache.get(key);
   if (pending === undefined) {
-    pending = invoke<string[]>("find_image_by_name", { dir, name });
+    pending = invoke<string[]>("find_image_by_name", {
+      dir: documentDir(documentPath),
+      name,
+    });
     searchCache.set(key, pending);
     pending.catch(() => searchCache.delete(key));
   }
@@ -286,10 +317,30 @@ export class AmbiguousImageError extends Error {
  * unreadable) is treated as "nothing found": the error worth reporting is the
  * original load failure, not the fallback's.
  */
+// Resolved path -> the same-named file the search settled on, for references
+// the fallback has already answered. Without it, every re-render of a
+// found-elsewhere image would fail the direct load again first: one wasted
+// IPC per autosave reconfigure, and a `failureCount` bump that makes
+// ImageWidget.eq() see a changed widget and rebuild a picture that is fine.
+// Evicted when the found file itself stops loading, so a file that moves
+// again is searched for afresh.
+const redirects = new Map<string, string>();
+
 export async function loadLocalImageWithFallback(
   resolvedPath: string,
   documentPath: string | null,
 ): Promise<LocalImage> {
+  const redirect = redirects.get(resolvedPath);
+  if (redirect !== undefined) {
+    try {
+      return { dataUrl: await loadLocalImage(redirect), foundAt: redirect };
+    } catch {
+      redirects.delete(resolvedPath);
+      // Fall through: the file may be back where the reference says.
+    }
+  }
+
+  const failuresBefore = loadFailureCount(resolvedPath);
   try {
     return { dataUrl: await loadLocalImage(resolvedPath), foundAt: null };
   } catch (err) {
@@ -304,7 +355,23 @@ export async function loadLocalImageWithFallback(
     );
     if (found.length === 0) throw err;
     if (found.length > 1) throw new AmbiguousImageError(name, found);
-    return { dataUrl: await loadLocalImage(found[0]), foundAt: found[0] };
+
+    let dataUrl: string;
+    try {
+      dataUrl = await loadLocalImage(found[0]);
+    } catch {
+      // The search's answer is stale (the file moved or went away since):
+      // forget it so the next attempt searches again, and report the
+      // reference's own failure — the only path the user actually wrote.
+      searchCache.delete(searchKey(documentPath, name));
+      throw err;
+    }
+    redirects.set(resolvedPath, found[0]);
+    // The direct load failed, but the reference IS being shown. Leaving that
+    // failure counted would make ImageWidget.eq() treat the next widget as
+    // changed and rebuild the <img> on every reconfigure.
+    failureCount.set(resolvedPath, failuresBefore);
+    return { dataUrl, foundAt: found[0] };
   }
 }
 
