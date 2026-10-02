@@ -6,6 +6,7 @@ import {
 import { tags } from "@lezer/highlight";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
 import { fittedImageWidth, requestedImageWidth } from "./imagefit";
+import { imageReferenceAt } from "./imageref";
 import {
   AmbiguousImageError,
   getCurrentDocumentPath,
@@ -360,46 +361,16 @@ function commitImageWidth(
 ): void {
   const pos = view.posAtDOM(dom);
   const line = view.state.doc.lineAt(pos);
-  // The image case's destination may be <...>-wrapped (imageMarkup,
-  // commands.ts, for a path containing a space or parenthesis) — that
-  // wrapped form can itself contain a literal ")", so the bare `[^)]*`
-  // alternative alone would stop matching partway through it.
-  const re = /!\[[^\]]*\]\((?:<[^>]*>|[^)]*)\)|<img\b[^>]*>/gi;
-  for (const m of line.text.matchAll(re)) {
-    const from = line.from + (m.index ?? 0);
-    const to = from + m[0].length;
-    if (pos < from || pos > to) continue;
-    const t = m[0];
-    let src: string;
-    let alt: string;
-    if (t.startsWith("![")) {
-      const c = t.indexOf("](");
-      alt = t.slice(2, c);
-      const dest = t.slice(c + 2, t.length - 1);
-      // <...>-wrapped: take everything up to the matching >, same as the
-      // Image case (livepreview's buildLivePreviewDecorations) does via the
-      // parser's URL node. Bare: stop at the first space, which is how a
-      // trailing "title" gets dropped (unsupported here, same as before).
-      src = dest.startsWith("<")
-        ? dest.slice(1, dest.indexOf(">"))
-        : dest.split(/\s+/)[0];
-    } else {
-      src =
-        /\bsrc\s*=\s*"([^"]*)"/.exec(t)?.[1] ??
-        /\bsrc\s*=\s*'([^']*)'/.exec(t)?.[1] ??
-        "";
-      alt = /\balt\s*=\s*"([^"]*)"/.exec(t)?.[1] ?? "";
-    }
-    view.dispatch({
-      changes: {
-        from,
-        to,
-        insert: `<img src="${src}" alt="${alt}" width="${width}">`,
-      },
-      userEvent: "input.format",
-    });
-    return;
-  }
+  const ref = imageReferenceAt(line.text, pos - line.from);
+  if (ref === null) return;
+  view.dispatch({
+    changes: {
+      from: line.from + ref.from,
+      to: line.from + ref.to,
+      insert: `<img src="${ref.src}" alt="${ref.alt}" width="${width}">`,
+    },
+    userEvent: "input.format",
+  });
 }
 
 /** Pull src / alt / width out of an <img …> tag; null if no src. */

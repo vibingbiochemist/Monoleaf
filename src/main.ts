@@ -41,6 +41,7 @@ import { createDocumentState, serializeDocument } from "./document";
 import { applyMeta, parseMeta, type DocMeta, type MetaFormat } from "./meta";
 import { PortabilityMode, portabilityExtensions } from "./portability";
 import { livePreviewExtensions } from "./livepreview";
+import { imageReferenceAt, type ImageReference } from "./imageref";
 import {
   getCurrentDocumentPath,
   IMAGE_EXTENSIONS,
@@ -3728,57 +3729,30 @@ view.dom.addEventListener("contextmenu", (e) => {
   void openEditorContextMenu(e, pos);
 });
 
-interface ImageInfo {
+interface ImageInfo extends ImageReference {
+  /** Document offsets (ImageReference's are relative to the line). */
   from: number;
   to: number;
-  src: string;
-  alt: string;
-  width: string;
 }
 
-/** Resolve the image markdown/HTML at a right-clicked rendered image. */
 function imageAt(target: EventTarget | null): ImageInfo | null {
   if (!(target instanceof HTMLElement)) return null;
   const imgEl = target.closest("img.cm-live-image");
   if (imgEl === null) return null;
   const pos = view.posAtDOM(imgEl);
   const line = view.state.doc.lineAt(pos);
-  const re = /!\[[^\]]*\]\([^)]*\)|<img\b[^>]*>/gi;
-  for (const m of line.text.matchAll(re)) {
-    const from = line.from + (m.index ?? 0);
-    const to = from + m[0].length;
-    if (pos < from || pos > to) continue;
-    const t = m[0];
-    if (t.startsWith("![")) {
-      const close = t.indexOf("](");
-      return {
-        from,
-        to,
-        alt: t.slice(2, close),
-        src: t.slice(close + 2, t.length - 1).split(/\s+/)[0],
-        width: "",
-      };
-    }
-    return {
-      from,
-      to,
-      src:
-        /\bsrc\s*=\s*"([^"]*)"/.exec(t)?.[1] ??
-        /\bsrc\s*=\s*'([^']*)'/.exec(t)?.[1] ??
-        "",
-      alt: /\balt\s*=\s*"([^"]*)"/.exec(t)?.[1] ?? "",
-      width: /\bwidth\s*=\s*"?([\d%]+)/.exec(t)?.[1] ?? "",
-    };
-  }
-  return null;
+  const ref = imageReferenceAt(line.text, pos - line.from);
+  if (ref === null) return null;
+  return { ...ref, from: line.from + ref.from, to: line.from + ref.to };
 }
 
-/** Rewrite an image with a new width (px number or "100%"), or null to reset
- * to a plain markdown image at natural size. */
+/** Replace the reference with a sized <img>, or (width null) with the
+ * portable markdown form. imageMarkup wraps a destination containing a space
+ * or parenthesis in <...>; a bare one would not parse as an image at all. */
 function rewriteImage(info: ImageInfo, width: string | null) {
   const insert =
     width === null
-      ? `![${info.alt}](${info.src})`
+      ? imageMarkup(info.src, info.alt)
       : `<img src="${info.src}" alt="${info.alt}" width="${width}">`;
   view.dispatch({
     changes: { from: info.from, to: info.to, insert },
