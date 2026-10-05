@@ -43,7 +43,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and scroll position; one with unsaved changes asks whether to reload or
   keep your version. Monoleaf's own saves are recognised by their content
   and never trigger a reload. If the file is deleted or renamed away, the
-  document stays open and is marked unsaved, so saving writes it back.
+  document stays open and Monoleaf says so once; the status bar shows
+  "not on disk", autosave holds off, and saving writes the file back.
   Network paths are only watched when opening them is allowed.
 
 ### Fixed

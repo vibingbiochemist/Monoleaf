@@ -237,10 +237,21 @@ function fileLabel(): string {
   return parts[parts.length - 1] || currentPath;
 }
 
+// True from the moment the open file is reported gone until it is readable
+// again (it came back, or the user saved it). Shown in the status bar, and it
+// keeps autosave from quietly writing the old name back (see
+// scheduleAutosaveRecovery). Declared before refreshTitle, which reads it and
+// may run during startup.
+let missingOnDisk = false;
+
 function refreshTitle() {
   const label = `${dirty ? "● " : ""}${fileLabel()}`;
-  fileNameEl.textContent = label;
-  fileNameEl.title = currentPath ?? "Unsaved document";
+  // The status bar also says when the file is gone from disk; the window
+  // title stays the plain label (see the note on its format below).
+  fileNameEl.textContent = missingOnDisk ? `${label} (not on disk)` : label;
+  fileNameEl.title = missingOnDisk
+    ? `${currentPath} was deleted or moved. Save to write it back.`
+    : (currentPath ?? "Unsaved document");
   // The em dash here is deliberate, and it is the one em dash in the UI that
   // stays. "<file> — Monoleaf" is the conventional window-title form, and
   // e2e/harness.mjs normalises every dash before comparing titles precisely
@@ -464,6 +475,14 @@ let externalChangePrompt = false;
 // (see checkDiskVersion), so the run that handles a burst acts on the latest.
 let latestChangeKind: FileChange["kind"] = "changed";
 
+// missingOnDisk itself is declared beside refreshTitle, which reads it.
+
+function setMissingOnDisk(value: boolean) {
+  if (missingOnDisk === value) return;
+  missingOnDisk = value;
+  refreshTitle();
+}
+
 /** Point the backend's watch at `currentPath` (or stop it, with no path). */
 function syncFileWatch() {
   if (currentPath === watchedPath) return;
@@ -523,6 +542,16 @@ const checkDiskVersion = coalesce(async () => {
     // window is the only place the text still exists.
     setDirty(true);
     writeDraft(RECOVERY_KEY, path, serializeDocument(view.state));
+    if (missingOnDisk) return; // already told; a later event changes nothing
+    setMissingOnDisk(true);
+    // Said once, not left to the status bar alone: with nothing on screen
+    // changing, the user would otherwise only find out when they next try to
+    // open the file from Explorer.
+    await confirmDialogFree();
+    await uiAlert(
+      `${fileLabel()} was deleted or moved by another program. It is still open here; save to write it back.`,
+      { title: "File removed from disk" },
+    );
     return;
   }
 
@@ -536,6 +565,8 @@ const checkDiskVersion = coalesce(async () => {
   }
   // Another document was opened while the file was being read.
   if (currentPath !== path) return;
+  // Readable, so it is back (restored, or recreated by the tool that moved it).
+  setMissingOnDisk(false);
 
   const action = decideExternalChange({
     diskText,
@@ -2254,6 +2285,7 @@ function loadIntoEditor(
   // file (see loadFromDisk). A recovered draft also arrives through this
   // function with a path, and its content is precisely *not* what is on disk.
   diskBaseline = null;
+  missingOnDisk = false; // a different document; refreshTitle below shows it
   syncFileWatch();
   // A document with a path needs no suggestion; one without keeps whatever the
   // caller supplied (an import) and otherwise reverts to "Untitled".
@@ -2454,6 +2486,7 @@ async function saveFile(forcePrompt = false): Promise<boolean> {
     // The document has a real name now, so any imported suggestion is spent.
     suggestedName = null;
     dirty = false;
+    missingOnDisk = false; // written back (or saved elsewhere); refreshed below
     rememberLastFile(path);
     discardDraft(RECOVERY_KEY); // the file now matches
     refreshTitle();
@@ -2488,7 +2521,10 @@ function scheduleAutosaveRecovery() {
     // program wrote: autosaving now would overwrite that version before they
     // have answered. The prompt reschedules this once it closes.
     if (externalChangePrompt) return;
-    if (autosaveEnabled && currentPath !== null) {
+    // Nor while the file is gone: it may have been renamed, and writing the old
+    // name back on its own would leave two copies. Saving it again is the
+    // user's call; until then the recovery snapshot below keeps the work.
+    if (autosaveEnabled && currentPath !== null && !missingOnDisk) {
       void saveFile(); // writes, clears dirty, clears the recovery snapshot
       return;
     }
