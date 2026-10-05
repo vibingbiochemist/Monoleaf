@@ -1,0 +1,11 @@
+<h1>Images and line endings</h1>
+<p>This fixture is committed with CRLF line endings and <code>-text</code>, so the
+round-trip suite checks Windows line endings on every platform.</p>
+<p>A relative reference: <img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" alt="Plot"></p>
+<p>A path with a space, in the angle-bracket form Monoleaf writes for it:</p>
+<p><img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" alt="Screenshot"></p>
+<p>An explicitly sized HTML image:</p>
+<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==" width="320" alt="Diagram">
+<p>A remote image stays a remote reference: Logo</p>
+<p>Trailing spaces make a hard break<br>
+right here, and the file ends without a newline.</p>
