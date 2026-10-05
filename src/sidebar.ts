@@ -5,6 +5,8 @@ export interface SidebarHandlers {
   onChangeName(): void;
   onReply(id: string, text: string): void;
   onResolve(id: string, resolved: boolean): void;
+  onDelete(id: string): void;
+  onDeleteResolved(): void;
   onSelect(id: string): void;
 }
 
@@ -61,9 +63,17 @@ function card(t: CommentThread, handlers: SidebarHandlers): HTMLElement {
   resolveBtn.addEventListener("click", () => {
     handlers.onResolve(t.id, !t.resolved);
   });
+  const deleteBtn = el(
+    "button",
+    "comment-btn comment-btn-danger",
+    "Delete",
+  ) as HTMLButtonElement;
+  deleteBtn.title = "Delete this thread from the document";
+  deleteBtn.addEventListener("click", () => handlers.onDelete(t.id));
   actions.appendChild(reply);
   actions.appendChild(replyBtn);
   actions.appendChild(resolveBtn);
+  actions.appendChild(deleteBtn);
   node.appendChild(actions);
   return node;
 }
@@ -100,9 +110,22 @@ export function renderSidebar(
   const resolved = withBody.filter((t) => t.resolved);
   for (const t of open) container.appendChild(card(t, handlers));
   if (resolved.length > 0) {
-    container.appendChild(
+    // The bulk action sits on the Resolved heading rather than in the top
+    // header: it only exists while there is something resolved to delete,
+    // and it reads as acting on exactly the list beneath it.
+    const heading = el("div", "sidebar-section-row");
+    heading.appendChild(
       el("h3", "sidebar-section", `Resolved (${resolved.length})`),
     );
+    const deleteAllBtn = el(
+      "button",
+      "comment-btn comment-btn-danger",
+      "Delete all",
+    );
+    deleteAllBtn.title = "Delete every resolved thread from the document";
+    deleteAllBtn.addEventListener("click", () => handlers.onDeleteResolved());
+    heading.appendChild(deleteAllBtn);
+    container.appendChild(heading);
     for (const t of resolved) container.appendChild(card(t, handlers));
   }
 }

@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   images inserts a reference for each at the drop position. Both write a
   path relative to the document when the file sits beneath its folder, and
   an absolute path otherwise.
+- **Comment threads can be deleted.** Each thread in the comments sidebar
+  has a Delete button, and the Resolved heading has Delete all, so resolved
+  discussions no longer have to stay in the file forever. Deleting removes
+  the thread's hidden comment block, the blank line that set it apart and
+  its anchor markers, but keeps the commented text, so the file reads
+  exactly as it did before the comment was added. Both
+  ask for confirmation, and Ctrl+Z brings the thread back.
 
 ### Fixed
 
@@ -46,6 +53,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   as a red "NL". The same applied to Shift+Enter in a heading, page breaks,
   callouts, the table of contents, new tables and typing with Track changes
   on. The cursor now lands where the new text ends.
+- **The Dark mode switch works in the installed app.** The installed build
+  followed the system's light or dark appearance and ignored the switch, so
+  on a system set to dark the editor stayed dark however it was set. The
+  switch now decides; until it is first used, the system setting still
+  applies.
+- **Spellcheck no longer turns itself off, and it can be switched off.**
+  Spellcheck was only active in the writing view, so switching to the source
+  view silently disabled it. It now applies to both views, and Settings has
+  a Spellcheck switch. The dictionary language follows the system's
+  language settings.
 - **Image paths containing a space or parenthesis now work.** A path such as
   `OneDrive - Some Company\pic.jpg` or `Screenshot (1).png` used to break the
   image reference entirely, whether typed, browsed or dropped; such paths

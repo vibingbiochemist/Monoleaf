@@ -1,0 +1,28 @@
+<h1>Portability sample</h1>
+<h2>Portable baseline (never flagged, parsed in both modes)</h2>
+<p><strong>Bold</strong>, <em>italic</em>, <code>code</code>, <a href="https://example.com">a link</a>, <s>strikethrough</s>.</p>
+<table style="border-collapse:collapse;width:100%;margin:8pt 0;font-size:10pt;">
+<thead>
+<tr>
+<th style="border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;background:#f3f3f1;font-weight:600;">Table</th>
+<th style="border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;background:#f3f3f1;font-weight:600;">GFM</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">yes</td>
+<td style="border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">ok</td>
+</tr>
+</tbody>
+</table>
+<ul class="contains-task-list">
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="" disabled="" type="checkbox"> task list item</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="" type="checkbox"> open item</li>
+</ul>
+<p>Autolink: www.example.com</p>
+<h2>Beyond the baseline (flagged in enhanced mode only)</h2>
+<p>Water is H<sub>2</sub>O (subscript).</p>
+<p>The 5<sup>th</sup> element (superscript).</p>
+<p>Emoji shortcode: :smile: and :rocket:</p>
+<p>In strict mode all three lines above are plain literal text — exactly what a
+dumb viewer shows.</p>

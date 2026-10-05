@@ -64,6 +64,14 @@ itself, because that is the class of bug the unit suites cannot see.
 - **Add tests** for new behavior. Editor commands live in `src/commands.ts` and
   are tested headlessly in `src/commands.test.ts` via a real `EditorState`;
   follow that pattern.
+- **Existing documents must not change.** `src/roundtrip.test.ts` opens every
+  document in `samples/` and `src/__fixtures__/roundtrip/` with the full editor
+  stack and requires a byte-identical save; a failure there is always a bug. Add
+  real documents written with older versions to the fixtures folder.
+- **Export changes must be deliberate.** `src/export.snapshot.test.ts` compares
+  the export HTML of the same documents with `src/__snapshots__/export/`. If
+  your change is meant to alter rendering, check the diff, run
+  `npx vitest run -u`, and commit the updated snapshots with the code.
 - **Match the surrounding style** — naming, comment density, and idioms. Prefer
   small, focused changes.
 - **Keep it type-safe** — no `any` escapes; `tsc` must be clean.
