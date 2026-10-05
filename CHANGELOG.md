@@ -36,6 +36,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   images inserts a reference for each at the drop position. Both write a
   path relative to the document when the file sits beneath its folder, and
   an absolute path otherwise.
+- **An open document reloads when another program changes it on disk.**
+  Edits made by another editor, a sync client or a tool such as an MCP
+  server adding comments now appear without closing and reopening the file.
+  A document with no unsaved changes reloads on its own, keeping the cursor
+  and scroll position; one with unsaved changes asks whether to reload or
+  keep your version. Monoleaf's own saves are recognised by their content
+  and never trigger a reload. If the file is deleted or renamed away, the
+  document stays open and is marked unsaved, so saving writes it back.
+  Network paths are only watched when opening them is allowed.
 
 ### Fixed
 

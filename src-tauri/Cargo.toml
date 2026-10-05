@@ -38,6 +38,7 @@ tauri-plugin-single-instance = "2"
 tauri-plugin-updater = "2.10.1"
 pdf-extract = "0.12"
 base64 = "0.23"
+notify-debouncer-mini = "0.7.0"
 
 # The `windows` crate is only used by the (Windows-only) spell-check module, so
 # gate it to Windows targets. Left in [dependencies] it would drag the
