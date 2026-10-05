@@ -1,0 +1,104 @@
+<h1>Monoleaf feature showcase</h1>
+<p>This document demonstrates everything Monoleaf can do. Open it in the app to
+see live formatting; press <strong>Ctrl+Q</strong> to see the raw markdown underneath, and
+export it to PDF to see it paginated.</p>
+<p>Tip: right-click and choose <strong>Table of contents</strong> to generate a linked
+contents list here (Ctrl+click a link jumps to that heading).</p>
+<h2>Text formatting</h2>
+<p>This paragraph mixes <strong>bold</strong>, <em>italic</em>, <u>underline</u>, <mark>highlight</mark>,
+<s>strikethrough</s> and <code>inline code</code>. Here is a <a href="https://commonmark.org">link to CommonMark</a>
+— in the editor, Ctrl+click it to open in your browser.</p>
+<p>A line ending with a hard break<br>
+continues on the next line without a new paragraph (Shift+Enter).</p>
+<h2>Headings and text styles</h2>
+<p>Use the <strong>Style</strong> dropdown or Ctrl+Shift+1–3 to set headings.</p>
+<h3>This is a Heading 3</h3>
+<p>Body text sits at 11pt to match the exported PDF exactly.</p>
+<h2>Lists</h2>
+<ul>
+<li>A bullet list item</li>
+<li>Another item, with <strong>bold</strong> inside</li>
+<li>A third item</li>
+</ul>
+<ol>
+<li>A numbered list</li>
+<li>Second step</li>
+<li>Third step</li>
+</ol>
+<ul class="contains-task-list">
+<li class="task-list-item"><input class="task-list-item-checkbox" checked="" disabled="" type="checkbox"> A completed task</li>
+<li class="task-list-item"><input class="task-list-item-checkbox" disabled="" type="checkbox"> A task still to do</li>
+</ul>
+<h2>Quote and rule</h2>
+<blockquote>
+<p>A blockquote for citations or callouts.
+It can span multiple lines.</p>
+</blockquote>
+<hr>
+<h2>Enhanced constructs (enhanced mode)</h2>
+<p>Water is H<sub>2</sub>O and energy is E = mc<sup>2</sup>. Turn on <strong>Flags</strong> in Settings to see
+these marked as non-portable.</p>
+<h2>Alignment</h2>
+<div align="center">
+<p>This paragraph is centered (Ctrl+E).</p>
+</div>
+<div align="right">
+<p>This one is right-aligned (Ctrl+R).</p>
+</div>
+<h2>Images</h2>
+<p>Images referenced by an <code>https://</code> URL render inline (the image bytes stay at
+the URL, never in this file):</p>
+<img alt="Martin's GitHub avatar" width="200" data-blocked-src="https://github.com/vibingbiochemist.png" data-remote-blocked="">
+<p>Right-click an image to resize it (Small / Medium / Large / Full / Original)
+or align it left / center / right — sizing is stored as <code>&lt;img width&gt;</code>, which
+GitHub honors. A local or relative reference like <code>![diagram](figure.png)</code>
+shows its alt text instead, since Monoleaf keeps everything in the single
+portable <code>.md</code>.</p>
+<h2>A table</h2>
+<p>Right-click inside it for row/column actions, or paste a range from Excel.</p>
+<table style="border-collapse:collapse;width:100%;margin:8pt 0;font-size:10pt;">
+<thead>
+<tr>
+<th style="text-align:left;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;background:#f3f3f1;font-weight:600;">Antibody</th>
+<th style="text-align:right;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;background:#f3f3f1;font-weight:600;">Kd (nM)</th>
+<th style="text-align:center;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;background:#f3f3f1;font-weight:600;">Verdict</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">ab-101</td>
+<td style="text-align:right;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">0.44</td>
+<td style="text-align:center;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">Reliable</td>
+</tr>
+<tr>
+<td style="text-align:left;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">ab-102</td>
+<td style="text-align:right;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">12.00</td>
+<td style="text-align:center;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">Marginal</td>
+</tr>
+<tr>
+<td style="text-align:left;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">ab-103</td>
+<td style="text-align:right;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">0.07</td>
+<td style="text-align:center;border:0.75pt solid #b0b0b0;padding:4pt 7pt;vertical-align:top;">Reliable</td>
+</tr>
+</tbody>
+</table>
+<h2>Code block</h2>
+<pre><code class="language-python"><span style="color:#b0519f">def</span> <span style="color:#3f7fc1">kd_ratio</span>(<span class="hljs-params">bound, total</span>):
+    <span style="color:#b0519f">return</span> bound / total
+</code></pre>
+<h2>Comments</h2>
+<p>The binding affinity was sub-nanomolar in the
+second assay. Open the <strong>Comments</strong> sidebar to see the thread attached to the
+highlighted phrase; a plain markdown viewer shows only the clean prose.</p>
+<h2>Tracked changes</h2>
+<p>Turn on <strong>Track changes</strong> (Ctrl+Shift+E) and edit below; it produces
+CriticMarkup like this: the dose was {<s>10 mg~&gt;20 mg</s>} given {++once ++}daily,
+and the {--preliminary --}results held. You can also {==highlight==} passages
+and leave {&gt;&gt;a reviewer note&lt;&lt;} inline. Use the ✓ / ✗ toolbar buttons to accept
+or reject each change.</p>
+<div class="ml-pagebreak">​</div>
+<h2>After a page break</h2>
+<p>This heading starts on a new page (inserted with Ctrl+Enter). The page
+boundary is also drawn in the editor when <strong>Page layout</strong> is on.</p>
+<p>Everything above lives in this single <code>.md</code> file — comments, tracked changes,
+alignment, and page settings included — fully readable as plain text.</p>

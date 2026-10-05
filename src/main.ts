@@ -15,7 +15,12 @@ import {
   localizeShortcutLabels,
 } from "./platform";
 import { editorSetup, rawViewExtensions } from "./setup";
-import { Compartment, Prec, StateCommand } from "@codemirror/state";
+import {
+  Compartment,
+  Prec,
+  StateCommand,
+  TransactionSpec,
+} from "@codemirror/state";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -81,6 +86,8 @@ import {
   addReplySpec,
   commentsExtension,
   createCommentSpec,
+  deleteResolvedSpec,
+  deleteThreadSpec,
   parseComments,
   setResolvedSpec,
 } from "./comments";
@@ -710,9 +717,9 @@ const REOPEN_KEY = "monoleaf.reopen-last";
 let reopenLastEnabled = localStorage.getItem(REOPEN_KEY) !== "false";
 
 // Appearance: a manual light/dark toggle. Defaults to the OS preference until
-// the user picks one, then that choice is remembered. Forcing color-scheme on
-// the root makes every light-dark() value resolve to the chosen theme; the
-// theme-dark class drives the logo-variant swap (see styles.css).
+// the user picks one, then that choice is remembered. The theme-dark or
+// theme-light class on the root forces color-scheme, which every light-dark()
+// value resolves against, and also drives the logo-variant swap (styles.css).
 const THEME_KEY = "monoleaf.theme";
 let darkMode =
   localStorage.getItem(THEME_KEY) === "dark" ||
@@ -741,6 +748,18 @@ let tracking = localStorage.getItem(TRACKING_STORAGE_KEY) === "true";
 const modeCompartment = new Compartment();
 const liveCompartment = new Compartment();
 const trackingCompartment = new Compartment();
+// Native (WebView2/WebKit) spellcheck, on by default. One setting for both
+// views: when only the writing view set the attribute, switching to the raw
+// view silently turned it off, which read as spellcheck disabling itself
+// (issue #83). The dictionary language is the OS's; the webview offers the app
+// no way to choose it.
+const SPELLCHECK_KEY = "monoleaf.spellcheck";
+let spellcheckEnabled = localStorage.getItem(SPELLCHECK_KEY) !== "false";
+const spellcheckCompartment = new Compartment();
+const spellcheckAttributes = () =>
+  EditorView.contentAttributes.of({
+    spellcheck: spellcheckEnabled ? "true" : "false",
+  });
 const modeButton = document.getElementById("btn-mode")!;
 const flagsButton = document.getElementById("btn-flags") as HTMLButtonElement;
 const liveButton = document.getElementById("btn-live")!;
@@ -760,6 +779,9 @@ function refreshModeButtons() {
   document
     .getElementById("btn-theme")!
     .setAttribute("aria-pressed", String(darkMode));
+  document
+    .getElementById("btn-spellcheck")!
+    .setAttribute("aria-pressed", String(spellcheckEnabled));
   document
     .getElementById("btn-autosave")!
     .setAttribute("aria-pressed", String(autosaveEnabled));
@@ -782,8 +804,10 @@ function refreshModeButtons() {
 
 function applyTheme() {
   const root = document.documentElement;
-  root.style.colorScheme = darkMode ? "dark" : "light";
+  // Classes, not an inline color-scheme: see html.theme-dark in styles.css
+  // for why only a stylesheet rule reaches the production build.
   root.classList.toggle("theme-dark", darkMode);
+  root.classList.toggle("theme-light", !darkMode);
 }
 
 function toggleTheme() {
@@ -1394,6 +1418,43 @@ function refreshComments() {
       const spec = setResolvedSpec(view.state, id, resolved);
       if (spec !== null) view.dispatch(spec);
     },
+    onDelete(id) {
+      void (async () => {
+        const thread = parseComments(view.state.doc.toString()).find(
+          (t) => t.id === id,
+        );
+        const n = thread?.thread.length ?? 0;
+        const ok = await uiConfirm(
+          formatShortcut(
+            `Delete this thread${n > 1 ? ` and its ${n} comments` : ""} from ` +
+              "the document? The commented text stays. Ctrl+Z restores it.",
+          ),
+          { title: "Delete comment thread", okLabel: "Delete" },
+        );
+        if (!ok) return;
+        // Built from the state as it is now, not before the dialog: the
+        // document may have changed underneath it (an autosave reload, an
+        // edit in another pane), and stale offsets would cut the wrong text.
+        dispatchCommentRemoval(deleteThreadSpec(view.state, id));
+      })();
+    },
+    onDeleteResolved() {
+      void (async () => {
+        const n = parseComments(view.state.doc.toString()).filter(
+          (t) => t.resolved,
+        ).length;
+        if (n === 0) return;
+        const ok = await uiConfirm(
+          formatShortcut(
+            `Delete ${n === 1 ? "the resolved thread" : `all ${n} resolved threads`} ` +
+              "from the document? The commented text stays. Ctrl+Z restores them.",
+          ),
+          { title: "Delete resolved comments", okLabel: "Delete" },
+        );
+        if (!ok) return;
+        dispatchCommentRemoval(deleteResolvedSpec(view.state));
+      })();
+    },
     onSelect(id) {
       const thread = parseComments(view.state.doc.toString()).find(
         (t) => t.id === id,
@@ -1408,6 +1469,16 @@ function refreshComments() {
       view.focus();
     },
   });
+}
+
+/**
+ * Apply a thread deletion and hand focus back to the editor: the Delete
+ * button that was focused is gone once the sidebar re-renders, and the
+ * promised Ctrl+Z only reaches the undo history from inside the editor.
+ */
+function dispatchCommentRemoval(spec: TransactionSpec | null) {
+  if (spec !== null) view.dispatch(spec);
+  view.focus();
 }
 
 let commentsRefreshQueued = false;
@@ -2167,6 +2238,7 @@ const editorExtensions = () => [
   modeCompartment.of(portabilityExtensions(mode, showFlags)),
   liveCompartment.of(liveView ? livePreviewExtensions() : rawViewExtensions),
   trackingCompartment.of(tracking ? trackingExtension() : []),
+  spellcheckCompartment.of(spellcheckAttributes()),
   commentsExtension(),
   criticExtension(),
   EditorView.lineWrapping,
@@ -2600,6 +2672,16 @@ async function offerNetworkPaths(err: unknown): Promise<boolean> {
   );
   if (allow) setNetworkPaths(true);
   return allow;
+}
+
+function toggleSpellcheck() {
+  spellcheckEnabled = !spellcheckEnabled;
+  localStorage.setItem(SPELLCHECK_KEY, String(spellcheckEnabled));
+  view.dispatch({
+    effects: spellcheckCompartment.reconfigure(spellcheckAttributes()),
+  });
+  refreshModeButtons();
+  view.focus();
 }
 
 function toggleReopen() {
@@ -3551,6 +3633,7 @@ const formatButtons: Record<string, () => void> = {
   },
   pagination: togglePagination,
   theme: toggleTheme,
+  spellcheck: toggleSpellcheck,
   autosave: toggleAutosave,
   "remote-images": toggleRemoteImages,
   "network-paths": toggleNetworkPaths,

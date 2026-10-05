@@ -1,0 +1,5 @@
+# Corpus fixtures for src/roundtrip.test.ts and src/export.snapshot.test.ts:
+# committed byte-for-byte (no line-ending conversion), so a CRLF fixture is
+# CRLF on every platform and a snapshot diff never shows up as a whole file.
+src/__fixtures__/** -text
+src/__snapshots__/** -text

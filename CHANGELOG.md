@@ -46,9 +46,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   document stays open and Monoleaf says so once; the status bar shows
   "not on disk", autosave holds off, and saving writes the file back.
   Network paths are only watched when opening them is allowed.
+- **Comment threads can be deleted.** Each thread in the comments sidebar
+  has a Delete button, and the Resolved heading has Delete all, so resolved
+  discussions no longer have to stay in the file forever. Deleting removes
+  the thread's hidden comment block, the blank line that set it apart and
+  its anchor markers, but keeps the commented text, so the file reads
+  exactly as it did before the comment was added. Both
+  ask for confirmation, and Ctrl+Z brings the thread back.
 
 ### Fixed
 
+- **The Dark mode switch works in the installed app.** The installed build
+  followed the system's light or dark appearance and ignored the switch, so
+  on a system set to dark the editor stayed dark however it was set. The
+  switch now decides; until it is first used, the system setting still
+  applies.
+- **Spellcheck no longer turns itself off, and it can be switched off.**
+  Spellcheck was only active in the writing view, so switching to the source
+  view silently disabled it. It now applies to both views, and Settings has
+  a Spellcheck switch. The dictionary language follows the system's
+  language settings.
 - **Image paths containing a space or parenthesis now work.** A path such as
   `OneDrive - Some Company\pic.jpg` or `Screenshot (1).png` used to break the
   image reference entirely, whether typed, browsed or dropped; such paths

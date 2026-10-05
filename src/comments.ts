@@ -1,4 +1,11 @@
-import { EditorState, Facet, Range, TransactionSpec } from "@codemirror/state";
+import {
+  ChangeSet,
+  EditorState,
+  Facet,
+  Range,
+  Text,
+  TransactionSpec,
+} from "@codemirror/state";
 import {
   Decoration,
   DecorationSet,
@@ -195,6 +202,127 @@ export function setResolvedSpec(
   resolved: boolean,
 ): TransactionSpec | null {
   return rewriteBody(state, id, (t) => ({ resolved, thread: t.thread }));
+}
+
+// ---------------------------------------------------------------------------
+// Deleting threads. Removes the comment syntax only: both anchor delimiters
+// and the body block go, the commented text between the anchors stays.
+
+const isBlank = (line: { text: string }) => line.text.trim() === "";
+
+/**
+ * Range to remove for a body block at [from, to). A body sharing its line with
+ * other text is cut out exactly, nothing more. A body alone on its line takes
+ * the line and one line break with it, so no empty line is left where it
+ * stood. And because createCommentSpec sets the block off as its own
+ * paragraph (a blank line before it), removing just the line would still
+ * leave that separator behind: a doubled blank line between two paragraphs,
+ * or a trailing blank line at the end of the file, growing by one per deleted
+ * thread. So when the body was the only thing between two blank stretches
+ * (or between a blank line and an edge of the document), one neighbouring
+ * blank line goes too, which restores the document to how it looked before
+ * the comment was added.
+ */
+function bodyRemoval(
+  doc: Text,
+  from: number,
+  to: number,
+): { from: number; to: number } {
+  const line = doc.lineAt(from);
+  if (line.text.trim() !== doc.sliceString(from, to)) return { from, to };
+
+  const prev = line.number > 1 ? doc.line(line.number - 1) : null;
+  const next = line.number < doc.lines ? doc.line(line.number + 1) : null;
+  // Line breaks are a single position in the editor whatever the document's
+  // separator, so "+ 1" / "- 1" step over one break for CRLF files as well.
+  if (next !== null) {
+    // The line plus its own trailing break. "next" may be the empty last line
+    // after the file's final newline, which counts as blank: the body was the
+    // last block, and its separator would otherwise become a trailing blank.
+    if (prev !== null && isBlank(prev) && isBlank(next)) {
+      return { from: prev.from, to: line.to + 1 };
+    }
+    // First line of the document, followed by a blank separator: take that
+    // too, unless it is merely the empty last line (then the file just ends).
+    if (prev === null && isBlank(next) && next.number < doc.lines) {
+      return { from: line.from, to: next.to + 1 };
+    }
+    return { from: line.from, to: line.to + 1 };
+  }
+  // Last line with no final newline: take the break before it instead.
+  if (prev === null) return { from: line.from, to: line.to };
+  if (isBlank(prev)) {
+    return { from: prev.number > 1 ? prev.from - 1 : prev.from, to: line.to };
+  }
+  return { from: line.from - 1, to: line.to };
+}
+
+/** Range to remove for the first remaining syntax token of thread `id`. */
+function nextRemoval(
+  doc: Text,
+  id: string,
+): { from: number; to: number } | null {
+  const text = doc.toString();
+  // Every token carrying the id, not just the pair parseComments picked: a
+  // copy-paste can duplicate anchors, and a lone start or end token (its
+  // partner deleted) leaves the thread with anchor === null. Deleting the
+  // thread should leave none of them behind.
+  for (const m of text.matchAll(ANCHOR_RE)) {
+    if (m[1] === id) return { from: m.index, to: m.index + m[0].length };
+  }
+  for (const m of text.matchAll(BODY_RE)) {
+    if (m[1] === id) {
+      return bodyRemoval(doc, m.index, m.index + m[0].length);
+    }
+  }
+  return null;
+}
+
+/**
+ * Remove every token of the given threads as one change set. Tokens are
+ * removed one at a time against the document as it stands after the previous
+ * removal, then composed: the blank-line rules in bodyRemoval look at the
+ * neighbouring lines, and two bodies on adjacent lines would otherwise each
+ * see the other as non-blank (leaving their shared separator behind) or claim
+ * overlapping ranges, which a single change set cannot hold.
+ */
+function removeThreads(
+  state: EditorState,
+  ids: string[],
+): TransactionSpec | null {
+  let doc = state.doc;
+  let changes = ChangeSet.empty(doc.length);
+  for (const id of ids) {
+    for (;;) {
+      const range = nextRemoval(doc, id);
+      if (range === null) break;
+      const step = ChangeSet.of(range, doc.length);
+      changes = changes.compose(step);
+      doc = step.apply(doc);
+    }
+  }
+  if (changes.empty) return null;
+  // One ordinary transaction, so a single Ctrl+Z restores everything it
+  // removed. "input.comment" rather than a "delete.*" event: the history
+  // merges adjacent "delete" events into one undo step, which could fold the
+  // removal into a backspace typed just before it.
+  return { changes, userEvent: "input.comment" };
+}
+
+/** Permanently remove a thread: its anchors and its body block. */
+export function deleteThreadSpec(
+  state: EditorState,
+  id: string,
+): TransactionSpec | null {
+  return removeThreads(state, [id]);
+}
+
+/** Remove every resolved thread in one transaction. */
+export function deleteResolvedSpec(state: EditorState): TransactionSpec | null {
+  const ids = parseComments(state.doc.toString())
+    .filter((t) => t.resolved)
+    .map((t) => t.id);
+  return removeThreads(state, ids);
 }
 
 // ---------------------------------------------------------------------------
