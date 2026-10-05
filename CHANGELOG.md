@@ -36,6 +36,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   images inserts a reference for each at the drop position. Both write a
   path relative to the document when the file sits beneath its folder, and
   an absolute path otherwise.
+- **An open document reloads when another program changes it on disk.**
+  Edits made by another editor, a sync client or a tool such as an MCP
+  server adding comments now appear without closing and reopening the file.
+  A document with no unsaved changes reloads on its own, keeping the cursor
+  and scroll position; one with unsaved changes asks whether to reload or
+  keep your version. Monoleaf's own saves are recognised by their content
+  and never trigger a reload. If the file is deleted or renamed away, the
+  document stays open and Monoleaf says so once; the status bar shows
+  "not on disk", autosave holds off, and saving writes the file back.
+  Network paths are only watched when opening them is allowed.
 - **Comment threads can be deleted.** Each thread in the comments sidebar
   has a Delete button, and the Resolved heading has Delete all, so resolved
   discussions no longer have to stay in the file forever. Deleting removes

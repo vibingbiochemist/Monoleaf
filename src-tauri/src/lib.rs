@@ -8,7 +8,10 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_updater::Update;
 
+mod filewatch;
 pub mod pdfimport;
+
+use filewatch::FileWatches;
 
 /// The file path Monoleaf was asked to open — from being launched with a `.md`
 /// argument (double-clicking an associated file). The frontend drains this on
@@ -363,8 +366,64 @@ fn validate_write_path(path: &str, allow_network: bool) -> Result<(), String> {
 static ALLOW_NETWORK_PATHS: AtomicBool = AtomicBool::new(false);
 
 #[tauri::command]
-fn set_allow_network_paths(allow: bool) {
+fn set_allow_network_paths(app: AppHandle, allow: bool) {
     ALLOW_NETWORK_PATHS.store(allow, Ordering::Relaxed);
+    // Switching the setting off also ends any watch on a network path. A
+    // watch holds an open handle on the share's directory, so leaving it
+    // running would keep exactly the kind of connection the user just said
+    // they no longer want Monoleaf to make.
+    if !allow {
+        app.state::<FileWatches>()
+            .retain(|path| validate_path(path, false).is_ok());
+    }
+}
+
+/// Watch the calling window's document for changes made by other programs, or
+/// stop watching with `None`. See `filewatch` for what is reported and why.
+///
+/// The label comes from the calling window, as in `take_window_payload`: one
+/// window has no business starting or stopping another's watch.
+///
+/// The previous watch is stopped *before* the new path is validated, so a
+/// window that switches to a document that cannot be watched does not go on
+/// reporting changes to the one it left.
+#[tauri::command]
+fn watch_file(
+    window: tauri::WebviewWindow,
+    state: tauri::State<FileWatches>,
+    path: Option<String>,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    state.stop(&label);
+    let Some(path) = path else {
+        return Ok(());
+    };
+    // Same gate as `read_file`: a path Monoleaf would refuse to open, it also
+    // refuses to watch, since watching a share contacts the host just as
+    // reading from it does.
+    validate_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
+    let app = window.app_handle().clone();
+    let target = label.clone();
+    let reported = path.clone();
+    let watch = filewatch::start(&path, move |kind| {
+        let _ = app.emit_to(
+            target.as_str(),
+            filewatch::FILE_CHANGED_EVENT,
+            filewatch::FileChange {
+                path: reported.clone(),
+                kind,
+            },
+        );
+    })?;
+    // Inserted, not merely started: a second call that raced this one has
+    // already stopped whatever was here, and the newest request wins.
+    let replaced = state
+        .0
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .insert(label, watch);
+    drop(replaced);
+    Ok(())
 }
 
 #[tauri::command]
@@ -1099,12 +1158,14 @@ pub fn run() {
         .manage(WindowCounter(AtomicU32::new(1)))
         .manage(PendingUpdate(Mutex::new(None)))
         .manage(FlushGate::new())
+        .manage(FileWatches::default())
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
             read_image_as_data_url,
             find_image_by_name,
             set_allow_network_paths,
+            watch_file,
             import_pdf_as_markdown,
             spell_suggest,
             spell_add,
@@ -1118,6 +1179,14 @@ pub fn run() {
             discard_pending_update,
             ack_recovery_flush
         ])
+        // A closed window's document is no longer anyone's concern; without
+        // this its watch (and debounce thread) would outlive it and keep
+        // emitting to a label nothing listens on.
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                window.state::<FileWatches>().stop(window.label());
+            }
+        })
         // On Windows the OS foreground-lock policy can let the config-defined
         // "main" window open *behind* whatever already has focus. Explicitly
         // raise and focus it once at startup so Monoleaf always comes to front.

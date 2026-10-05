@@ -133,6 +133,7 @@ import {
   recoveryKey,
   writeDraft,
 } from "./recovery";
+import { clampSelection, coalesce, decideExternalChange } from "./filewatch";
 import {
   loadRemoteImagePreference,
   setRemoteImagesAllowed,
@@ -214,6 +215,13 @@ const IMAGE_FILTERS = [{ name: "Images", extensions: IMAGE_EXTENSIONS }];
 let currentPath: string | null = null;
 let dirty = false;
 
+// The text this window last read from or wrote to `currentPath`: what it
+// believes is on disk. A change event is judged against this (see
+// ./filewatch), which is how Monoleaf's own saves are told apart from someone
+// else's. Null when the window has never been in step with the file: a
+// recovered draft, or no file at all.
+let diskBaseline: string | null = null;
+
 // File name to offer on first save for a document that has no path yet, set
 // when a PDF is imported (from its title metadata or its file name). Purely a
 // suggestion: it names the window and seeds the Save dialog, and is cleared as
@@ -236,10 +244,21 @@ function fileLabel(): string {
   return parts[parts.length - 1] || currentPath;
 }
 
+// True from the moment the open file is reported gone until it is readable
+// again (it came back, or the user saved it). Shown in the status bar, and it
+// keeps autosave from quietly writing the old name back (see
+// scheduleAutosaveRecovery). Declared before refreshTitle, which reads it and
+// may run during startup.
+let missingOnDisk = false;
+
 function refreshTitle() {
   const label = `${dirty ? "● " : ""}${fileLabel()}`;
-  fileNameEl.textContent = label;
-  fileNameEl.title = currentPath ?? "Unsaved document";
+  // The status bar also says when the file is gone from disk; the window
+  // title stays the plain label (see the note on its format below).
+  fileNameEl.textContent = missingOnDisk ? `${label} (not on disk)` : label;
+  fileNameEl.title = missingOnDisk
+    ? `${currentPath} was deleted or moved. Save to write it back.`
+    : (currentPath ?? "Unsaved document");
   // The em dash here is deliberate, and it is the one em dash in the UI that
   // stays. "<file> — Monoleaf" is the conventional window-title form, and
   // e2e/harness.mjs normalises every dash before comparing titles precisely
@@ -434,6 +453,197 @@ function setupRecoveryFlush() {
       `Monoleaf: could not listen for ${FLUSH_RECOVERY_EVENT}; updates will not install.`,
     );
   });
+}
+
+/**
+ * Rust's name for "your document changed on disk".
+ *
+ * COUPLED: `FILE_CHANGED_EVENT` in src-tauri/src/filewatch.rs. A rename on
+ * either side breaks nothing loudly; external edits just stop being noticed.
+ */
+const FILE_CHANGED_EVENT = "file-changed-on-disk";
+
+/** The payload of FILE_CHANGED_EVENT (filewatch::FileChange in Rust). */
+interface FileChange {
+  path: string;
+  kind: "changed" | "removed";
+}
+
+// The path the backend is currently watching for this window, so the watch is
+// only replaced when the document's path actually changes (an ordinary save
+// keeps it, Save As and opening another file move it).
+let watchedPath: string | null = null;
+
+// True while the "changed on disk" prompt is open. Holds off autosave, which
+// would otherwise write over the version the user is being asked about.
+let externalChangePrompt = false;
+
+// The most recent kind reported for the current path. Events are coalesced
+// (see checkDiskVersion), so the run that handles a burst acts on the latest.
+let latestChangeKind: FileChange["kind"] = "changed";
+
+// missingOnDisk itself is declared beside refreshTitle, which reads it.
+
+function setMissingOnDisk(value: boolean) {
+  if (missingOnDisk === value) return;
+  missingOnDisk = value;
+  refreshTitle();
+}
+
+/** Point the backend's watch at `currentPath` (or stop it, with no path). */
+function syncFileWatch() {
+  if (currentPath === watchedPath) return;
+  watchedPath = currentPath;
+  // A failure only means this document will not be watched: a network path
+  // the setting refuses, or a directory that cannot be watched. Neither is
+  // worth interrupting the user over, since everything else still works.
+  void invoke("watch_file", { path: currentPath }).catch(() => {});
+}
+
+/** Wait until the shared confirm dialog is free, so a prompt never overwrites
+ * the text and handlers of a question that is still on screen. */
+async function confirmDialogFree() {
+  while (confirmDialog.open) {
+    await new Promise((resolve) =>
+      confirmDialog.addEventListener("close", resolve, { once: true }),
+    );
+  }
+}
+
+/** Replace the document with `content` from disk, keeping the cursor and the
+ * scroll position where they were as far as the new text allows. */
+function reloadFromDisk(content: string, path: string) {
+  const { anchor, head } = view.state.selection.main;
+  const scrollTop = view.scrollDOM.scrollTop;
+  loadFromDisk(content, path);
+  // The file now matches the editor, so a snapshot of the old text (from an
+  // earlier removal, say) would only offer stale work back at the next launch.
+  discardDraft(RECOVERY_KEY);
+  view.dispatch({
+    selection: clampSelection(anchor, head, view.state.doc.length),
+  });
+  // Set now and again after layout: setState rebuilt the content, and the
+  // scroller's height is only final once CodeMirror has measured it.
+  view.scrollDOM.scrollTop = scrollTop;
+  requestAnimationFrame(() => {
+    view.scrollDOM.scrollTop = scrollTop;
+  });
+}
+
+/**
+ * React to the current file having changed on disk. Coalesced: never two runs
+ * at once, and events arriving during a run (or during its prompt) fold into a
+ * single follow-up run that re-reads the file.
+ */
+const checkDiskVersion = coalesce(async () => {
+  const path = currentPath;
+  if (path === null) return;
+
+  if (latestChangeKind === "removed") {
+    // Deleted or renamed away. The editor keeps the document (clearing it, or
+    // closing the window, would destroy the only remaining copy) and marks it
+    // unsaved, so closing asks first and Save writes it back. Deliberately no
+    // autosave: if the file was renamed, writing the old name back on our own
+    // would leave the user with two copies they did not ask for. A recovery
+    // snapshot instead, written now rather than on the next edit, because this
+    // window is the only place the text still exists.
+    setDirty(true);
+    writeDraft(RECOVERY_KEY, path, serializeDocument(view.state));
+    if (missingOnDisk) return; // already told; a later event changes nothing
+    setMissingOnDisk(true);
+    // Said once, not left to the status bar alone: with nothing on screen
+    // changing, the user would otherwise only find out when they next try to
+    // open the file from Explorer.
+    await confirmDialogFree();
+    await uiAlert(
+      `${fileLabel()} was deleted or moved by another program. It is still open here; save to write it back.`,
+      { title: "File removed from disk" },
+    );
+    return;
+  }
+
+  let diskText: string;
+  try {
+    diskText = await invoke<string>("read_file", { path });
+  } catch {
+    // Unreadable right now: locked mid-write, or gone again. Whatever
+    // finishes that will raise another event, which is handled then.
+    return;
+  }
+  // Another document was opened while the file was being read.
+  if (currentPath !== path) return;
+  // Readable, so it is back (restored, or recreated by the tool that moved it).
+  setMissingOnDisk(false);
+
+  const action = decideExternalChange({
+    diskText,
+    lastKnownText: diskBaseline,
+    editorText: serializeDocument(view.state),
+    dirty,
+  });
+  switch (action) {
+    case "ignore":
+      return;
+    case "adopt":
+      diskBaseline = diskText;
+      if (dirty) {
+        setDirty(false);
+        discardDraft(RECOVERY_KEY);
+      }
+      return;
+    case "reload":
+      reloadFromDisk(diskText, path);
+      return;
+    case "prompt": {
+      await confirmDialogFree();
+      externalChangePrompt = true;
+      let reload: boolean;
+      try {
+        reload = await uiConfirm(
+          `${fileLabel()} was changed by another program. Reload it and discard your unsaved changes, or keep your version?`,
+          {
+            title: "File changed on disk",
+            okLabel: "Reload",
+            cancelLabel: "Keep mine",
+          },
+        );
+      } finally {
+        externalChangePrompt = false;
+      }
+      if (currentPath !== path) return;
+      if (reload) {
+        reloadFromDisk(diskText, path);
+      } else {
+        // Keeping the editor's version means the disk version has been seen
+        // and declined: record it, so it is not asked about again, and leave
+        // the document unsaved so the next save (or autosave) replaces it.
+        diskBaseline = diskText;
+        setDirty(true);
+        scheduleAutosaveRecovery();
+      }
+      return;
+    }
+  }
+});
+
+/** Listen for the backend's reports about this window's file. */
+function setupFileWatch() {
+  // Window-scoped, matching Rust's emit_to(label): the event is for this
+  // window's document only.
+  void thisWindow
+    .listen<FileChange>(FILE_CHANGED_EVENT, (event) => {
+      // A late event from a watch that has since been replaced.
+      if (event.payload.path !== currentPath) return;
+      latestChangeKind = event.payload.kind;
+      void checkDiskVersion().catch((err) => {
+        console.error("Monoleaf: checking the file on disk failed", err);
+      });
+    })
+    .catch(() => {
+      console.error(
+        `Monoleaf: could not listen for ${FILE_CHANGED_EVENT}; external edits will not be noticed.`,
+      );
+    });
 }
 
 function setupCloseGuard() {
@@ -2143,6 +2353,12 @@ function loadIntoEditor(
   // actual line endings (the facet is fixed at state creation).
   view.setState(createDocumentState(content, editorExtensions()));
   currentPath = path;
+  // Forgotten here and set again only by the callers that actually read the
+  // file (see loadFromDisk). A recovered draft also arrives through this
+  // function with a path, and its content is precisely *not* what is on disk.
+  diskBaseline = null;
+  missingOnDisk = false; // a different document; refreshTitle below shows it
+  syncFileWatch();
   // A document with a path needs no suggestion; one without keeps whatever the
   // caller supplied (an import) and otherwise reverts to "Untitled".
   suggestedName = path === null ? suggested : null;
@@ -2159,6 +2375,12 @@ function loadIntoEditor(
   refreshWordCount();
   schedulePagination(300);
   view.focus();
+}
+
+/** Load text just read from `path`, recording it as what is on disk. */
+function loadFromDisk(content: string, path: string) {
+  loadIntoEditor(content, path);
+  diskBaseline = content;
 }
 
 async function showError(err: unknown) {
@@ -2242,13 +2464,13 @@ async function loadPath(path: string) {
   }
   try {
     const content = await invoke<string>("read_file", { path });
-    loadIntoEditor(content, path);
+    loadFromDisk(content, path);
   } catch (err) {
     // A refused network path is a setting the user can reverse, so offer it and
     // retry once rather than reporting a dead end.
     if (await offerNetworkPaths(err)) {
       try {
-        loadIntoEditor(await invoke<string>("read_file", { path }), path);
+        loadFromDisk(await invoke<string>("read_file", { path }), path);
         return;
       } catch (retryErr) {
         await showError(retryErr);
@@ -2301,15 +2523,28 @@ async function saveFile(forcePrompt = false): Promise<boolean> {
       if (path === null) return false;
     }
     const contents = serializeDocument(view.state);
+    // Recorded before writing, not after. The change event our own write
+    // causes is judged against this baseline, and it must not be able to
+    // arrive first and read as an edit by someone else. Restored if the write
+    // fails, since the disk then still holds whatever it held before.
+    const previousBaseline = diskBaseline;
+    diskBaseline = contents;
     try {
-      await invoke("write_file", { path, contents });
+      try {
+        await invoke("write_file", { path, contents });
+      } catch (err) {
+        // Same offer as on open: saving to a share is the user's call to make.
+        if (!(await offerNetworkPaths(err))) throw err;
+        await invoke("write_file", { path, contents });
+      }
     } catch (err) {
-      // Same offer as on open: saving to a share is the user's call to make.
-      if (!(await offerNetworkPaths(err))) throw err;
-      await invoke("write_file", { path, contents });
+      diskBaseline = previousBaseline;
+      throw err;
     }
     currentPath = path;
     setCurrentDocumentPath(path);
+    // Save As moves the watch to the new file.
+    syncFileWatch();
     // A document saved for the first time (or saved-as to a new directory)
     // can turn previously unresolvable relative image references into
     // resolvable ones. Same reconfigure toggleRemoteImages uses: an image
@@ -2323,6 +2558,7 @@ async function saveFile(forcePrompt = false): Promise<boolean> {
     // The document has a real name now, so any imported suggestion is spent.
     suggestedName = null;
     dirty = false;
+    missingOnDisk = false; // written back (or saved elsewhere); refreshed below
     rememberLastFile(path);
     discardDraft(RECOVERY_KEY); // the file now matches
     refreshTitle();
@@ -2353,7 +2589,14 @@ function scheduleAutosaveRecovery() {
   window.clearTimeout(autosaveTimer);
   autosaveTimer = window.setTimeout(() => {
     if (!dirty) return;
-    if (autosaveEnabled && currentPath !== null) {
+    // Not while the user is being asked whether to reload a version another
+    // program wrote: autosaving now would overwrite that version before they
+    // have answered. The prompt reschedules this once it closes.
+    if (externalChangePrompt) return;
+    // Nor while the file is gone: it may have been renamed, and writing the old
+    // name back on its own would leave two copies. Saving it again is the
+    // user's call; until then the recovery snapshot below keeps the work.
+    if (autosaveEnabled && currentPath !== null && !missingOnDisk) {
       void saveFile(); // writes, clears dirty, clears the recovery snapshot
       return;
     }
@@ -3014,7 +3257,7 @@ async function startupOpen(nameSettled: Promise<unknown>) {
       if (reopen) {
         try {
           const content = await invoke<string>("read_file", { path: last });
-          loadIntoEditor(content, last);
+          loadFromDisk(content, last);
         } catch {
           // Moved, deleted, or unreadable — forget it and start blank.
           localStorage.removeItem(LAST_FILE_KEY);
@@ -3817,6 +4060,8 @@ setupUpdateSync();
 setupWindowControls();
 localizeShortcutLabels(); // ⌘ labels on macOS; no-op elsewhere
 setupCloseGuard();
+// Before the startup chain, which is what opens a file and starts its watch.
+setupFileWatch();
 applyViewClass();
 applyZoom();
 refreshTitle();
