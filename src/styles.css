@@ -1741,6 +1741,19 @@ html.theme-dark #editor .cm-cursor {
   margin: 18px 0 8px;
 }
 
+/* Resolved heading with its "Delete all" button; the row takes over the
+   heading's vertical margin so the two line up on one baseline. */
+.sidebar-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 18px 0 8px;
+}
+.sidebar-section-row .sidebar-section {
+  margin: 0;
+}
+
 .comment-card {
   border: 1px solid light-dark(#e8ddb8, #514831);
   background: light-dark(#fffdf2, #2b281e);
@@ -1788,6 +1801,10 @@ html.theme-dark #editor .cm-cursor {
 
 .comment-actions {
   display: flex;
+  /* Reply, Resolve and Delete leave the reply box little room in a 320px
+     sidebar; below its min-width the buttons wrap to a second row instead
+     of squeezing it. */
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 9px;
   align-items: flex-end;
@@ -1795,6 +1812,7 @@ html.theme-dark #editor .cm-cursor {
 
 .reply-input {
   flex: 1;
+  min-width: 120px;
   font: inherit;
   font-size: 12px;
   padding: 4px 8px;
@@ -1818,6 +1836,11 @@ html.theme-dark #editor .cm-cursor {
 
 .comment-btn:hover {
   background: var(--hover);
+}
+
+.comment-btn-danger:hover {
+  color: light-dark(#b42318, #f97066);
+  border-color: currentColor;
 }
 
 /* --- Dialogs --- */
