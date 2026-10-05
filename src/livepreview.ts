@@ -1247,6 +1247,8 @@ export const paragraphGuard = EditorState.transactionFilter.of((tr) => {
       return;
     }
     const insert = (prevFull ? nl : "") + text + (nextFull ? nl : "");
+    // A line break is one position whatever the file's separator, and `text`
+    // holds none (checked above), so its string length is its length here.
     const cursor = fromA + (prevFull ? 1 : 0) + text.length;
     result = { from: fromA, insert, cursor };
   });

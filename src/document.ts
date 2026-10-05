@@ -36,6 +36,20 @@ export function createDocumentState(
   });
 }
 
+/**
+ * How many document positions `text` occupies once inserted.
+ *
+ * Not `text.length`: a line break is ONE position in the document whatever
+ * the file's separator, so a string built with state.lineBreak overcounts by
+ * one per break in a CRLF file. A cursor placed with the string length lands
+ * past the insert, and near the end of the document past the end itself,
+ * which throws and lets the browser insert a bare "\n" instead (shown as a red
+ * control character).
+ */
+export function insertedLength(state: EditorState, text: string): number {
+  return state.toText(text).length;
+}
+
 /** Serialize the document using the state's configured line separator. */
 export function serializeDocument(state: EditorState): string {
   return state.sliceDoc();

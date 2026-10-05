@@ -39,6 +39,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Enter works properly in files with Windows line endings.** In a file
+  saved with CRLF line endings (as Notepad and many Windows tools write
+  them), Enter left the cursor two characters too far along, and near the
+  end of the file it failed outright and inserted a stray line break shown
+  as a red "NL". The same applied to Shift+Enter in a heading, page breaks,
+  callouts, the table of contents, new tables and typing with Track changes
+  on. The cursor now lands where the new text ends.
 - **Image paths containing a space or parenthesis now work.** A path such as
   `OneDrive - Some Company\pic.jpg` or `Screenshot (1).png` used to break the
   image reference entirely, whether typed, browsed or dropped; such paths

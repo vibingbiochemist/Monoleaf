@@ -8,6 +8,7 @@ import {
   TransactionSpec,
 } from "@codemirror/state";
 import type { Command } from "@codemirror/view";
+import { insertedLength } from "./document";
 import { trimRange } from "./ranges";
 import {
   hardBreakLineEnd,
@@ -350,8 +351,7 @@ export function insertAdmonition(kind: AdmonitionKind): StateCommand {
     const insert = `${needBefore ? nl : ""}${block}${needAfter ? nl : ""}`;
     const cursor =
       startLine.from +
-      (needBefore ? nl.length : 0) +
-      `> ${marker}${nl}> `.length;
+      insertedLength(state, `${needBefore ? nl : ""}> ${marker}${nl}> `);
 
     dispatch(
       state.update({
@@ -885,7 +885,7 @@ export const paragraphEnter: StateCommand = ({ state, dispatch }) => {
     state.update({
       changes: changeSet,
       selection: EditorSelection.cursor(
-        changeSet.mapPos(from, -1) + insert.length,
+        changeSet.mapPos(from, -1) + insertedLength(state, insert),
       ),
       userEvent: "input.type",
       scrollIntoView: true,
@@ -914,7 +914,9 @@ export const hardBreakEnter: StateCommand = ({ state, dispatch }) => {
     dispatch(
       state.update({
         changes: { from: range.from, to: range.to, insert },
-        selection: EditorSelection.cursor(range.from + insert.length),
+        selection: EditorSelection.cursor(
+          range.from + insertedLength(state, insert),
+        ),
         userEvent: "input.type",
         scrollIntoView: true,
       }),
@@ -934,7 +936,7 @@ export const hardBreakEnter: StateCommand = ({ state, dispatch }) => {
   dispatch(
     state.update({
       changes: { from, to, insert },
-      selection: EditorSelection.cursor(from + insert.length - nl.length + 1),
+      selection: EditorSelection.cursor(from + insertedLength(state, insert)),
       userEvent: "input.type",
       scrollIntoView: true,
     }),
@@ -1108,7 +1110,9 @@ export const insertTableOfContents: StateCommand = ({ state, dispatch }) => {
   dispatch(
     state.update({
       changes: { from: range.from, to: range.to, insert },
-      selection: EditorSelection.cursor(range.from + insert.length),
+      selection: EditorSelection.cursor(
+        range.from + insertedLength(state, insert),
+      ),
       userEvent: "input.toc",
     }),
   );
@@ -1133,7 +1137,9 @@ export const insertPageBreak: StateCommand = ({ state, dispatch }) => {
   dispatch(
     state.update({
       changes: { from: range.from, to: range.to, insert },
-      selection: EditorSelection.cursor(range.from + insert.length),
+      selection: EditorSelection.cursor(
+        range.from + insertedLength(state, insert),
+      ),
       userEvent: "input.pagebreak",
     }),
   );
