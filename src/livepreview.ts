@@ -1269,8 +1269,8 @@ export function livePreviewExtensions(): Extension {
     tableExtensions(),
     paragraphGuard,
     markupRepair,
-    // Native (Chromium/WebView2) spellcheck in the writing view.
-    EditorView.contentAttributes.of({ spellcheck: "true" }),
+    // Spellcheck is not set here: it is a user setting that applies to the raw
+    // view too, so main.ts owns it (spellcheckCompartment).
     hideCommentSyntax.of(true),
     hideCriticSyntax.of(true),
     EditorView.atomicRanges.of(

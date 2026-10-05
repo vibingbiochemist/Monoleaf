@@ -39,6 +39,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The Dark mode switch works in the installed app.** The installed build
+  followed the system's light or dark appearance and ignored the switch, so
+  on a system set to dark the editor stayed dark however it was set. The
+  switch now decides; until it is first used, the system setting still
+  applies.
+- **Spellcheck no longer turns itself off, and it can be switched off.**
+  Spellcheck was only active in the writing view, so switching to the source
+  view silently disabled it. It now applies to both views, and Settings has
+  a Spellcheck switch. The dictionary language follows the system's
+  language settings.
 - **Image paths containing a space or parenthesis now work.** A path such as
   `OneDrive - Some Company\pic.jpg` or `Screenshot (1).png` used to break the
   image reference entirely, whether typed, browsed or dropped; such paths
