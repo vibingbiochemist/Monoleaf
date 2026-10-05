@@ -23,6 +23,21 @@
   color: var(--text);
 }
 
+/* The manual Dark mode toggle (applyTheme in main.ts) sets one of these
+   classes. It has to be a color-scheme declaration in a stylesheet, not an
+   inline style: the production build lowers every light-dark() for older
+   webviews into a pair of variables that Lightning CSS switches only where it
+   sees color-scheme declared in CSS. With just the :root default above, the
+   built app followed the OS appearance and the toggle did nothing (issue #83);
+   these rules give Lightning CSS a place to emit the switch for each choice.
+   html.class outranks :root, so the choice beats the OS preference. */
+html.theme-light {
+  color-scheme: light;
+}
+html.theme-dark {
+  color-scheme: dark;
+}
+
 * {
   box-sizing: border-box;
 }
