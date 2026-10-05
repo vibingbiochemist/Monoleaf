@@ -13,6 +13,7 @@ import {
   insertAdmonition,
   insertMath,
   insertPageBreak,
+  insertTableOfContents,
   linkAt,
   paragraphEnter,
   setAlignment,
@@ -607,5 +608,85 @@ describe("toggleQuote", () => {
 
   it("adds the marker only to lines that lack it", () => {
     expect(run(toggleQuote, "> one\ntwo", 0, 9).doc).toBe("> one\n> two");
+  });
+});
+
+// In a CRLF file a line break is two characters in the inserted string but
+// one position in the document. Cursors computed from the string length used
+// to land past the insert, and near the end of the file past the end itself,
+// which threw "Selection points outside of document" and let the browser
+// insert a bare "\n" instead (issue #83, the red "NL" after Enter).
+describe("cursor placement in CRLF documents", () => {
+  function runCrlf(
+    cmd: StateCommand,
+    doc: string,
+    pos: number,
+  ): { doc: string; cursor: number; atCursor: string } {
+    const state = createDocumentState(doc, [
+      markdownForMode("enhanced"),
+      hideCommentSyntax.of(true),
+    ]).update({ selection: EditorSelection.single(pos) }).state;
+    ensureSyntaxTree(state, state.doc.length, 5000);
+    let after: EditorState | null = null;
+    expect(
+      cmd({
+        state,
+        dispatch: (tr) => {
+          after = tr.state;
+        },
+      }),
+    ).toBe(true);
+    const out = after as unknown as EditorState;
+    const cursor = out.selection.main.head;
+    return {
+      doc: serializeDocument(out),
+      cursor,
+      atCursor: out.doc.sliceString(cursor, cursor + 3),
+    };
+  }
+
+  it("Enter puts the cursor at the start of the new paragraph", () => {
+    const r = runCrlf(paragraphEnter, "one two\r\n", 3);
+    expect(r.doc).toBe("one\r\n\r\n two\r\n");
+    expect(r.atCursor).toBe(" tw");
+  });
+
+  it("Enter at the very end of the file does not throw", () => {
+    // "one" + break + "two": 7 positions, so 7 is the end.
+    const r = runCrlf(paragraphEnter, "one\r\ntwo", 7);
+    expect(r.doc).toBe("one\r\ntwo\r\n\r\n");
+    expect(r.cursor).toBe(9);
+  });
+
+  it("Shift+Enter in a heading lands after the repeated prefix", () => {
+    const r = runCrlf(hardBreakEnter, "# Title\r\nbody", 7);
+    expect(r.doc).toBe("# Title\r\n# \r\nbody");
+    expect(r.cursor).toBe(10);
+  });
+
+  it("Shift+Enter in a paragraph lands at the start of the next line", () => {
+    const r = runCrlf(hardBreakEnter, "one two\r\nend", 3);
+    expect(r.doc).toBe("one\\\r\n two\r\nend");
+    expect(r.atCursor).toBe(" tw");
+  });
+
+  it("a page break leaves the cursor after the blank line", () => {
+    const r = runCrlf(insertPageBreak, "one two\r\nend", 3);
+    expect(r.doc).toBe("one\r\n<!--ml:pagebreak-->\r\n\r\n two\r\nend");
+    expect(r.atCursor).toBe(" tw");
+  });
+
+  it("an empty callout puts the cursor inside its body", () => {
+    const r = runCrlf(insertAdmonition("note"), "one\r\n\r\n\r\ntwo", 5);
+    expect(r.doc).toBe("one\r\n\r\n> [!NOTE]\r\n> \r\n\r\ntwo");
+    // 5 (start of the empty line) + "> [!NOTE]" + break + "> "
+    expect(r.cursor).toBe(17);
+  });
+
+  it("a table of contents leaves the cursor after it", () => {
+    // Position 5 is the start of "text".
+    const r = runCrlf(insertTableOfContents, "# A\r\n\r\ntext", 5);
+    expect(r.doc.endsWith("\r\n\r\ntext")).toBe(true);
+    expect(r.atCursor).toBe("tex");
   });
 });

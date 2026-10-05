@@ -14,6 +14,7 @@ import {
   ViewPlugin,
   ViewUpdate,
 } from "@codemirror/view";
+import { insertedLength } from "./document";
 
 /**
  * Tracked changes via CriticMarkup (brief Stage 4): insertions {++x++},
@@ -287,7 +288,10 @@ function planInsert(
 ): Plan {
   // Inside our own suggested text: type plainly.
   if (insideSegment(regions, pos, pos, ["ins"]) !== null) {
-    return { changes: [{ from: pos, insert: ins }], cursor: pos + ins.length };
+    return {
+      changes: [{ from: pos, insert: ins }],
+      cursor: pos + insertedLength(state, ins),
+    };
   }
   // Inside a deletion or the old half of a substitution: relocate after the
   // region (for a substitution, into its new half).
@@ -297,7 +301,7 @@ function planInsert(
       const seg = subNewSegment(covering);
       return {
         changes: [{ from: seg.to, insert: ins }],
-        cursor: seg.to + ins.length,
+        cursor: seg.to + insertedLength(state, ins),
       };
     }
     if (covering.kind === "deletion") pos = covering.to;
@@ -308,19 +312,19 @@ function planInsert(
     // Extend the preceding insertion.
     return {
       changes: [{ from: pos - 3, to: pos, insert: `${ins}++}` }],
-      cursor: pos - 3 + ins.length,
+      cursor: pos - 3 + insertedLength(state, ins),
     };
   }
   if (after === "{++") {
     // Prepend to the following insertion.
     return {
       changes: [{ from: pos, to: pos + 3, insert: `{++${ins}` }],
-      cursor: pos + 3 + ins.length,
+      cursor: pos + 3 + insertedLength(state, ins),
     };
   }
   return {
     changes: [{ from: pos, insert: `{++${ins}++}` }],
-    cursor: pos + 3 + ins.length,
+    cursor: pos + 3 + insertedLength(state, ins),
   };
 }
 
@@ -349,7 +353,7 @@ function planTokenDelete(
       const old = oldText(state, r);
       return {
         changes: [{ from: r.from, to: r.to, insert: old }],
-        cursor: r.from + old.length,
+        cursor: r.from + insertedLength(state, old),
       };
     }
     return { changes: [{ from: r.from, to: r.to }], cursor: r.from };
@@ -407,12 +411,16 @@ function planDelete(
   const insert = (prefix ? "" : "{--") + deleted + (suffix ? "" : "--}");
   return {
     changes: [{ from: cFrom, to: cTo, insert }],
-    cursor: backward ? (prefix ? cFrom : from) : cFrom + insert.length,
+    cursor: backward
+      ? prefix
+        ? cFrom
+        : from
+      : cFrom + insertedLength(state, insert),
   };
 }
 
 function planReplace(
-  _state: EditorState,
+  state: EditorState,
   regions: CriticRegion[],
   from: number,
   to: number,
@@ -420,12 +428,20 @@ function planReplace(
   ins: string,
 ): Plan | null {
   if (insideSegment(regions, from, to, ["ins"]) !== null) {
-    return { changes: [{ from, to, insert: ins }], cursor: from + ins.length };
+    return {
+      changes: [{ from, to, insert: ins }],
+      cursor: from + insertedLength(state, ins),
+    };
   }
   if (overlapsRegion(regions, from, to)) return null;
   return {
     changes: [{ from, to, insert: `{~~${deleted}~>${ins}~~}` }],
-    cursor: from + 3 + deleted.length + 2 + ins.length,
+    cursor:
+      from +
+      3 +
+      insertedLength(state, deleted) +
+      2 +
+      insertedLength(state, ins),
   };
 }
 
@@ -469,7 +485,8 @@ function trackTransaction(tr: Transaction): TransactionSpec | Transaction {
     changes.push(...plan.changes);
     cursor = plan.cursor + delta;
     for (const c of plan.changes) {
-      delta += (c.insert?.length ?? 0) - ((c.to ?? c.from) - c.from);
+      delta +=
+        insertedLength(state, c.insert ?? "") - ((c.to ?? c.from) - c.from);
     }
   });
 

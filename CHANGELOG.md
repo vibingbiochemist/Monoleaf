@@ -46,6 +46,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Enter works properly in files with Windows line endings.** In a file
+  saved with CRLF line endings (as Notepad and many Windows tools write
+  them), Enter left the cursor two characters too far along, and near the
+  end of the file it failed outright and inserted a stray line break shown
+  as a red "NL". The same applied to Shift+Enter in a heading, page breaks,
+  callouts, the table of contents, new tables and typing with Track changes
+  on. The cursor now lands where the new text ends.
 - **The Dark mode switch works in the installed app.** The installed build
   followed the system's light or dark appearance and ignored the switch, so
   on a system set to dark the editor stayed dark however it was set. The

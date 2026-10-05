@@ -166,6 +166,24 @@ describe("CRLF documents", () => {
     });
     // Positions count line breaks as 1 unit, so [0,7] covers "one\r\ntwo".
     expect(serializeDocument(tr.state)).toBe("{--one\r\ntwo--}\r\n");
+    // "{--" + 7 positions + "--}": the cursor ends after the closer. Counting
+    // the "\r\n" as two characters used to put it one past.
+    expect(tr.state.selection.main.head).toBe(13);
+  });
+
+  it("puts the cursor right after a tracked line break", () => {
+    const base = createDocumentState("one two\r\nend\r\n", [
+      trackingExtension(),
+    ]);
+    const tr = base.update({
+      changes: { from: 3, insert: "\r\n\r\n" },
+      userEvent: "input.type",
+    });
+    expect(serializeDocument(tr.state)).toBe(
+      "one{++\r\n\r\n++} two\r\nend\r\n",
+    );
+    // 3 + "{++" + two line breaks (one position each).
+    expect(tr.state.selection.main.head).toBe(8);
   });
 });
 

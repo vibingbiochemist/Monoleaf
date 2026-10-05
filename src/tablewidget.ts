@@ -16,6 +16,7 @@ import {
   WidgetType,
 } from "@codemirror/view";
 import { MenuItem } from "./contextmenu";
+import { insertedLength } from "./document";
 import { PageBreak, pageBreakPositions, setPageBreaks } from "./pagination";
 import { cellDisplayHtml, cellHasRichContent } from "./tablecell";
 import {
@@ -774,11 +775,19 @@ export function insertTableSized(cols: number, rows: number): StateCommand {
     const table = serializeTable(emptyTable(cols, rows)).replace(/\n/g, nl);
     const before = range.from === line.from ? "" : nl + nl;
     const insert = `${before}${table}${nl}${nl}`;
-    pendingFocus = { from: range.from + before.length, row: -1, col: 0 };
+    // Measured as the document counts, not by string length: each line
+    // break in a CRLF file is two characters here but one position there.
+    pendingFocus = {
+      from: range.from + insertedLength(state, before),
+      row: -1,
+      col: 0,
+    };
     dispatch(
       state.update({
         changes: { from: range.from, to: range.to, insert },
-        selection: EditorSelection.cursor(range.from + insert.length),
+        selection: EditorSelection.cursor(
+          range.from + insertedLength(state, insert),
+        ),
         userEvent: "input.table",
         scrollIntoView: true,
       }),
