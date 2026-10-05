@@ -15,7 +15,12 @@ import {
   localizeShortcutLabels,
 } from "./platform";
 import { editorSetup, rawViewExtensions } from "./setup";
-import { Compartment, Prec, StateCommand } from "@codemirror/state";
+import {
+  Compartment,
+  Prec,
+  StateCommand,
+  TransactionSpec,
+} from "@codemirror/state";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -81,6 +86,8 @@ import {
   addReplySpec,
   commentsExtension,
   createCommentSpec,
+  deleteResolvedSpec,
+  deleteThreadSpec,
   parseComments,
   setResolvedSpec,
 } from "./comments";
@@ -1184,6 +1191,43 @@ function refreshComments() {
       const spec = setResolvedSpec(view.state, id, resolved);
       if (spec !== null) view.dispatch(spec);
     },
+    onDelete(id) {
+      void (async () => {
+        const thread = parseComments(view.state.doc.toString()).find(
+          (t) => t.id === id,
+        );
+        const n = thread?.thread.length ?? 0;
+        const ok = await uiConfirm(
+          formatShortcut(
+            `Delete this thread${n > 1 ? ` and its ${n} comments` : ""} from ` +
+              "the document? The commented text stays. Ctrl+Z restores it.",
+          ),
+          { title: "Delete comment thread", okLabel: "Delete" },
+        );
+        if (!ok) return;
+        // Built from the state as it is now, not before the dialog: the
+        // document may have changed underneath it (an autosave reload, an
+        // edit in another pane), and stale offsets would cut the wrong text.
+        dispatchCommentRemoval(deleteThreadSpec(view.state, id));
+      })();
+    },
+    onDeleteResolved() {
+      void (async () => {
+        const n = parseComments(view.state.doc.toString()).filter(
+          (t) => t.resolved,
+        ).length;
+        if (n === 0) return;
+        const ok = await uiConfirm(
+          formatShortcut(
+            `Delete ${n === 1 ? "the resolved thread" : `all ${n} resolved threads`} ` +
+              "from the document? The commented text stays. Ctrl+Z restores them.",
+          ),
+          { title: "Delete resolved comments", okLabel: "Delete" },
+        );
+        if (!ok) return;
+        dispatchCommentRemoval(deleteResolvedSpec(view.state));
+      })();
+    },
     onSelect(id) {
       const thread = parseComments(view.state.doc.toString()).find(
         (t) => t.id === id,
@@ -1198,6 +1242,16 @@ function refreshComments() {
       view.focus();
     },
   });
+}
+
+/**
+ * Apply a thread deletion and hand focus back to the editor: the Delete
+ * button that was focused is gone once the sidebar re-renders, and the
+ * promised Ctrl+Z only reaches the undo history from inside the editor.
+ */
+function dispatchCommentRemoval(spec: TransactionSpec | null) {
+  if (spec !== null) view.dispatch(spec);
+  view.focus();
 }
 
 let commentsRefreshQueued = false;

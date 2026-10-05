@@ -36,6 +36,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   images inserts a reference for each at the drop position. Both write a
   path relative to the document when the file sits beneath its folder, and
   an absolute path otherwise.
+- **Comment threads can be deleted.** Each thread in the comments sidebar
+  has a Delete button, and the Resolved heading has Delete all, so resolved
+  discussions no longer have to stay in the file forever. Deleting removes
+  the thread's hidden comment block, the blank line that set it apart and
+  its anchor markers, but keeps the commented text, so the file reads
+  exactly as it did before the comment was added. Both
+  ask for confirmation, and Ctrl+Z brings the thread back.
 
 ### Fixed
 

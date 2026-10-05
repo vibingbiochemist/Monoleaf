@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { EditorSelection, EditorState } from "@codemirror/state";
+import { history, undo } from "@codemirror/commands";
 import {
   addReplySpec,
   buildCommentDecorations,
   createCommentSpec,
+  deleteResolvedSpec,
+  deleteThreadSpec,
   hideCommentSyntax,
   parseComments,
   setResolvedSpec,
@@ -114,6 +117,183 @@ describe("replies and resolution", () => {
     const [t] = parseComments(resolved.doc.toString());
     expect(t.resolved).toBe(true);
     expect(t.thread).toHaveLength(1);
+  });
+});
+
+describe("deleting threads", () => {
+  function body(id: string, resolved = false, texts = ["note"]): string {
+    const thread = texts.map((text) => ({ author: "M", ts: "t", text }));
+    return `<!--c:${id} ${JSON.stringify({ resolved, thread })}-->`;
+  }
+
+  function del(doc: string, id: string): string {
+    const s = createDocumentState(doc);
+    return serializeDocument(s.update(deleteThreadSpec(s, id)!).state);
+  }
+
+  function delResolved(doc: string): string {
+    const s = createDocumentState(doc);
+    return serializeDocument(s.update(deleteResolvedSpec(s)!).state);
+  }
+
+  it("removes an open thread's anchors and body, keeping the text", () => {
+    expect(del(DOC, "a1")).toBe("The affinity was sub-nanomolar in assay 2.\n");
+  });
+
+  it("removes a resolved thread", () => {
+    const doc = DOC.replace('"resolved":false', '"resolved":true');
+    expect(del(doc, "a1")).toBe("The affinity was sub-nanomolar in assay 2.\n");
+  });
+
+  it("removes a thread with replies", () => {
+    const s = state(DOC);
+    const replied = s.update(
+      addReplySpec(s, "a1", { author: "R", ts: "t2", text: "agreed" })!,
+    ).state;
+    const after = replied.update(deleteThreadSpec(replied, "a1")!).state;
+    expect(after.doc.toString()).toBe(
+      "The affinity was sub-nanomolar in assay 2.\n",
+    );
+    expect(parseComments(after.doc.toString())).toEqual([]);
+  });
+
+  it("undoes creating a comment exactly", () => {
+    for (const original of [
+      "hello brave world\n",
+      "# Title\n\nhello brave world\n\nlast paragraph\n",
+    ]) {
+      const from = original.indexOf("brave");
+      const s = state(original, from, from + 5);
+      const created = s.update(createCommentSpec(s, "M", "x", "t")!).state;
+      const [t] = parseComments(created.doc.toString());
+      const after = created.update(deleteThreadSpec(created, t.id)!).state;
+      expect(after.doc.toString()).toBe(original);
+    }
+  });
+
+  it("removes an orphaned body (anchors already gone)", () => {
+    expect(del(`Text here.\n\n${body("z1")}\n`, "z1")).toBe("Text here.\n");
+  });
+
+  it("removes orphaned anchors (no body)", () => {
+    expect(del("a <!--c:z9s-->b<!--c:z9e--> c\n", "z9")).toBe("a b c\n");
+  });
+
+  it("removes a lone anchor token whose partner was deleted", () => {
+    const doc = `a <!--c:z9s-->b c\n\n${body("z9")}\n`;
+    expect(parseComments(doc)[0].anchor).toBeNull();
+    expect(del(doc, "z9")).toBe("a b c\n");
+  });
+
+  it("removes duplicated (copy-pasted) anchors of the thread", () => {
+    const doc = "x <!--c:a1s-->y<!--c:a1e--> and x <!--c:a1s-->y<!--c:a1e-->\n";
+    expect(del(doc, "a1")).toBe("x y and x y\n");
+  });
+
+  it("removes only the target among several threads", () => {
+    const doc =
+      "One <!--c:a1s-->alpha<!--c:a1e--> and <!--c:b2s-->beta<!--c:b2e-->.\n" +
+      `\n${body("a1")}\n\n${body("b2")}\n`;
+    expect(del(doc, "a1")).toBe(
+      "One alpha and <!--c:b2s-->beta<!--c:b2e-->.\n" + `\n${body("b2")}\n`,
+    );
+    expect(del(doc, "b2")).toBe(
+      "One <!--c:a1s-->alpha<!--c:a1e--> and beta.\n" + `\n${body("a1")}\n`,
+    );
+  });
+
+  it("collapses the blank separator of a body between two paragraphs", () => {
+    expect(del(`first\n\n${body("a1")}\n\nsecond\n`, "a1")).toBe(
+      "first\n\nsecond\n",
+    );
+  });
+
+  it("removes a body at the start of the document with its separator", () => {
+    expect(del(`${body("a1")}\n\nText.\n`, "a1")).toBe("Text.\n");
+    expect(del(`${body("a1")}\n`, "a1")).toBe("");
+  });
+
+  it("removes a body on the last line without a final newline", () => {
+    expect(del(`Text.\n\n${body("a1")}`, "a1")).toBe("Text.");
+    expect(del(`Text.\n${body("a1")}`, "a1")).toBe("Text.");
+    expect(del(body("a1"), "a1")).toBe("");
+  });
+
+  it("leaves surrounding lines alone when the body sits inside a paragraph", () => {
+    expect(del(`line one\n${body("a1")}\nline two\n`, "a1")).toBe(
+      "line one\nline two\n",
+    );
+  });
+
+  it("cuts out exactly the body when it shares its line with text", () => {
+    expect(del(`Note ${body("a1")} more\n`, "a1")).toBe("Note  more\n");
+  });
+
+  it("is byte-identical outside the removed syntax", () => {
+    // Trailing spaces, tabs, a hard break, several blank lines and no final
+    // newline: none of it may be touched.
+    const original =
+      "# Title  \n\n\n\tindented code\nsome *text*   \nwith a hard break\\n" +
+      "end of para\n\n\n\n- item\n- item two\t\n\nlast";
+    const at = (needle: string) => original.indexOf(needle);
+    const a = at("some *text*");
+    const b = at("hard break");
+    const doc =
+      original.slice(0, a) +
+      "<!--c:k1s-->" +
+      original.slice(a, b) +
+      "<!--c:k1e-->" +
+      original.slice(b, at("end of para")) +
+      body("k1") +
+      original.slice(at("end of para"));
+    expect(del(doc, "k1")).toBe(original);
+  });
+
+  it("respects CRLF documents", () => {
+    const doc =
+      "Para <!--c:a1s-->one<!--c:a1e-->.\r\n\r\n" +
+      `${body("a1")}\r\n\r\nPara two.\r\n\r\n${body("b2", true)}\r\n`;
+    expect(del(doc, "a1")).toBe(
+      `Para one.\r\n\r\nPara two.\r\n\r\n${body("b2", true)}\r\n`,
+    );
+    expect(delResolved(doc)).toBe(
+      `Para <!--c:a1s-->one<!--c:a1e-->.\r\n\r\n${body("a1")}\r\n\r\nPara two.\r\n`,
+    );
+  });
+
+  it("deleteResolvedSpec removes every resolved thread, keeps open ones", () => {
+    const doc =
+      "<!--c:a1s-->A<!--c:a1e--> <!--c:b2s-->B<!--c:b2e--> " +
+      "<!--c:c3s-->C<!--c:c3e-->\n\n" +
+      `${body("a1", true)}\n\n${body("b2")}\n\n${body("c3", true, ["x", "y"])}\n`;
+    const after = delResolved(doc);
+    expect(after).toBe(`A <!--c:b2s-->B<!--c:b2e--> C\n\n${body("b2")}\n`);
+    expect(parseComments(after).map((t) => t.id)).toEqual(["b2"]);
+  });
+
+  it("deleteResolvedSpec handles resolved bodies on adjacent lines", () => {
+    const doc = `Text.\n\n${body("a1", true)}\n${body("b2", true)}\n`;
+    expect(delResolved(doc)).toBe("Text.\n");
+  });
+
+  it("returns null when there is nothing to delete", () => {
+    expect(deleteThreadSpec(state(DOC), "zz")).toBeNull();
+    expect(deleteResolvedSpec(state(DOC))).toBeNull();
+  });
+
+  it("is a single undoable transaction", () => {
+    let s = EditorState.create({ doc: DOC, extensions: history() });
+    s = s.update(deleteThreadSpec(s, "a1")!).state;
+    expect(s.doc.toString()).not.toBe(DOC);
+    expect(
+      undo({
+        state: s,
+        dispatch: (tr) => {
+          s = tr.state;
+        },
+      }),
+    ).toBe(true);
+    expect(s.doc.toString()).toBe(DOC);
   });
 });
 
