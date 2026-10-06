@@ -1,7 +1,7 @@
 {
   "name": "monoleaf",
   "private": true,
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "A portable, WYSIWYG Markdown editor — one file, single source of truth.",
   "license": "MIT",
   "author": "vibingbiochemist <info@monoleaf.org>",
