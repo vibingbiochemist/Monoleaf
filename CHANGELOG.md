@@ -56,6 +56,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Text typed into a table cell is saved again.** Since 1.2.1, an edit in
+  a table cell could stay visible in the grid without ever reaching the
+  document, so it was missing from the saved file and from PDF, print and
+  HTML export, which showed the table empty. It happened whenever page
+  breaks were recalculated between the table appearing and the edit, which
+  is almost always. Cell edits, the table toolbar and Delete table all
+  reach the document again.
 - **Enter works properly in files with Windows line endings.** In a file
   saved with CRLF line endings (as Notepad and many Windows tools write
   them), Enter left the cursor two characters too far along, and near the

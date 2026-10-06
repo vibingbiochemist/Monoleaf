@@ -119,6 +119,39 @@ describe("editing a rendered cell round-trips the source", () => {
     view.destroy();
   });
 
+  // Found while testing the 1.3.0 release build: text typed into a cell
+  // showed on screen but never reached the document (so PDF export showed an
+  // empty table). Pagination rebuilds the field without a document change
+  // (setPageBreaks); the rebuilt TableWidget is eq() to the old one, so
+  // CodeMirror keeps the grid's DOM, whose handlers still hold the old object.
+  // widgetRange matched only by identity, found nothing, and dropped the edit.
+  it("commits an edit after a rebuild that kept the grid's DOM", () => {
+    const view = mount(DOC, [pageBreaksField]);
+    const cell = cellWithRaw(view, "&nbsp;&nbsp;Item one");
+    view.dispatch({ effects: setPageBreaks.of([]) });
+    // The same node: CodeMirror reused the DOM rather than rebuilding it.
+    expect(cellWithRaw(view, "&nbsp;&nbsp;Item one")).toBe(cell);
+    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    cell.textContent = "Hello";
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(view.state.doc.toString()).toContain("| Hello |");
+    view.destroy();
+  });
+
+  it("Delete table still works after such a rebuild", () => {
+    const view = mount(`before\n\n${DOC}\nafter\n`, [pageBreaksField]);
+    view.dispatch({ effects: setPageBreaks.of([]) });
+    const del = Array.from(
+      view.dom.querySelectorAll<HTMLButtonElement>(".ml-table-bar button"),
+    ).find((b) => b.title === "Delete table");
+    expect(del).toBeDefined();
+    del!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+    expect(view.state.doc.toString()).not.toContain("Sample A");
+    expect(view.state.doc.toString()).toContain("before");
+    expect(view.state.doc.toString()).toContain("after");
+    view.destroy();
+  });
+
   // Found by running the real app: a focusout with no matching focusin reads
   // the RENDERED text (where <br> has collapsed) and used to commit that over
   // the source, silently destroying it. Real browsers fire such blurs on
