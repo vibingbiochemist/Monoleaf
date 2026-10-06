@@ -34,7 +34,7 @@ Water is H~2~O and the 5^th^ element, with :sparkles: emoji shortcodes.
 
 Edit anywhere above — the markdown syntax stays hidden and the file updates
 silently underneath. Format with Ctrl+B / Ctrl+I / Ctrl+K (or the toolbar),
-set headings with Ctrl+Shift+1–6 (Ctrl+Shift+0 clears). Press Ctrl+E for the
+set headings with Ctrl+Shift+1–6 (Ctrl+Shift+0 clears). Press Ctrl+Q for the
 raw view — the cursor stays exactly where it was.
 
 ## Pagination
