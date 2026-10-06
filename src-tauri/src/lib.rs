@@ -240,6 +240,52 @@ mod spell {
         }
     }
 
+    /// For each word, whether it is misspelled in every user language: the
+    /// same rule as `suggest`, so the underline and the right-click menu
+    /// always agree. One factory and one checker per language for the whole
+    /// batch, not per word, since the editor asks about a screenful at once.
+    pub fn misspelled(words: &[String]) -> Result<Vec<bool>, String> {
+        let factory = factory()?;
+        let mut checkers = Vec::new();
+        unsafe {
+            for lang in languages() {
+                let wl = wide(&lang);
+                if !factory
+                    .IsSupported(PCWSTR(wl.as_ptr()))
+                    .map(|b| b.as_bool())
+                    .unwrap_or(false)
+                {
+                    continue;
+                }
+                if let Ok(checker) = factory.CreateSpellChecker(PCWSTR(wl.as_ptr())) {
+                    checkers.push(checker);
+                }
+            }
+        }
+        if checkers.is_empty() {
+            return Err("no spell checker is available for the user's languages".to_string());
+        }
+        Ok(words
+            .iter()
+            .map(|word| {
+                let w = wide(word);
+                // Correct in any language means not misspelled. A checker
+                // that fails on this word counts as "correct": an underline
+                // the user cannot get rid of is worse than a missed one.
+                !checkers.iter().any(|checker| unsafe {
+                    match checker.Check(PCWSTR(w.as_ptr())) {
+                        Ok(errors) => {
+                            let mut spelling_error = None;
+                            let _ = errors.Next(&mut spelling_error);
+                            spelling_error.is_none()
+                        }
+                        Err(_) => true,
+                    }
+                })
+            })
+            .collect())
+    }
+
     pub fn add(word: &str) -> Result<(), String> {
         let factory = factory()?;
         let w = wide(word);
@@ -273,6 +319,39 @@ fn spell_suggest(word: String) -> Result<Option<Vec<String>>, String> {
     {
         let _ = word;
         Ok(None)
+    }
+}
+
+/// The most words one `spell_check` call will look at. The editor only asks
+/// about what is on screen, so this is a guard against a runaway caller, not
+/// a limit anyone should reach.
+const SPELL_CHECK_MAX_WORDS: usize = 5000;
+
+/// For each word, `true` if it is misspelled (see `spell::misspelled`). Drives
+/// the editor's own underline, which replaces the webview's on Windows: that
+/// one only checks words as they are typed, so an opened document never
+/// showed any. Elsewhere there is no native checker here and nothing is
+/// flagged; the frontend leaves those platforms to the webview.
+///
+/// Async, with the COM work on a blocking thread: a sync command runs on the
+/// main thread, and a screenful of words must not stall the window.
+#[tauri::command]
+async fn spell_check(words: Vec<String>) -> Result<Vec<bool>, String> {
+    if words.len() > SPELL_CHECK_MAX_WORDS {
+        return Err(format!(
+            "spell_check takes at most {SPELL_CHECK_MAX_WORDS} words, got {}",
+            words.len()
+        ));
+    }
+    #[cfg(windows)]
+    {
+        tauri::async_runtime::spawn_blocking(move || spell::misspelled(&words))
+            .await
+            .map_err(|e| e.to_string())?
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(vec![false; words.len()])
     }
 }
 
@@ -1168,6 +1247,7 @@ pub fn run() {
             watch_file,
             import_pdf_as_markdown,
             spell_suggest,
+            spell_check,
             spell_add,
             take_launch_file,
             open_document_window,
@@ -1204,6 +1284,29 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Against the real Windows spell checker, so Windows-only. en-US is always
+    // among the languages tried (see spell::languages).
+    #[cfg(windows)]
+    #[test]
+    fn spell_check_flags_only_words_wrong_in_every_language() {
+        let words: Vec<String> = ["the", "teh", "sentence", "sentense", "Monday"]
+            .iter()
+            .map(|w| w.to_string())
+            .collect();
+        assert_eq!(
+            spell::misspelled(&words).unwrap(),
+            vec![false, true, false, true, false]
+        );
+        assert_eq!(spell::misspelled(&[]).unwrap(), Vec::<bool>::new());
+    }
+
+    #[test]
+    fn spell_check_refuses_an_oversized_batch() {
+        let words = vec!["a".to_string(); SPELL_CHECK_MAX_WORDS + 1];
+        let result = tauri::async_runtime::block_on(spell_check(words));
+        assert!(result.is_err());
+    }
 
     #[test]
     fn read_write_round_trip_is_byte_identical() {

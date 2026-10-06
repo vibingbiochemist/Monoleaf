@@ -14,6 +14,12 @@ export const isMac: boolean =
   typeof navigator !== "undefined" &&
   navigator.platform.toUpperCase().startsWith("MAC");
 
+/** Windows: the only platform with a native spell checker behind the
+ * `spell_check` / `spell_suggest` commands (see spellcheck.ts). */
+export const isWindows: boolean =
+  typeof navigator !== "undefined" &&
+  navigator.platform.toUpperCase().startsWith("WIN");
+
 /**
  * Windows binding → macOS binding, for the shortcuts whose Cmd equivalent is
  * taken by macOS itself (handled by the system or the default app menu before

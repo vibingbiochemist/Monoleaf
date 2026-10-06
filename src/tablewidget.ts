@@ -18,6 +18,7 @@ import {
 import { MenuItem } from "./contextmenu";
 import { insertedLength } from "./document";
 import { PageBreak, pageBreakPositions, setPageBreaks } from "./pagination";
+import { cellSpellcheck } from "./spellcheck";
 import { cellDisplayHtml, cellHasRichContent } from "./tablecell";
 import {
   ColAlign,
@@ -546,6 +547,10 @@ function buildTableDom(view: EditorView, widget: TableWidget): HTMLElement {
   ) => {
     const cell = document.createElement(tag);
     cell.contentEditable = "plaintext-only";
+    // Explicit, not inherited: on Windows the editor content says "false"
+    // because its own underlines replace the webview's (spellcheck.ts), and
+    // cells are outside the text those underlines cover.
+    cell.spellcheck = view.state.facet(cellSpellcheck);
     cell.dataset.row = String(row);
     cell.dataset.col = String(col);
     showCell(cell, text, cellSplits.get(`${row}:${col}`));
