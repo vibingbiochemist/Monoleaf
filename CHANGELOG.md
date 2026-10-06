@@ -80,6 +80,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   view silently disabled it. It now applies to both views, and Settings has
   a Spellcheck switch. The dictionary language follows the system's
   language settings.
+- **The right-click image menu now handles paths containing a space or
+  parenthesis.** Picking a size for `![pic](<Screenshot (1).png>)` used to
+  cut the reference off at the `)` inside the name, and "Original size" on a
+  sized `<img>` wrote back a bare path that no longer rendered as an image.
+  The menu and the drag-resize handle now share one parser, and the menu
+  writes the `<…>` form such paths need.
 - **Image paths containing a space or parenthesis now work.** A path such as
   `OneDrive - Some Company\pic.jpg` or `Screenshot (1).png` used to break the
   image reference entirely, whether typed, browsed or dropped; such paths
