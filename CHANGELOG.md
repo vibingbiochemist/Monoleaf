@@ -63,6 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   breaks were recalculated between the table appearing and the edit, which
   is almost always. Cell edits, the table toolbar and Delete table all
   reach the document again.
+- **A right-click submenu closes when the pointer moves on.** The Image,
+  Table and Change case submenus stayed open once shown, so moving to another
+  entry stacked a second submenu on top of the first. A submenu now closes
+  when the pointer reaches another entry or the formatting buttons.
 - **Enter works properly in files with Windows line endings.** In a file
   saved with CRLF line endings (as Notepad and many Windows tools write
   them), Enter left the cursor two characters too far along, and near the
