@@ -18,7 +18,7 @@ import {
 import { MenuItem } from "./contextmenu";
 import { insertedLength } from "./document";
 import { PageBreak, pageBreakPositions, setPageBreaks } from "./pagination";
-import { cellSpellcheck } from "./spellcheck";
+import { cellSpellcheck, paintMisspelledIn } from "./spellcheck";
 import { cellDisplayHtml, cellHasRichContent } from "./tablecell";
 import {
   ColAlign,
@@ -383,6 +383,9 @@ function showCell(cell: HTMLElement, raw: string, splits?: CellSplit[]) {
   } else {
     cell.textContent = raw;
   }
+  // Spelling underlines for the rendered text (spellcheck.ts); a cell being
+  // edited shows its raw source instead, where the webview checks typing.
+  paintMisspelledIn(cell);
 }
 
 /** The markdown source of a cell, regardless of whether it is rendered. */
