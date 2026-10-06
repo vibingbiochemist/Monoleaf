@@ -56,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The page indicator no longer claims "1" page before the first measurement
+  has succeeded.** When the background page measurement failed on a
+  document's very first pass, the indicator fell back to a built-in "1" and
+  showed "p. 1 / 1" for a document of any length. The first measurement is
+  now retried up to three times, and the indicator shows "p. 1 / ?" until
+  one succeeds.
 - **Enter works properly in files with Windows line endings.** In a file
   saved with CRLF line endings (as Notepad and many Windows tools write
   them), Enter left the cursor two characters too far along, and near the

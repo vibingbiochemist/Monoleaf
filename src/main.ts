@@ -1913,7 +1913,15 @@ const pageIndicator = document.getElementById("page-indicator")!;
 const PAGINATION_KEY = "monoleaf.pagination";
 let paginationEnabled = localStorage.getItem(PAGINATION_KEY) !== "false";
 let knownBreaks: PageBreak[] = [];
-let knownPages = 1;
+// null until a measurement has succeeded for this document. A Paged.js
+// internal crash on the very first pass keeps the last known count, and before
+// any pass there is none — showing "1" there would be a confident wrong number
+// (#38), so the indicator shows "?" instead.
+let knownPages: number | null = null;
+// The crash is a timing race, so a document's first measurement is attempted
+// up to this many times before "?" is left standing until the next edit.
+const FIRST_MEASURE_ATTEMPTS = 3;
+let firstMeasureFailures = 0;
 let paginationTimer: number | undefined;
 let paginationRunning = false;
 let paginationQueued = false;
@@ -1929,7 +1937,7 @@ function refreshPageIndicator() {
     return;
   }
   const page = pageAt(knownBreaks, view.state.selection.main.head);
-  pageIndicator.textContent = `p. ${page} / ${knownPages}`;
+  pageIndicator.textContent = `p. ${page} / ${knownPages ?? "?"}`;
 }
 
 function togglePagination() {
@@ -1940,7 +1948,8 @@ function togglePagination() {
     schedulePagination(50);
   } else {
     knownBreaks = [];
-    knownPages = 1;
+    knownPages = null;
+    firstMeasureFailures = 0;
     if (view.state.field(pageBreaksField, false) !== undefined) {
       view.dispatch({ effects: setPageBreaks.of([]) });
     }
@@ -2014,6 +2023,7 @@ async function runPagination() {
     );
     knownBreaks = breaks;
     knownPages = pages;
+    firstMeasureFailures = 0;
     lastMeasureKey = key;
     view.dispatch({ effects: setPageBreaks.of(breaks) });
     refreshPageIndicator();
@@ -2028,6 +2038,14 @@ async function runPagination() {
     if (isPagedjsInternalError(err)) {
       view.dispatch({ effects: setPageBreaks.of(knownBreaks) });
       refreshPageIndicator();
+      // No good count to fall back on yet: try again (the finally block
+      // schedules the queued run), a bounded number of times.
+      if (knownPages === null) {
+        firstMeasureFailures++;
+        if (firstMeasureFailures < FIRST_MEASURE_ATTEMPTS) {
+          paginationQueued = true;
+        }
+      }
     } else {
       reportError(`Pagination: ${String(err)}`);
       pageIndicator.textContent = "";
@@ -2365,7 +2383,8 @@ function loadIntoEditor(
   if (path !== null) rememberLastFile(path);
   dirty = false;
   knownBreaks = [];
-  knownPages = 1;
+  knownPages = null;
+  firstMeasureFailures = 0;
   // setState wiped the (per-state) page-break field; force a real re-measure
   // rather than let a matching cache key short-circuit it to an empty field.
   lastMeasureKey = "";
