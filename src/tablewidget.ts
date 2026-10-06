@@ -42,7 +42,11 @@ import {
  * Block widgets spanning line breaks must be provided by a StateField.
  */
 
-const refreshTables = StateEffect.define<null>();
+/** Rebuild the table widgets without a document change: dispatched once the
+ * background parse has advanced far enough to see tables it had not reached
+ * (see tableRefresher). Exported so tests can do the same after
+ * ensureSyntaxTree. */
+export const refreshTables = StateEffect.define<null>();
 
 // Focus to restore after a commit rebuilds the widget (same table start).
 let pendingFocus: { from: number; row: number; col: number } | null = null;
