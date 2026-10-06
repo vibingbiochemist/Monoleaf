@@ -95,7 +95,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## @codemirror/commands@6.11.0
+## @codemirror/commands@6.11.1
 
 License: MIT
 Repository: git+https://code.haverbeke.berlin/codemirror/commands
@@ -849,7 +849,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## @codemirror/search@6.7.1
+## @codemirror/search@6.7.2
 
 License: MIT
 Repository: git+https://code.haverbeke.berlin/codemirror/search
@@ -878,7 +878,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## @codemirror/state@6.7.1
+## @codemirror/state@6.7.6
 
 License: MIT
 Repository: git+https://code.haverbeke.berlin/codemirror/state
@@ -907,7 +907,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## @codemirror/view@6.43.9
+## @codemirror/view@6.43.13
 
 License: MIT
 Repository: git+https://code.haverbeke.berlin/codemirror/view
@@ -2097,67 +2097,35 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## @tauri-apps/api@2.11.1
+## @tauri-apps/api@2.12.0
 
 License: Apache-2.0 OR MIT
 Repository: https://github.com/tauri-apps/tauri
 
 ```
-# @tauri-apps/api
-
- <img align="right" src="https://github.com/tauri-apps/tauri/raw/dev/.github/icon.png" height="128" width="128">
-
-[![status](https://img.shields.io/badge/status-stable-blue.svg)](https://github.com/tauri-apps/tauri/tree/dev)
-[![License](https://img.shields.io/badge/License-MIT%20or%20Apache%202-green.svg)](https://opencollective.com/tauri)
-[![lint js](https://img.shields.io/github/actions/workflow/status/tauri-apps/tauri/lint-js.yml?label=lint%20js&logo=github)](https://github.com/tauri-apps/tauri/actions/workflows/lint-js.yml)
-[![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Ftauri-apps%2Ftauri.svg?type=shield)](https://app.fossa.com/projects/git%2Bgithub.com%2Ftauri-apps%2Ftauri?ref=badge_shield)
-[![Chat Server](https://img.shields.io/badge/chat-discord-7289da.svg)](https://discord.gg/SpmNs4S)
-[![website](https://img.shields.io/badge/website-tauri.app-purple.svg)](https://tauri.app)
-[![https://good-labs.github.io/greater-good-affirmation/assets/images/badge.svg](https://good-labs.github.io/greater-good-affirmation/assets/images/badge.svg)](https://good-labs.github.io/greater-good-affirmation)
-[![support](https://img.shields.io/badge/sponsor-Open%20Collective-blue.svg)](https://opencollective.com/tauri)
-
-| Component       | Version                                               |
-| --------------- | ----------------------------------------------------- |
-| @tauri-apps/api | ![](https://img.shields.io/npm/v/@tauri-apps/api.svg) |
-
-## About Tauri
-
-Tauri is a polyglot and generic system that is very composable and allows engineers to make a wide variety of applications. It is used for building applications for Desktop Computers using a combination of Rust tools and HTML rendered in a Webview. Apps built with Tauri can ship with any number of pieces of an optional JS API / Rust API so that webviews can control the system via message passing. In fact, developers can extend the default API with their own functionality and bridge the Webview and Rust-based backend easily.
-
-Tauri apps can have custom menus and have tray-type interfaces. They can be updated, and are managed by the user's operating system as expected. They are very small, because they use the system's webview. They do not ship a runtime, since the final binary is compiled from rust. This makes the reversing of Tauri apps not a trivial task.
-
-## This module
-
-This is a typescript library that creates `cjs` and `esm` JavaScript endpoints for you to import into your Frontend framework so that the Webview can call and listen to backend activity. We also ship the pure typescript, because for some frameworks this is more optimal. It uses the message passing of webviews to their hosts.
-
-To learn more about the details of how all of these pieces fit together, please consult this [ARCHITECTURE.md](https://github.com/tauri-apps/tauri/blob/dev/ARCHITECTURE.md) document.
-
-## Installation
-
-The preferred method is to install this module locally as a dependency:
-
-```
-$ pnpm add @tauri-apps/api
-$ yarn add @tauri-apps/api
-$ npm add @tauri-apps/api
+SPDXVersion: SPDX-2.1
+DataLicense: CC0-1.0
+PackageName: tauri
+DataFormat: SPDXRef-1
+PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
+PackageHomePage: https://tauri.app
+PackageLicenseDeclared: Apache-2.0
+PackageLicenseDeclared: MIT
+PackageCopyrightText: 2019-2025, The Tauri Programme in the Commons Conservancy
+PackageSummary: <text>Tauri is a rust project that enables developers to make secure
+and small desktop applications using a web frontend.
+                </text>
+PackageComment: <text>The package includes the following libraries; see
+Relationship information.
+                </text>
+Created: 2019-05-20T09:00:00Z
+PackageDownloadLocation: git://github.com/tauri-apps/tauri
+PackageDownloadLocation: git+https://github.com/tauri-apps/tauri.git
+PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
+Creator: Person: Daniel Thompson-Yvetot
 ```
 
-## Semver
-
-**tauri** is following [Semantic Versioning 2.0](https://semver.org/).
-
-## Licenses
-
-Code: (c) 2019 - 2021 - The Tauri Programme within The Commons Conservancy.
-
-MIT or MIT/Apache 2.0 where applicable.
-
-Logo: CC-BY-NC-ND
-
-- Original Tauri Logo Designs by [Daniel Thompson-Yvetot](https://github.com/nothingismagick) and [Guillaume Chau](https://github.com/akryum)
-```
-
-## @tauri-apps/plugin-clipboard-manager@2.3.2
+## @tauri-apps/plugin-clipboard-manager@2.4.0
 
 License: MIT OR Apache-2.0
 Repository: https://github.com/tauri-apps/plugins-workspace
@@ -2185,7 +2153,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-## @tauri-apps/plugin-dialog@2.7.2
+## @tauri-apps/plugin-dialog@2.8.0
 
 License: MIT OR Apache-2.0
 Repository: https://github.com/tauri-apps/plugins-workspace
@@ -2213,7 +2181,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-## @tauri-apps/plugin-opener@2.5.4
+## @tauri-apps/plugin-opener@2.6.0
 
 License: MIT OR Apache-2.0
 Repository: https://github.com/tauri-apps/plugins-workspace
@@ -2662,7 +2630,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
-## commander@8.3.0
+## commander@15.0.0
 
 License: MIT
 Repository: https://github.com/tj/commander.js
@@ -2796,7 +2764,7 @@ OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
 PERFORMANCE OF THIS SOFTWARE.
 ```
 
-## dompurify@3.4.13
+## dompurify@3.4.16
 
 License: (MPL-2.0 OR Apache-2.0)
 Repository: https://github.com/cure53/DOMPurify
@@ -3209,7 +3177,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## katex@0.18.4
+## katex@0.18.9
 
 License: MIT
 Repository: https://github.com/KaTeX/KaTeX
@@ -3379,7 +3347,7 @@ ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ```
 
-## markdown-it@15.0.0
+## markdown-it@15.0.2
 
 License: MIT
 Repository: https://github.com/markdown-it/markdown-it
@@ -4550,7 +4518,7 @@ limitations under the License.
 
 Used by:
 - dpi 0.1.2
-- tao 0.35.3
+- tao 0.37.1
 
 ```
 Apache License
@@ -4842,8 +4810,8 @@ limitations under the License.
 ## BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
 
 Used by:
-- alloc-no-stdlib 2.0.4
-- brotli 8.0.4
+- alloc-no-stdlib 3.0.0
+- brotli 9.0.0
 
 ```
 Copyright (c) 2016 Dropbox, Inc.
@@ -4902,7 +4870,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ## BSD 3-Clause &quot;New&quot; or &quot;Revised&quot; License
 
 Used by:
-- alloc-stdlib 0.2.4
+- alloc-stdlib 0.3.0
 
 ```
 Copyright (c) <year> <owner>. 
@@ -5002,6 +4970,55 @@ THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLI
 
 ```
 
+## Creative Commons Zero v1.0 Universal
+
+Used by:
+- notify 8.2.0
+
+```
+Creative Commons CC0 1.0 Universal
+
+<<beginOptional;name=ccOptionalIntro>> CREATIVE COMMONS CORPORATION IS NOT A LAW FIRM AND DOES NOT PROVIDE LEGAL SERVICES. DISTRIBUTION OF THIS DOCUMENT DOES NOT CREATE AN ATTORNEY-CLIENT RELATIONSHIP. CREATIVE COMMONS PROVIDES THIS INFORMATION ON AN "AS-IS" BASIS. CREATIVE COMMONS MAKES NO WARRANTIES REGARDING THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS PROVIDED HEREUNDER, AND DISCLAIMS LIABILITY FOR DAMAGES RESULTING FROM THE USE OF THIS DOCUMENT OR THE INFORMATION OR WORKS PROVIDED HEREUNDER.  <<endOptional>>
+
+Statement of Purpose
+
+The laws of most jurisdictions throughout the world automatically confer exclusive Copyright and Related Rights (defined below) upon the creator and subsequent owner(s) (each and all, an "owner") of an original work of authorship and/or a database (each, a "Work").
+
+Certain owners wish to permanently relinquish those rights to a Work for the purpose of contributing to a commons of creative, cultural and scientific works ("Commons") that the public can reliably and without fear of later claims of infringement build upon, modify, incorporate in other works, reuse and redistribute as freely as possible in any form whatsoever and for any purposes, including without limitation commercial purposes. These owners may contribute to the Commons to promote the ideal of a free culture and the further production of creative, cultural and scientific works, or to gain reputation or greater distribution for their Work in part through the use and efforts of others.
+
+For these and/or other purposes and motivations, and without any expectation of additional consideration or compensation, the person associating CC0 with a Work (the "Affirmer"), to the extent that he or she is an owner of Copyright and Related Rights in the Work, voluntarily elects to apply CC0 to the Work and publicly distribute the Work under its terms, with knowledge of his or her Copyright and Related Rights in the Work and the meaning and intended legal effect of CC0 on those rights.
+
+1. Copyright and Related Rights. A Work made available under CC0 may be protected by copyright and related or neighboring rights ("Copyright and Related Rights"). Copyright and Related Rights include, but are not limited to, the following:
+
+     i. the right to reproduce, adapt, distribute, perform, display, communicate, and translate a Work;
+
+     ii. moral rights retained by the original author(s) and/or performer(s);
+
+     iii. publicity and privacy rights pertaining to a person's image or likeness depicted in a Work;
+
+     iv. rights protecting against unfair competition in regards to a Work, subject to the limitations in paragraph 4(a), below;
+
+     v. rights protecting the extraction, dissemination, use and reuse of data in a Work;
+
+     vi. database rights (such as those arising under Directive 96/9/EC of the European Parliament and of the Council of 11 March 1996 on the legal protection of databases, and under any national implementation thereof, including any amended or successor version of such directive); and
+
+     vii. other similar, equivalent or corresponding rights throughout the world based on applicable law or treaty, and any national implementations thereof.
+
+2. Waiver. To the greatest extent permitted by, but not in contravention of, applicable law, Affirmer hereby overtly, fully, permanently, irrevocably and unconditionally waives, abandons, and surrenders all of Affirmer's Copyright and Related Rights and associated claims and causes of action, whether now known or unknown (including existing as well as future claims and causes of action), in the Work (i) in all territories worldwide, (ii) for the maximum duration provided by applicable law or treaty (including future time extensions), (iii) in any current or future medium and for any number of copies, and (iv) for any purpose whatsoever, including without limitation commercial, advertising or promotional purposes (the "Waiver"). Affirmer makes the Waiver for the benefit of each member of the public at large and to the detriment of Affirmer's heirs and successors, fully intending that such Waiver shall not be subject to revocation, rescission, cancellation, termination, or any other legal or equitable action to disrupt the quiet enjoyment of the Work by the public as contemplated by Affirmer's express Statement of Purpose.
+
+3. Public License Fallback. Should any part of the Waiver for any reason be judged legally invalid or ineffective under applicable law, then the Waiver shall be preserved to the maximum extent permitted taking into account Affirmer's express Statement of Purpose. In addition, to the extent the Waiver is so judged Affirmer hereby grants to each affected person a royalty-free, non transferable, non sublicensable, non exclusive, irrevocable and unconditional license to exercise Affirmer's Copyright and Related Rights in the Work (i) in all territories worldwide, (ii) for the maximum duration provided by applicable law or treaty (including future time extensions), (iii) in any current or future medium and for any number of copies, and (iv) for any purpose whatsoever, including without limitation commercial, advertising or promotional purposes (the "License"). The License shall be deemed effective as of the date CC0 was applied by Affirmer to the Work. Should any part of the License for any reason be judged legally invalid or ineffective under applicable law, such partial invalidity or ineffectiveness shall not invalidate the remainder of the License, and in such case Affirmer hereby affirms that he or she will not (i) exercise any of his or her remaining Copyright and Related Rights in the Work or (ii) assert any associated claims and causes of action with respect to the Work, in either case contrary to Affirmer's express Statement of Purpose.
+
+4. Limitations and Disclaimers.
+
+     a. No trademark or patent rights held by Affirmer are waived, abandoned, surrendered, licensed or otherwise affected by this document.
+
+     b. Affirmer offers the Work as-is and makes no representations or warranties of any kind concerning the Work, express, implied, statutory or otherwise, including without limitation warranties of title, merchantability, fitness for a particular purpose, non infringement, or the absence of latent or other defects, accuracy, or the present or absence of errors, whether or not discoverable, all to the greatest extent permissible under applicable law.
+
+     c. Affirmer disclaims responsibility for clearing rights of other persons that may apply to the Work or any use thereof, including without limitation any person's Copyright and Related Rights in the Work. Further, Affirmer disclaims responsibility for obtaining any necessary consents, permissions or other rights required for any use of the Work.
+
+     d. Affirmer understands and acknowledges that Creative Commons is not a party to this document and has no duty or obligation with respect to this CC0 or use of the Work. 
+```
+
 ## Community Data License Agreement Permissive 2.0
 
 Used by:
@@ -5097,6 +5114,49 @@ Used by:
 ## ISC License
 
 Used by:
+- inotify-sys 0.1.8
+
+```
+Copyright (c) Hanno Braun and contributors
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+```
+
+## ISC License
+
+Used by:
+- inotify 0.11.5
+
+```
+Copyright (c) Hanno Braun and contributors
+
+Permission to use, copy, modify, and/or distribute this software for any purpose
+with or without fee is hereby granted, provided that the above copyright notice
+and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY AND
+FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM LOSS
+OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER
+TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF
+THIS SOFTWARE.
+
+```
+
+## ISC License
+
+Used by:
 - ring 0.17.14
 
 ```
@@ -5119,7 +5179,7 @@ CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 ## ISC License
 
 Used by:
-- rustls-webpki 0.103.13
+- rustls-webpki 0.103.15
 
 ```
 Except as otherwise noted, this project is licensed under the following
@@ -5214,7 +5274,7 @@ DEALINGS IN THE SOFTWARE.
 ## MIT License
 
 Used by:
-- brotli 8.0.4
+- brotli 9.0.0
 
 ```
 Copyright (c) 2009, 2010, 2013-2016 by the Brotli Authors.
@@ -5244,6 +5304,7 @@ THE SOFTWARE.
 Used by:
 - core-foundation-sys 0.8.7
 - core-foundation 0.10.1
+- core-foundation 0.9.4
 - core-graphics-types 0.2.0
 - core-graphics 0.25.0
 - euclid 0.20.14
@@ -5596,8 +5657,8 @@ DEALINGS IN THE SOFTWARE.
 ## MIT License
 
 Used by:
-- html5ever 0.38.0
-- markup5ever 0.38.0
+- html5ever 0.39.0
+- markup5ever 0.39.0
 - web_atoms 0.2.5
 
 ```
@@ -6352,7 +6413,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 Used by:
 - hyper-rustls 0.27.9
 - rustls-native-certs 0.8.4
-- rustls 0.23.43
+- rustls 0.23.45
 
 ```
 Copyright (c) 2016 Joseph Birr-Pixton <jpixton@gmail.com>
@@ -6417,6 +6478,35 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
+- kqueue-sys 1.1.2
+- kqueue 1.2.1
+
+```
+Copyright (c) 2016 William Orr <will@worrbase.com>
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 
 ```
 
@@ -6718,7 +6808,7 @@ DEALINGS IN THE SOFTWARE.
 ## MIT License
 
 Used by:
-- keyboard-types 0.7.0
+- keyboard-types 0.8.3
 
 ```
 Copyright (c) 2017 Pyfisch
@@ -7299,6 +7389,7 @@ DEALINGS IN THE SOFTWARE.
 Used by:
 - dirs-sys 0.5.0
 - dirs 6.0.0
+- dirs 7.0.0
 
 ```
 Copyright (c) 2018-2019 dirs-rs contributors
@@ -7841,7 +7932,7 @@ DEALINGS IN THE SOFTWARE.
 ## MIT License
 
 Used by:
-- chacha20 0.10.1
+- chacha20 0.10.2
 
 ```
 Copyright (c) 2019-2026 The RustCrypto Project Developers
@@ -8075,6 +8166,41 @@ SOFTWARE.
 ## MIT License
 
 Used by:
+- notify-debouncer-mini 0.7.0
+- notify-types 2.1.0
+
+```
+Copyright (c) 2023 Notify Contributors
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
 - bit-set 0.8.0
 - bit-vec 0.8.0
 
@@ -8110,7 +8236,7 @@ DEALINGS IN THE SOFTWARE.
 ## MIT License
 
 Used by:
-- swift-rs 1.0.7
+- swift-rs 1.0.8
 
 ```
 Copyright (c) 2023 The swift-rs Developers
@@ -8228,6 +8354,41 @@ DEALINGS IN THE SOFTWARE.
 ## MIT License
 
 Used by:
+- system-configuration-sys 0.6.0
+- system-configuration 0.7.0
+
+```
+Copyright (c) 2024 Mullvad VPN AB
+
+Permission is hereby granted, free of charge, to any
+person obtaining a copy of this software and associated
+documentation files (the "Software"), to deal in the
+Software without restriction, including without
+limitation the rights to use, copy, modify, merge,
+publish, distribute, sublicense, and/or sell copies of
+the Software, and to permit persons to whom the Software
+is furnished to do so, subject to the following
+conditions:
+
+The above copyright notice and this permission notice
+shall be included in all copies or substantial portions
+of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
+ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
+TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
+PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
+SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
+IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
 - zbus 5.18.0
 - zbus_macros 5.18.0
 - zbus_names 4.3.4
@@ -8269,9 +8430,7 @@ Used by:
 - serde_spanned 0.6.9
 - serde_spanned 1.1.1
 - toml 0.8.2
-- toml 0.9.12+spec-1.1.0
 - toml 1.1.3+spec-1.1.0
-- toml_datetime 0.7.5+spec-1.1.0
 - toml_datetime 1.1.1+spec-1.1.0
 - toml_edit 0.19.15
 - toml_edit 0.20.2
@@ -8760,6 +8919,42 @@ SOFTWARE.
 ## MIT License
 
 Used by:
+- tauri-build 2.7.0
+- tauri-codegen 2.7.0
+- tauri-macros 2.7.0
+- tauri-runtime-wry 2.12.0
+- tauri-runtime 2.12.0
+- tauri-utils 2.10.0
+- tauri 2.12.0
+
+```
+MIT License
+
+Copyright (c) 2017 - Present Tauri Apps Contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
 - tree_magic_mini 3.2.2
 
 ```
@@ -8820,7 +9015,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- json-patch 3.0.1
+- json-patch 4.2.0
 
 ```
 MIT License
@@ -8850,6 +9045,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
+- cfb 0.14.0
 - cfb 0.7.3
 
 ```
@@ -9003,6 +9199,7 @@ SOFTWARE.
 
 Used by:
 - infer 0.19.0
+- infer 0.22.0
 
 ```
 MIT License
@@ -9239,7 +9436,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- window-vibrancy 0.6.0
+- window-vibrancy 0.8.1
 
 ```
 MIT License
@@ -9269,7 +9466,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- wry 0.55.1
+- wry 0.57.0
 
 ```
 MIT License
@@ -9330,12 +9527,42 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- urlpattern 0.3.0
+- urlpattern 0.6.0
 
 ```
 MIT License
 
 Copyright (c) 2021 the Deno authors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
+- tao-macros 0.1.4
+
+```
+MIT License
+
+Copyright (c) 2022 - Present Tauri Apps Contributors
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9420,7 +9647,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- jsonptr 0.6.3
+- jsonptr 0.7.1
 
 ```
 MIT License
@@ -9480,7 +9707,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- muda 0.19.3
+- muda 0.20.0
 
 ```
 MIT License
@@ -9540,7 +9767,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- dom_query 0.27.0
+- dom_query 0.28.0
 
 ```
 MIT License
@@ -9606,11 +9833,41 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- monoleaf 1.1.0
+- web-time 1.1.0
+
+```
+MIT License
+
+Copyright (c) 2023 dAxpeDDa
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
+- monoleaf 1.2.1
 - adobe-cmap-parser 0.4.1
 - block2 0.6.2
-- brotli-decompressor 5.0.3
-- cargo_toml 0.22.3
+- brotli-decompressor 6.0.1
+- cargo_toml 1.0.1
 - cesu8 1.1.0
 - dispatch2 0.3.1
 - dlopen2 0.8.2
@@ -9620,6 +9877,7 @@ Used by:
 - jni-sys-macros 0.4.1
 - jni 0.22.4
 - minisign-verify 0.2.5
+- ndk-context 0.1.1
 - ndk-sys 0.6.0+11769913
 - ndk 0.9.0
 - objc2-app-kit 0.3.2
@@ -9639,36 +9897,23 @@ Used by:
 - objc2-user-notifications 0.3.2
 - objc2-web-kit 0.3.2
 - objc2 0.6.4
-- pdf-extract 0.12.0
+- pdf-extract 0.12.1
 - postscript 0.14.1
 - r-efi 5.3.0
 - r-efi 6.0.0
 - rustls-platform-verifier-android 0.1.1
 - siphasher 1.0.3
-- tao-macros 0.1.3
-- tauri-build 2.6.3
-- tauri-codegen 2.6.3
-- tauri-macros 2.6.3
-- tauri-plugin-clipboard-manager 2.3.2
-- tauri-plugin-dialog 2.7.2
-- tauri-plugin-fs 2.5.1
-- tauri-plugin-opener 2.5.4
-- tauri-plugin-single-instance 2.4.3
-- tauri-plugin-updater 2.10.1
-- tauri-plugin 2.6.3
-- tauri-runtime-wry 2.11.4
-- tauri-runtime 2.11.3
-- tauri-utils 2.9.3
-- tauri 2.11.5
+- tauri-plugin-clipboard-manager 2.4.0
+- tauri-plugin-dialog 2.8.0
+- tauri-plugin-fs 2.6.0
+- tauri-plugin-opener 2.6.0
+- tauri-plugin-single-instance 2.5.0
+- tauri-plugin-updater 2.13.0
+- tauri-plugin 2.7.0
 - type1-encoding-parser 0.1.1
-- unic-char-property 0.9.0
-- unic-char-range 0.9.0
-- unic-common 0.9.0
-- unic-ucd-ident 0.9.0
-- unic-ucd-version 0.9.0
 - webview2-com-macros 0.8.1
-- webview2-com-sys 0.38.2
-- webview2-com 0.38.2
+- webview2-com-sys 0.39.1
+- webview2-com 0.39.1
 - winapi-i686-pc-windows-gnu 0.4.0
 - winapi-x86_64-pc-windows-gnu 0.4.0
 - windows-collections 0.2.0
@@ -9683,6 +9928,7 @@ Used by:
 - windows-link 0.2.1
 - windows-numerics 0.2.0
 - windows-numerics 0.3.1
+- windows-registry 0.6.1
 - windows-result 0.3.4
 - windows-result 0.4.1
 - windows-strings 0.4.2
@@ -10049,7 +10295,7 @@ Used by:
 - endi 1.1.1
 - erased-serde 0.4.10
 - event-listener-strategy 0.5.4
-- event-listener 5.4.1
+- event-listener 5.4.2
 - fastrand 2.4.1
 - futures-lite 2.6.1
 - hermit-abi 0.5.2
@@ -10130,7 +10376,6 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 - winnow 0.5.40
-- winnow 0.7.15
 - winnow 1.0.4
 
 ```
@@ -10206,8 +10451,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- ctor-proc-macro 0.0.7
-- ctor 0.8.0
+- ctor 1.0.13
 
 ```
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
@@ -10552,6 +10796,37 @@ THE SOFTWARE.
 ## MIT License
 
 Used by:
+- fsevent-sys 4.1.0
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2015 Pierre Baillet
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+
+```
+
+## MIT License
+
+Used by:
 - security-framework-sys 2.17.0
 - security-framework 3.7.0
 
@@ -10865,6 +11140,36 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
+
+```
+
+## MIT License
+
+Used by:
+- base64 0.23.1
+
+```
+The MIT License (MIT)
+
+Copyright (c) 2025 Alice Maz, Marshall Pierce
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+THE SOFTWARE.
 
 ```
 
@@ -11466,8 +11771,8 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 ## Mozilla Public License 2.0
 
 Used by:
-- cssparser-macros 0.6.1
-- cssparser 0.36.0
+- cssparser-macros 0.7.1
+- cssparser 0.37.0
 
 ```
 Mozilla Public License Version 2.0
@@ -11850,7 +12155,7 @@ Exhibit B - "Incompatible With Secondary Licenses" Notice
 
 Used by:
 - option-ext 0.2.0
-- selectors 0.36.1
+- selectors 0.38.0
 
 ```
 Mozilla Public License Version 2.0
