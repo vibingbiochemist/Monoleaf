@@ -5,7 +5,7 @@ All notable changes to Monoleaf are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.0] - 2026-10-06
 
 ### Added
 
@@ -103,7 +103,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cut the reference off at the `)` inside the name, and "Original size" on a
   sized `<img>` wrote back a bare path that no longer rendered as an image.
   The menu and the drag-resize handle now share one parser, and the menu
-  writes the `<…>` form such paths need.
+  writes the `<…>` form such paths need. It also shows only what applies
+  to the image (sizes and alignment) instead of burying them in a submenu
+  above the text formatting tools.
 - **Image paths containing a space or parenthesis now work.** A path such as
   `OneDrive - Some Company\pic.jpg` or `Screenshot (1).png` used to break the
   image reference entirely, whether typed, browsed or dropped; such paths
