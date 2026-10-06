@@ -5,7 +5,11 @@ All notable changes to Monoleaf are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.3.0] - 2026-10-06
+## [1.3.1] - 2026-10-06
+
+1.3.0 was published briefly and withdrawn, because updating to it from
+inside Monoleaf failed (first entry under Fixed). Everything it contained is
+part of this release and listed here.
 
 ### Added
 
@@ -56,6 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Updating from inside Monoleaf no longer stops with "Failed to kill
+  Monoleaf".** Choosing Install and restart closed Monoleaf and started the
+  installer, which gave up because Monoleaf was still in the middle of
+  closing, so the update never happened. The installer now waits for
+  Monoleaf to finish closing first. Updating to this version from 1.2.1
+  works, since it is the new installer that does the waiting.
 - **Text typed into a table cell is saved again.** Since 1.2.1, an edit in
   a table cell could stay visible in the grid without ever reaching the
   document, so it was missing from the saved file and from PDF, print and
