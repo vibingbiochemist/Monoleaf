@@ -66,6 +66,7 @@ function buildItems(menu: HTMLElement, items: MenuItem[]) {
         });
         row.appendChild(btn);
       }
+      row.addEventListener("mouseenter", closeSubmenu);
       menu.appendChild(row);
       continue;
     }
@@ -87,6 +88,7 @@ function buildItems(menu: HTMLElement, items: MenuItem[]) {
         sub.dataset.for = item.label;
         buildItems(sub, item.items);
         menu.appendChild(sub);
+        openSubmenu = sub;
         // To the right of the row; flip left at the viewport edge.
         sub.style.top = `${btn.offsetTop - 6}px`;
         const menuRect = menu.getBoundingClientRect();
