@@ -85,11 +85,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   on a system set to dark the editor stayed dark however it was set. The
   switch now decides; until it is first used, the system setting still
   applies.
-- **Spellcheck no longer turns itself off, and it can be switched off.**
-  Spellcheck was only active in the writing view, so switching to the source
-  view silently disabled it. It now applies to both views, and Settings has
-  a Spellcheck switch. The dictionary language follows the system's
-  language settings.
+- **Spelling mistakes are underlined everywhere, not just while typing.**
+  On Windows the underline only ever appeared under words as they were
+  typed: an opened document showed none, however many typos it had, and
+  switching spellcheck off and on again removed every mark for good, while
+  right-click still offered corrections. Monoleaf now draws the underline
+  itself, from the same Windows spell checker the right-click suggestions
+  come from, so opened text, text changed by another program and both views
+  are all checked; Add to dictionary removes the underline at once.
+  Spellcheck was also only active in the writing view, so switching to the
+  source view silently disabled it. It now applies to both views, and
+  Settings has a Spellcheck switch. Words are checked against the system
+  language and English.
 - **The right-click image menu now handles paths containing a space or
   parenthesis.** Picking a size for `![pic](<Screenshot (1).png>)` used to
   cut the reference off at the `)` inside the name, and "Original size" on a

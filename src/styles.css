@@ -1613,6 +1613,19 @@ html.theme-dark #editor .cm-cursor {
   border-radius: 2px;
 }
 
+/* --- Spelling (spellcheck.ts) ---
+   The editor's own underline on Windows, styled like the webview's it
+   replaces: a thin red wave under the word. */
+
+.cm-misspelled {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: light-dark(#d93025, #ff6b60);
+  text-decoration-thickness: 1px;
+  text-decoration-skip-ink: none;
+  text-underline-offset: 3px;
+}
+
 /* --- Tracked changes (CriticMarkup) --- */
 
 .cm-critic-ins {

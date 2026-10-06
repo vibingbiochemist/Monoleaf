@@ -11,9 +11,11 @@ import "./fontfaces";
 // Mac-specific key bindings come from the same platform module.
 import {
   isMac as isMacOS,
+  isWindows,
   formatShortcut,
   localizeShortcutLabels,
 } from "./platform";
+import { cellSpellcheck, recheckWord, spellUnderlines } from "./spellcheck";
 import { editorSetup, rawViewExtensions } from "./setup";
 import {
   Compartment,
@@ -749,18 +751,26 @@ let tracking = localStorage.getItem(TRACKING_STORAGE_KEY) === "true";
 const modeCompartment = new Compartment();
 const liveCompartment = new Compartment();
 const trackingCompartment = new Compartment();
-// Native (WebView2/WebKit) spellcheck, on by default. One setting for both
-// views: when only the writing view set the attribute, switching to the raw
-// view silently turned it off, which read as spellcheck disabling itself
-// (issue #83). The dictionary language is the OS's; the webview offers the app
-// no way to choose it.
+// Spellcheck, on by default. One setting for both views: when only the writing
+// view set the attribute, switching to the raw view silently turned it off,
+// which read as spellcheck disabling itself (issue #83). The dictionary
+// language is the OS's.
+//
+// On Windows the editor draws the underlines itself from the native checker
+// (spellcheck.ts) and the webview's are switched off, since WebView2 only
+// checks words as they are typed: an opened document never showed any.
+// Elsewhere the webview's spellcheck is all there is. Table cells always use
+// the webview's, as they sit outside the text the editor underlines.
 const SPELLCHECK_KEY = "monoleaf.spellcheck";
 let spellcheckEnabled = localStorage.getItem(SPELLCHECK_KEY) !== "false";
 const spellcheckCompartment = new Compartment();
-const spellcheckAttributes = () =>
+const spellcheckExtensions = () => [
   EditorView.contentAttributes.of({
-    spellcheck: spellcheckEnabled ? "true" : "false",
-  });
+    spellcheck: spellcheckEnabled && !isWindows ? "true" : "false",
+  }),
+  cellSpellcheck.of(spellcheckEnabled),
+  spellcheckEnabled && isWindows ? spellUnderlines() : [],
+];
 const modeButton = document.getElementById("btn-mode")!;
 const flagsButton = document.getElementById("btn-flags") as HTMLButtonElement;
 const liveButton = document.getElementById("btn-live")!;
@@ -2257,7 +2267,7 @@ const editorExtensions = () => [
   modeCompartment.of(portabilityExtensions(mode, showFlags)),
   liveCompartment.of(liveView ? livePreviewExtensions() : rawViewExtensions),
   trackingCompartment.of(tracking ? trackingExtension() : []),
-  spellcheckCompartment.of(spellcheckAttributes()),
+  spellcheckCompartment.of(spellcheckExtensions()),
   commentsExtension(),
   criticExtension(),
   EditorView.lineWrapping,
@@ -2698,7 +2708,7 @@ function toggleSpellcheck() {
   spellcheckEnabled = !spellcheckEnabled;
   localStorage.setItem(SPELLCHECK_KEY, String(spellcheckEnabled));
   view.dispatch({
-    effects: spellcheckCompartment.reconfigure(spellcheckAttributes()),
+    effects: spellcheckCompartment.reconfigure(spellcheckExtensions()),
   });
   refreshModeButtons();
   view.focus();
@@ -3722,7 +3732,10 @@ async function spellingItems(pos: number): Promise<MenuItem[]> {
       kind: "item",
       label: "Add to dictionary",
       action: () => {
-        invoke("spell_add", { word }).catch(() => {});
+        // Re-judged once the dictionary has it, so its underline goes.
+        invoke("spell_add", { word })
+          .then(() => recheckWord(view, word))
+          .catch(() => {});
         view.focus();
       },
     },
