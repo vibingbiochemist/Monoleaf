@@ -3829,15 +3829,20 @@ async function openEditorContextMenu(e: MouseEvent, pos: number | null) {
   const hasSel = !state.selection.main.empty;
   const items: MenuItem[] = [];
 
+  // A right-clicked image gets a menu of its own. Everything else below (the
+  // formatting row, Change case, clipboard, the insert entries) acts on the
+  // cursor or selection, not on the image under the pointer, so offering it
+  // here only buried the image actions one submenu down.
   const imageItems = imageMenuItems(e.target);
+  if (imageItems !== null) {
+    showContextMenu(e.clientX, e.clientY, imageItems);
+    return;
+  }
 
   // Inside a table widget: the table actions join the general menu as a
   // submenu (cell spelling stays on Shift+right-click's native menu).
   const tableItems = tableMenuItems(view, e.target);
-  if (imageItems !== null) {
-    items.push({ kind: "submenu", label: "Image", items: imageItems });
-    items.push({ kind: "separator" });
-  } else if (tableItems !== null) {
+  if (tableItems !== null) {
     items.push({ kind: "submenu", label: "Table", items: tableItems });
     items.push({ kind: "separator" });
   } else if (pos !== null) {
