@@ -91,8 +91,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   switching spellcheck off and on again removed every mark for good, while
   right-click still offered corrections. Monoleaf now draws the underline
   itself, from the same Windows spell checker the right-click suggestions
-  come from, so opened text, text changed by another program and both views
-  are all checked; Add to dictionary removes the underline at once.
+  come from, so opened text, text changed by another program, table cells
+  and both views are all checked; Add to dictionary removes the underline
+  at once.
   Spellcheck was also only active in the writing view, so switching to the
   source view silently disabled it. It now applies to both views, and
   Settings has a Spellcheck switch. Words are checked against the system

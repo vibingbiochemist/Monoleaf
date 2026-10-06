@@ -8,10 +8,13 @@ const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: invokeMock }));
 
 import { markdownForMode } from "./portability";
+import { refreshTables, tableExtensions } from "./tablewidget";
 import {
   extractWords,
+  paintMisspelledIn,
   recheckWord,
   resetSpellCacheForTests,
+  setVerdictForTests,
   spellUnderlines,
 } from "./spellcheck";
 
@@ -179,5 +182,98 @@ describe("spell underlines", () => {
     expect(invokeMock).toHaveBeenCalledTimes(1);
     expect(errors).toHaveBeenCalledTimes(1);
     errors.mockRestore();
+  });
+});
+
+// Found in the release test: rendered table cells are widget DOM, outside
+// the decorated text, and the webview never checks their existing text.
+describe("spelling underlines in rendered table cells", () => {
+  let views: EditorView[] = [];
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    resetSpellCacheForTests();
+    invokeMock.mockReset();
+    invokeMock.mockImplementation(
+      async (_cmd: string, args: { words: string[] }) =>
+        args.words.map((w) => w === "teh" || w === "wrods"),
+    );
+  });
+
+  afterEach(() => {
+    for (const v of views) v.destroy();
+    views = [];
+    vi.useRealTimers();
+  });
+
+  function mount(doc: string, spell = true): EditorView {
+    const parent = document.createElement("div");
+    document.body.appendChild(parent);
+    const state = EditorState.create({
+      doc,
+      extensions: [
+        markdownForMode("enhanced"),
+        tableExtensions(),
+        spell ? spellUnderlines() : [],
+      ],
+    });
+    ensureSyntaxTree(state, doc.length, 5000);
+    const view = new EditorView({ state, parent });
+    view.dispatch({ effects: refreshTables.of(null) }); // table field sees the full parse
+    views.push(view);
+    return view;
+  }
+
+  const cellMarks = (view: EditorView) =>
+    Array.from(
+      view.dom.querySelectorAll(".ml-table-wrap [data-row] .cm-misspelled"),
+    ).map((e) => e.textContent);
+
+  const TABLE = "| Name | Notes |\n|---|---|\n| teh one | good wrods |\n";
+
+  it("wraps flagged words, leaving the cell's text untouched", () => {
+    const view = mount("x"); // an active spell plugin
+    setVerdictForTests("teh", true);
+    setVerdictForTests("good", false);
+    const cell = document.createElement("td");
+    cell.innerHTML = "teh <b>good</b> teh <code>teh</code>";
+    paintMisspelledIn(cell);
+    expect(
+      Array.from(cell.querySelectorAll(".cm-misspelled")).map(
+        (e) => e.textContent,
+      ),
+    ).toEqual(["teh", "teh"]); // not inside <code>
+    expect(cell.textContent).toBe("teh good teh teh");
+    paintMisspelledIn(cell); // repeated: no nesting, same result
+    expect(cell.querySelectorAll(".cm-misspelled").length).toBe(2);
+    expect(cell.querySelector(".cm-misspelled .cm-misspelled")).toBeNull();
+    void view;
+  });
+
+  it("paints rendered cells once the verdicts arrive", async () => {
+    const view = mount(TABLE);
+    await vi.advanceTimersByTimeAsync(300);
+    await vi.runAllTimersAsync();
+    expect(cellMarks(view)).toEqual(["teh", "wrods"]);
+  });
+
+  it("repaints a cell after it was edited and rendered again", async () => {
+    const view = mount(TABLE);
+    await vi.advanceTimersByTimeAsync(300);
+    await vi.runAllTimersAsync();
+    const cell = Array.from(
+      view.dom.querySelectorAll<HTMLElement>(".ml-table-wrap [data-row]"),
+    ).find((c) => c.dataset.raw === "teh one")!;
+    cell.dispatchEvent(new FocusEvent("focusin", { bubbles: true }));
+    expect(cell.querySelector(".cm-misspelled")).toBeNull(); // raw source
+    cell.dispatchEvent(new FocusEvent("focusout", { bubbles: true }));
+    expect(cell.querySelector(".cm-misspelled")?.textContent).toBe("teh");
+  });
+
+  it("leaves cells plain when spellcheck is off", async () => {
+    setVerdictForTests("teh", true);
+    const view = mount(TABLE, false);
+    await vi.runAllTimersAsync();
+    expect(cellMarks(view)).toEqual([]);
   });
 });

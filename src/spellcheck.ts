@@ -143,6 +143,74 @@ export function recheckWord(view: EditorView, word: string): void {
 
 const misspelledMark = Decoration.mark({ class: "cm-misspelled" });
 
+// Editors currently showing these underlines. Rendered table cells are
+// painted only while one is: with spellcheck switched off, or on a platform
+// without the native checker, a cell keeps its plain rendering.
+let activeViews = 0;
+
+/**
+ * Underline the misspelled words inside a rendered table cell.
+ *
+ * Table cells are widget DOM, outside the text the decorations above cover,
+ * and the webview never checks their existing text either (only words typed
+ * into a cell being edited). Their words are judged anyway, since the table's
+ * source is part of the visible document, so the verdicts are already known:
+ * this wraps them in the same `cm-misspelled` span. Safe to call repeatedly;
+ * earlier spans are unwrapped first. Only `textContent`-neutral wrapping, so
+ * the cell's commit logic, which reads its text, is unaffected.
+ */
+export function paintMisspelledIn(root: HTMLElement): void {
+  for (const span of root.querySelectorAll("span.cm-misspelled")) {
+    span.replaceWith(...span.childNodes);
+  }
+  root.normalize();
+  if (activeViews === 0) return;
+  const texts: Text[] = [];
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) =>
+      node.parentElement?.closest("code, .ml-table-pagebreak-inline")
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+  });
+  for (let n = walker.nextNode(); n !== null; n = walker.nextNode()) {
+    texts.push(n as Text);
+  }
+  for (const node of texts) {
+    const text = node.data;
+    const hits: [number, number][] = [];
+    for (const m of text.matchAll(WORD_RE)) {
+      const start = m.index;
+      const end = start + m[0].length;
+      if (m[0].length < 2) continue;
+      if (
+        GLUE_RE.test(text[start - 1] ?? "") ||
+        GLUE_RE.test(text[end] ?? "")
+      ) {
+        continue;
+      }
+      if (known.get(m[0]) === true) hits.push([start, end]);
+    }
+    // Back to front, so earlier offsets stay valid while splitting.
+    for (const [start, end] of hits.reverse()) {
+      const word = node.splitText(start);
+      word.splitText(end - start);
+      const span = document.createElement("span");
+      span.className = "cm-misspelled";
+      word.replaceWith(span);
+      span.appendChild(word);
+    }
+  }
+}
+
+/** Repaint every rendered (not currently edited) table cell in the view. */
+function paintTables(view: EditorView): void {
+  for (const cell of view.contentDOM.querySelectorAll<HTMLElement>(
+    ".ml-table-wrap [data-row]:not([data-editing])",
+  )) {
+    paintMisspelledIn(cell);
+  }
+}
+
 // How long typing must pause before new words are sent off.
 const CHECK_DELAY_MS = 250;
 // Requests are split so one call never comes near the backend's limit.
@@ -161,6 +229,7 @@ const spellPlugin = ViewPlugin.fromClass(
 
     constructor(view: EditorView) {
       this.view = view;
+      activeViews++;
       this.decorations = this.build();
     }
 
@@ -200,7 +269,31 @@ const spellPlugin = ViewPlugin.fromClass(
           builder.add(w.from, w.to, misspelledMark);
         }
       }
+      // A table in the live view is a block widget, and visibleRanges leaves
+      // out what a widget replaces, so its words would never be judged. The
+      // viewport still covers it: queue those words too, for paintTables.
+      const { from: vFrom, to: vTo } = this.view.viewport;
+      syntaxTree(state).iterate({
+        from: vFrom,
+        to: vTo,
+        enter: (node) => {
+          if (node.name !== "Table") return;
+          for (const w of extractWords(state, node.from, node.to)) {
+            if (!known.has(w.word) && !inFlight.has(w.word)) {
+              this.queued.add(w.word);
+            }
+          }
+          return false;
+        },
+      });
       if (this.queued.size > 0) this.schedule();
+      // Table cells are painted after the DOM update, when any rebuilt
+      // widget is in place (a plugin's update runs before it).
+      this.view.requestMeasure({
+        key: paintTables,
+        read: () => null,
+        write: () => paintTables(this.view),
+      });
       return builder.finish();
     }
 
@@ -241,6 +334,10 @@ const spellPlugin = ViewPlugin.fromClass(
     destroy() {
       this.destroyed = true;
       window.clearTimeout(this.timer);
+      activeViews--;
+      // Switched off (or the editor torn down): take the cell underlines away
+      // too, since nothing would refresh them any more.
+      paintTables(this.view);
     }
   },
   { decorations: (v) => v.decorations },
@@ -256,4 +353,9 @@ export function resetSpellCacheForTests(): void {
   known.clear();
   inFlight.clear();
   checkerFailed = false;
+}
+
+/** Test hook: record a verdict directly. */
+export function setVerdictForTests(word: string, misspelled: boolean): void {
+  known.set(word, misspelled);
 }
