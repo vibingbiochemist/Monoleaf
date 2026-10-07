@@ -5,6 +5,15 @@ All notable changes to Monoleaf are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- **A table cell containing a backslash right before a pipe (`a\|b`) no
+  longer splits in two.** Editing such a table, or pasting it from Excel,
+  saved the cell in a form Monoleaf read back as two cells the next time the
+  file was opened, which added a column to that row.
+
 ## [1.3.2] - 2026-10-06
 
 1.3.0 and 1.3.1 were published briefly and withdrawn, because updating to

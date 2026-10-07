@@ -158,8 +158,21 @@ export function normalize(m: TableModel): TableModel {
   };
 }
 
+/**
+ * Escape a cell's pipes so they don't end the cell. splitRow reads `\\` as an
+ * escape pair, so a pipe after an odd run of backslashes (`a\|b`) would come
+ * out as `a\\|b` and split the cell on the next parse. Such a run gets one
+ * more backslash, so the run stays even and the pipe stays escaped.
+ */
+export function escapeCellPipes(text: string): string {
+  return text.replace(
+    /(\\*)\|/g,
+    (_m, bs: string) => (bs.length % 2 === 1 ? `${bs}\\` : bs) + "\\|",
+  );
+}
+
 function escapeCell(text: string): string {
-  return text.replace(/\|/g, "\\|").replace(/\r?\n/g, " ").trim();
+  return escapeCellPipes(text).replace(/\r?\n/g, " ").trim();
 }
 
 function delimiter(a: ColAlign): string {

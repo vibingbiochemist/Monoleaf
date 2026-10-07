@@ -1,5 +1,6 @@
 import TurndownService from "turndown";
 import { gfm } from "turndown-plugin-gfm";
+import { escapeCellPipes } from "./table";
 
 /**
  * Paste-with-formatting: convert the clipboard's HTML flavor (Word, Outlook,
@@ -95,11 +96,9 @@ function service(): TurndownService {
       const cols = Math.max(...rows.map((r) => r.length));
 
       const cellText = (cell: Element): string =>
-        td
-          .turndown(cell.innerHTML)
-          .replace(/\s*\n\s*/g, " ")
-          .replace(/\|/g, "\\|")
-          .trim();
+        escapeCellPipes(
+          td.turndown(cell.innerHTML).replace(/\s*\n\s*/g, " "),
+        ).trim();
       const cellAlign = (cell: Element): string => {
         const style = (cell.getAttribute("style") ?? "").toLowerCase();
         const attr = (cell.getAttribute("align") ?? "").toLowerCase();
@@ -395,7 +394,7 @@ export function tsvToMarkdownTable(text: string): string | null {
   // Allow ragged rows but require the grid to be broadly consistent.
   if (!rows.every((r) => Math.abs(r.length - cols) <= 1)) return null;
 
-  const esc = (c: string) => c.replace(/\|/g, "\\|").trim();
+  const esc = (c: string) => escapeCellPipes(c).trim();
   const pad = (r: string[]) =>
     r.length >= cols
       ? r.slice(0, cols)
