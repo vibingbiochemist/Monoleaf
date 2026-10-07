@@ -9863,7 +9863,7 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- monoleaf 1.2.1
+- monoleaf 1.3.2
 - adobe-cmap-parser 0.4.1
 - block2 0.6.2
 - brotli-decompressor 6.0.1
