@@ -100,6 +100,11 @@ describe("tsvToMarkdownTable (Excel / Sheets paste)", () => {
     expect(tsvToMarkdownTable("a\tb\nx|y\tz")).toContain("x\\|y");
   });
 
+  it("keeps a cell whole when a backslash sits right before a pipe", () => {
+    const md = tsvToMarkdownTable(String.raw`a\|b` + "\tc\nd\te")!;
+    expect(parseTableText(md)!.header).toHaveLength(2);
+  });
+
   it("handles CRLF and a trailing newline", () => {
     const md = tsvToMarkdownTable("a\tb\r\n1\t2\r\n")!;
     expect(md).toContain("| 1 | 2 |");

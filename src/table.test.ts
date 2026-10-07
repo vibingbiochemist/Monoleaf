@@ -7,6 +7,7 @@ import {
   deleteCol,
   deleteRow,
   emptyTable,
+  escapeCellPipes,
   insertCol,
   insertRow,
   parseTableText,
@@ -41,6 +42,20 @@ describe("parse + serialize", () => {
     const s = serializeTable(parseTableText(SRC)!);
     expect(s).toContain("has \\| pipe");
     expect(s).toContain("| :--- | ---: | --- |");
+  });
+
+  it("keeps a cell whole when a backslash sits right before a pipe", () => {
+    // Before the fix `a\|b` serialized as `a\\|b`, which re-parsed as two
+    // cells and gave the row an extra column.
+    for (const cell of [String.raw`a\|b`, String.raw`a\\\|b`, "a|b"]) {
+      const base = parseTableText("| h | k |\n| --- | --- |\n| p | q |")!;
+      const again = parseTableText(serializeTable(setCell(base, 0, 0, cell)))!;
+      expect(again.rows[0]).toHaveLength(2);
+      expect(again.rows[0][1]).toBe("q");
+    }
+    // An even run before a pipe is already safe and serializes as before.
+    expect(escapeCellPipes(String.raw`x\\|y`)).toBe(String.raw`x\\\|y`);
+    expect(escapeCellPipes(String.raw`a\|b`)).toBe(String.raw`a\\\|b`);
   });
 
   it("rejects non-tables", () => {
