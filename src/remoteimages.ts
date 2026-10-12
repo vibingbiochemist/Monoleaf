@@ -161,7 +161,7 @@ const REMOTE_IN_CSS = /(?:^|[\s('"])(?:https?:|\/\/)/i;
  * negative costs the reader's IP address.
  *
  * The CSSOM would look cleaner — assign to `element.style`, walk the
- * declarations — but happy-dom/jsdom and WebView2 support different property
+ * declarations — but jsdom and WebView2 support different property
  * sets, so a green test would say nothing about the shipped app. This is
  * engine-independent on purpose.
  *

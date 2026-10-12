@@ -14,27 +14,111 @@ pub mod pdfimport;
 use filewatch::FileWatches;
 
 /// The file path Monoleaf was asked to open — from being launched with a `.md`
-/// argument (double-clicking an associated file). The frontend drains this on
-/// startup; a second launch while running is delivered via the `open-file`
-/// event instead (see the single-instance hook in `run`).
-struct LaunchFile(Mutex<Option<String>>);
+/// argument (double-clicking an associated file on Windows/Linux), or from the
+/// first `RunEvent::Opened` on macOS. The main window drains this once on
+/// startup; anything arriving later opens in a new window instead (see the
+/// single-instance hook and the run-event handler in `run`).
+///
+/// `taken` records that the drain has happened, under the same lock as the
+/// slot, so a macOS `Opened` racing the frontend's startup is either stored in
+/// time to be drained or sees `taken` and gets its own window — never stored
+/// after the drain, where nothing would ever read it.
+struct LaunchFile(Mutex<LaunchSlot>);
+
+struct LaunchSlot {
+    file: Option<String>,
+    taken: bool,
+}
+
+impl LaunchFile {
+    fn new(file: Option<String>) -> Self {
+        LaunchFile(Mutex::new(LaunchSlot { file, taken: false }))
+    }
+
+    /// Return the pending file and mark the slot drained for good.
+    fn take(&self) -> Option<String> {
+        // `unwrap_or_else(into_inner)` throughout: none of this state carries an
+        // invariant a panic could corrupt, so a single panic while a lock is held
+        // must not poison it and turn every later call into a panic of its own.
+        let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        slot.taken = true;
+        slot.file.take()
+    }
+
+    /// Store `path` as the launch file if the main window has not drained the
+    /// slot yet and it is still empty. Returns false when the caller must open
+    /// the file some other way (a new window).
+    #[cfg(any(target_os = "macos", test))]
+    fn offer(&self, path: String) -> bool {
+        let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.taken || slot.file.is_some() {
+            return false;
+        }
+        slot.file = Some(path);
+        true
+    }
+}
+
+/// Whether a path names a Markdown file, by extension.
+fn is_markdown_path(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.ends_with(".md") || lower.ends_with(".markdown")
+}
 
 /// First argument that looks like a Markdown file path (ignores flags and the
 /// executable path, which ends in `.exe`).
 fn first_markdown_arg<I: IntoIterator<Item = String>>(args: I) -> Option<String> {
-    args.into_iter().find(|a| {
-        let lower = a.to_lowercase();
-        !a.starts_with('-') && (lower.ends_with(".md") || lower.ends_with(".markdown"))
-    })
+    args.into_iter()
+        .find(|a| !a.starts_with('-') && is_markdown_path(a))
+}
+
+/// An argv path made absolute against the directory the launching process was
+/// started in. `monoleaf notes.md` typed in a terminal arrives relative to the
+/// terminal's directory — which, for a second instance, is not ours — and the
+/// file watcher and window title need the real path. One routine for first
+/// and second launches, so `./notes.md` is spelled the same either way.
+fn absolute_from(path: &str, cwd: &std::path::Path) -> String {
+    std::path::absolute(cwd.join(path))
+        .ok()
+        .and_then(|p| p.into_os_string().into_string().ok())
+        .unwrap_or_else(|| path.to_string())
+}
+
+/// Open `path` in a new editor window, with the payload shape
+/// `take_window_payload`'s caller in main.ts expects.
+fn open_in_new_window(app: &AppHandle, path: &str) {
+    let payload = serde_json::json!({ "path": path }).to_string();
+    let _ = spawn_document_window(app, Some(payload));
+}
+
+/// The Markdown files among the URLs macOS hands over in `RunEvent::Opened`
+/// (a Finder double-click or a drop on the Dock icon). Non-file URLs and other
+/// file types are ignored.
+#[cfg(any(target_os = "macos", test))]
+fn markdown_paths_from_urls(urls: &[tauri::Url]) -> Vec<String> {
+    urls.iter()
+        .filter(|u| u.scheme() == "file")
+        .filter_map(|u| u.to_file_path().ok()?.into_os_string().into_string().ok())
+        .filter(|p| is_markdown_path(p))
+        .collect()
+}
+
+/// macOS delivers associated files as `RunEvent::Opened`, never in argv: the
+/// first one becomes the launch file if the main window has not started up
+/// yet, every other one opens in its own window (as on a second launch).
+#[cfg(target_os = "macos")]
+fn open_urls(app: &AppHandle, urls: &[tauri::Url]) {
+    for path in markdown_paths_from_urls(urls) {
+        if !app.state::<LaunchFile>().offer(path.clone()) {
+            open_in_new_window(app, &path);
+        }
+    }
 }
 
 /// Return and clear the pending launch file (opened via file association).
 #[tauri::command]
 fn take_launch_file(state: tauri::State<LaunchFile>) -> Option<String> {
-    // `unwrap_or_else(into_inner)` throughout: none of this state carries an
-    // invariant a panic could corrupt, so a single panic while a lock is held
-    // must not poison it and turn every later call into a panic of its own.
-    state.0.lock().unwrap_or_else(|e| e.into_inner()).take()
+    state.take()
 }
 
 /// Payloads queued for windows created at runtime. The frontend calls
@@ -1206,20 +1290,25 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
 pub fn run() {
     // The file this process was launched with (double-clicked .md), captured
     // before the window exists so the frontend can drain it on startup.
-    let launch_file = first_markdown_arg(std::env::args());
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let launch_file = first_markdown_arg(std::env::args()).map(|p| absolute_from(&p, &cwd));
 
     tauri::Builder::default()
         // Must be registered first. When a second instance is launched (e.g.
         // double-clicking another .md while Monoleaf is open), its argv is
         // delivered here to the running instance instead of opening a new
         // window; we forward the file and focus the window.
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             // A .md double-clicked while Monoleaf is already running opens in
             // its own new window, never replacing an already-open document.
+            // A plain relaunch surfaces "main", or — if the user closed that
+            // one — whichever document window is still open.
             if let Some(path) = first_markdown_arg(argv) {
-                let payload = serde_json::json!({ "path": path }).to_string();
-                let _ = spawn_document_window(app, Some(payload));
-            } else if let Some(win) = app.get_webview_window("main") {
+                open_in_new_window(app, &absolute_from(&path, cwd.as_ref()));
+            } else if let Some(win) = app
+                .get_webview_window("main")
+                .or_else(|| app.webview_windows().into_values().next())
+            {
                 let _ = win.unminimize();
                 let _ = win.set_focus();
             }
@@ -1238,7 +1327,7 @@ pub fn run() {
         // 1. WHY `pubkey` IS IN THE BASE CONFIG. The plugin's `Config` declares
         //    `pubkey: String` with no serde default, and Tauri hands a plugin
         //    `Value::Null` when its config key is absent — so a missing pubkey
-        //    fails plugin initialization, which fails `Builder::run`, which the
+        //    fails plugin initialization, which fails `Builder::build`, which the
         //    `.expect` at the bottom of this function turns into a panic. Not "a
         //    working app with a dead updater": an app that does not start. It is
         //    safe to keep here because a public key demands no signing secret;
@@ -1274,7 +1363,7 @@ pub fn run() {
         //    not an option, and `dangerousInsecureTransportProtocol` must never
         //    be set to make one work.
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(LaunchFile(Mutex::new(launch_file)))
+        .manage(LaunchFile::new(launch_file))
         .manage(PendingPayloads(Mutex::new(HashMap::new())))
         .manage(WindowCounter(AtomicU32::new(1)))
         .manage(PendingUpdate(Mutex::new(None)))
@@ -1323,13 +1412,69 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        // macOS hands associated files to a running (or just-launching) app as
+        // `Opened`, not argv; nothing else needs run events today.
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &_event {
+                open_urls(_app, urls);
+            }
+        });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_relative_launch_path_resolves_against_the_launching_cwd() {
+        let cwd = std::env::temp_dir();
+        let expected = cwd.join("notes.md");
+        let expected = expected.to_str().unwrap();
+        assert_eq!(absolute_from("notes.md", &cwd), expected);
+        // `./` is dropped, so it names the file the same way as without it.
+        assert_eq!(absolute_from("./notes.md", &cwd), expected);
+        let abs = cwd.join("elsewhere").join("a.md");
+        let abs = abs.to_str().unwrap();
+        assert_eq!(absolute_from(abs, std::path::Path::new("/other")), abs);
+    }
+
+    #[test]
+    fn opened_urls_keep_only_markdown_files() {
+        let md = std::env::temp_dir().join("Notes.MD");
+        let urls = [
+            tauri::Url::from_file_path(&md).unwrap(),
+            tauri::Url::from_file_path(std::env::temp_dir().join("a.txt")).unwrap(),
+            tauri::Url::parse("https://example.com/readme.md").unwrap(),
+        ];
+        assert_eq!(
+            markdown_paths_from_urls(&urls),
+            vec![md.to_str().unwrap().to_string()]
+        );
+    }
+
+    // The macOS race: an `Opened` before the main window drains the slot is
+    // stored for it; one after (or a second one before) must be refused so the
+    // caller opens a window for it — never stored where nothing reads it.
+    #[test]
+    fn the_launch_slot_takes_one_file_until_drained_then_refuses() {
+        let slot = LaunchFile::new(None);
+        assert!(slot.offer("a.md".into()));
+        assert!(!slot.offer("b.md".into()));
+        assert_eq!(slot.take().as_deref(), Some("a.md"));
+        assert!(!slot.offer("c.md".into()));
+        assert_eq!(slot.take(), None);
+
+        let drained_empty = LaunchFile::new(None);
+        assert_eq!(drained_empty.take(), None);
+        assert!(!drained_empty.offer("d.md".into()));
+
+        let from_argv = LaunchFile::new(Some("argv.md".into()));
+        assert!(!from_argv.offer("e.md".into()));
+        assert_eq!(from_argv.take().as_deref(), Some("argv.md"));
+    }
 
     // Against the real Windows spell checker, so Windows-only. en-US is always
     // among the languages tried (see spell::languages).

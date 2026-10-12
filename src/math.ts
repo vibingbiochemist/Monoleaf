@@ -6,7 +6,7 @@
  * is left alone. The $…$ syntax is plain text in the .md and renders on GitHub
  * too, so nothing about portability changes.
  */
-import { syntaxTree } from "@codemirror/language";
+import { ancestorMatches } from "./syntax";
 import { Extension, RangeSetBuilder } from "@codemirror/state";
 import { EditorState } from "@codemirror/state";
 import {
@@ -101,19 +101,6 @@ class MathPreviewWidget extends WidgetType {
 // The node names whose interior must never be treated as math.
 const CODE_NODE = /Code|Comment|HTML|URL|Link|Autolink/;
 
-function insideCode(state: EditorState, pos: number): boolean {
-  for (
-    let node: ReturnType<typeof syntaxTree>["topNode"] | null = syntaxTree(
-      state,
-    ).resolveInner(pos, 1);
-    node;
-    node = node.parent
-  ) {
-    if (CODE_NODE.test(node.name)) return true;
-  }
-  return false;
-}
-
 // Reveal (show raw) when the cursor is on any line the math occupies, or when
 // a non-empty selection overlaps it.
 function cursorTouches(state: EditorState, from: number, to: number): boolean {
@@ -167,7 +154,7 @@ function buildMathDecorations(view: EditorView): {
   for (const { from, to } of view.visibleRanges) {
     const text = state.doc.sliceString(from, to);
     for (const match of findMath(text, from)) {
-      if (insideCode(state, match.from)) continue;
+      if (ancestorMatches(state, match.from, CODE_NODE)) continue;
       if (!match.tex) continue;
       if (cursorTouches(state, match.from, match.to)) {
         // Being edited: keep the raw source visible, append a live preview.
