@@ -4086,6 +4086,10 @@ refreshWordCount();
 schedulePagination(500);
 view.focus();
 
+// The window starts hidden (see reveal_window in the Rust backend). The page is
+// laid out by now, so show it before any of the startup dialogs below open.
+void invoke("reveal_window").catch(() => {});
+
 // STARTUP MODALS, IN A DEFINED ORDER.
 //
 // Three things can raise a modal at startup: the name prompt, the recovery prompt
