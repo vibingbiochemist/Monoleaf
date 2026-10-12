@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rectangle.** Since 1.3.0 the window appeared before it was maximized and
   before the editor had drawn anything. It now stays hidden until the editor
   is ready, then appears complete.
+- **Images embedded directly in the Markdown (`![fig](data:image/png;...)`)
+  now appear in exports.** The editor showed them, but the PDF, print and
+  HTML exports replaced each one with its alt text.
 - **A table cell containing a backslash right before a pipe (`a\|b`) no
   longer splits in two.** Editing such a table, or pasting it from Excel,
   saved the cell in a form Monoleaf read back as two cells the next time the

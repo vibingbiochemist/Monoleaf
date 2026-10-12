@@ -539,9 +539,16 @@ function buildRenderer(
     );
     return self.renderToken(tokens, idx, opts);
   };
-  // https images render. A local reference renders only when the caller has
-  // already loaded its bytes into `env.localImages` (loadLocalImagesForExport,
-  // localimages.ts), keyed by the reference exactly as markdown-it reports it
+  // https and inline `data:image/` images render. A data: image carries its
+  // bytes in the .md, so collectImageSources never asks the loader for it, and
+  // it must not fall through to the localImages lookup below or it degrades to
+  // alt text while live preview shows the picture. markdown-it's validateLink
+  // only lets gif/png/jpeg/webp data: URLs become image tokens at all, and the
+  // exported HTML's CSP allows `img-src data:`.
+  //
+  // A local reference renders only when the caller has already loaded its
+  // bytes into `env.localImages` (loadLocalImagesForExport, localimages.ts),
+  // keyed by the reference exactly as markdown-it reports it
   // (percent-encoded, see resolveLocalImagePath); otherwise it becomes its
   // alt text. The renderer itself never touches the disk, and the .md holds
   // only the reference, never image bytes — the bytes go into the exported
@@ -559,7 +566,7 @@ function buildRenderer(
     if (isRemoteUrl(src) && !remoteImagesAllowed()) {
       return tokens[idx].content ?? "";
     }
-    if (/^https?:\/\//i.test(src)) {
+    if (/^(?:https?:\/\/|data:image\/)/i.test(src)) {
       return defaultImage(tokens, idx, opts, env, self);
     }
     const renderEnv = env as Partial<RenderEnv> | undefined;

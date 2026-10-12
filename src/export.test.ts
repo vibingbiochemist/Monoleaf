@@ -358,6 +358,25 @@ describe("renderDocumentHtml", () => {
     }
   });
 
+  it("renders an inline data: image as <img>, with no loader and remote images off", () => {
+    // The bytes are in the .md, so there is nothing to load: the image must not
+    // degrade to alt text the way an unloaded local reference does.
+    const html = renderDocumentHtml(
+      "![fig](data:image/png;base64,iVBORw0KGgo=)\n",
+      "strict",
+    );
+    expect(html).toContain(
+      '<img src="data:image/png;base64,iVBORw0KGgo=" alt="fig"',
+    );
+    // The image rule trusts markdown-it's validateLink to keep scriptable
+    // data: types (SVG, HTML) from ever becoming an image token.
+    const svg = renderDocumentHtml(
+      "![x](data:image/svg+xml;base64,PHN2Zz4=)\n",
+      "strict",
+    );
+    expect(svg).not.toContain("<img");
+  });
+
   it("embeds a local image the caller has loaded, in markdown and raw HTML alike", () => {
     const images = new Map([
       ["x.png", "data:image/png;base64,AAAA"],
