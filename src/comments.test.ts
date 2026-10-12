@@ -47,6 +47,16 @@ describe("parseComments", () => {
     expect(z9.anchor).not.toBeNull();
     expect(z9.body).toBeNull();
   });
+
+  it("parses a long line of unclosed bodies in linear time", () => {
+    // A plain `.*?` rescanned the rest of the line from every opener:
+    // 20,000 of them took 1.6 s, and this runs on every decoration rebuild.
+    const doc = `${"<!--c:a {".repeat(50_000)}\n${BODY}\n`;
+    const start = performance.now();
+    const threads = parseComments(doc);
+    expect(performance.now() - start).toBeLessThan(500);
+    expect(threads.find((t) => t.id === "a1")?.body).not.toBeNull();
+  });
 });
 
 describe("createCommentSpec", () => {

@@ -107,7 +107,9 @@ pub enum Block {
     Paragraph(String),
     ListItem {
         level: usize,
-        ordered: bool,
+        /// The number printed in the PDF for an ordered item; `None` for a
+        /// bullet. Only a list's first number reaches the output, as its start.
+        number: Option<u32>,
         text: String,
     },
     /// Row-major cells. The first row is treated as the header, because a table
@@ -196,12 +198,23 @@ fn heading_level(size: f64, scale: &[f64]) -> Option<u8> {
     Some(idx as u8 + 1)
 }
 
-/// Split a leading list marker off a line, returning `(ordered, rest)`.
+/// Split a leading list marker off a line, returning `(number, rest)`: the
+/// printed number for an ordered item, `None` for a bulleted one.
 ///
 /// Recognises the bullet glyphs producers actually emit, and ordered markers as
 /// a number or single letter followed by `.` or `)`, optionally parenthesised.
 /// A marker must be followed by text, so a line that is only a dash stays prose.
-fn list_marker(text: &str) -> Option<(bool, &str)> {
+///
+/// The `.` or `)` must be followed by whitespace, as CommonMark itself requires.
+/// Without that, `3.5 mg NaCl` became item `5 mg NaCl` and `e.g. the` became
+/// item `g. the`: the "marker" was silently deleted along with real text.
+///
+/// A lettered item (`a)`, `(b)`, `c.`) becomes a bulleted item that **keeps its
+/// label in the text**, because Markdown has no lettered lists and dropping the
+/// letter loses what other text refers to ("see (b)"). An upper-case letter
+/// with `.` is not taken at all: `J. Biol. Chem.` and `A. Smith` are initials
+/// far more often than list items, and a false item is worse than a missed one.
+fn list_marker(text: &str) -> Option<(Option<u32>, &str)> {
     const BULLETS: [char; 10] = ['•', '●', '○', '▪', '▫', '‣', '·', '-', '–', '—'];
     let t = text.trim_start();
 
@@ -214,7 +227,7 @@ fn list_marker(text: &str) -> Option<(bool, &str)> {
             let needs_space = first == '-' || first == '*' || first == '–' || first == '—';
             let had_space = chars.as_str().starts_with(char::is_whitespace);
             if !rest.is_empty() && (!needs_space || had_space) {
-                return Some((false, rest));
+                return Some((None, rest));
             }
         }
     }
@@ -223,20 +236,31 @@ fn list_marker(text: &str) -> Option<(bool, &str)> {
     let body = t.strip_prefix('(').unwrap_or(t);
     let split = body.find(['.', ')'])?;
     let (label, after) = body.split_at(split);
-    let rest = after[1..].trim_start();
-    if label.is_empty() || rest.is_empty() {
+    let (delim, after) = after.split_at(1);
+    let rest = after.trim_start();
+    if label.is_empty() || rest.is_empty() || !after.starts_with(char::is_whitespace) {
         return None;
     }
-    let numeric = label.chars().all(|c| c.is_ascii_digit()) && label.len() <= 3;
-    let alpha = label.len() == 1 && label.chars().all(|c| c.is_ascii_alphabetic());
-    if numeric || alpha {
-        return Some((true, rest));
+    if label.len() <= 3 && label.chars().all(|c| c.is_ascii_digit()) {
+        return label.parse().ok().map(|n| (Some(n), rest));
+    }
+    let letter = label.len() == 1 && label.chars().all(|c| c.is_ascii_alphabetic());
+    if letter && (delim == ")" || label.chars().all(|c| c.is_ascii_lowercase())) {
+        return Some((None, t));
     }
     None
 }
 
 /// Fewest boundaries that bound anything: two lines make one cell.
 const MIN_GRID_BOUNDARIES: usize = 2;
+
+/// Most columns a grid may have and still be read as a table. Wider than any
+/// table that fits on a page; past it the rules are a pattern, not a table.
+const MAX_GRID_COLUMNS: usize = 64;
+
+/// Most rows a grid may have and still be read as a table. A page holds at most
+/// a few hundred readable rows; 2000 leaves ample room for tiny type.
+const MAX_GRID_ROWS: usize = 2000;
 
 /// A grid of cell boundaries recovered from a page's drawn rules.
 ///
@@ -254,9 +278,19 @@ pub struct Grid {
 
 impl Grid {
     /// A grid from ascending boundary coordinates, or `None` if either axis has
-    /// too few to bound a cell.
+    /// too few to bound a cell, or too many to be a real table.
+    ///
+    /// The upper caps are a memory bound, not a heuristic nicety. The rule count
+    /// comes straight from the PDF, and [`table_cells`] allocates rows × columns
+    /// cells: a page drawing 10,000 rules each way asks for 10^8 of them. Running
+    /// out of memory aborts the process rather than panicking, so `catch_unwind`
+    /// in `super` cannot contain it and every open window dies. A rejected
+    /// grid's text simply comes through as prose.
     fn new(columns: Vec<f64>, rows: Vec<f64>) -> Option<Self> {
         if columns.len() < MIN_GRID_BOUNDARIES || rows.len() < MIN_GRID_BOUNDARIES {
+            return None;
+        }
+        if columns.len() - 1 > MAX_GRID_COLUMNS || rows.len() - 1 > MAX_GRID_ROWS {
             return None;
         }
         Some(Self { columns, rows })
@@ -529,8 +563,8 @@ struct BlockBuilder {
     blocks: Vec<Block>,
     /// Text of the block currently being accumulated.
     open: Option<String>,
-    /// Set when the open block is a list item: `(ordered, nesting level)`.
-    open_kind: Option<(bool, usize)>,
+    /// Set when the open block is a list item: `(number, nesting level)`.
+    open_kind: Option<(Option<u32>, usize)>,
     /// Distinct list indents seen so far, shallowest first; position gives the
     /// nesting level.
     indents: Vec<f64>,
@@ -557,9 +591,9 @@ impl BlockBuilder {
             return;
         }
         match kind {
-            Some((ordered, level)) => self.blocks.push(Block::ListItem {
+            Some((number, level)) => self.blocks.push(Block::ListItem {
                 level,
-                ordered,
+                number,
                 text,
             }),
             None => self.blocks.push(Block::Paragraph(text)),
@@ -583,7 +617,7 @@ impl BlockBuilder {
 
     /// Open a list item, nesting it by its indent: an indent deeper than any seen
     /// opens a level, a shallower one closes back to the matching level.
-    fn list_item(&mut self, ordered: bool, text: &str, x0: f64) {
+    fn list_item(&mut self, number: Option<u32>, text: &str, x0: f64) {
         self.close();
         let tolerance = self.body.max(1.0) * INDENT_TOLERANCE;
         self.indents.retain(|i| *i <= x0 + tolerance);
@@ -592,7 +626,7 @@ impl BlockBuilder {
         }
         let level = self.indents.len().saturating_sub(1);
         self.open = Some(text.to_string());
-        self.open_kind = Some((ordered, level));
+        self.open_kind = Some((number, level));
     }
 
     /// Extend the open block with another line, or start a paragraph.
@@ -665,9 +699,9 @@ fn blocks_for_page(page: &Page, body: f64, scale: &[f64]) -> Vec<Block> {
         // A drawn bullet has no marker character to strip, so the whole line is
         // the item's text.
         let marker = list_marker(&line.text)
-            .or_else(|| has_drawn_bullet(line, page, body).then_some((false, line.text.as_str())));
-        if let Some((ordered, rest)) = marker {
-            builder.list_item(ordered, rest, line.x0);
+            .or_else(|| has_drawn_bullet(line, page, body).then_some((None, line.text.as_str())));
+        if let Some((number, rest)) = marker {
+            builder.list_item(number, rest, line.x0);
             continue;
         }
 
@@ -690,9 +724,15 @@ fn is_critic_opener(a: char, b: char) -> bool {
 /// Escape text so it reads literally in Markdown.
 ///
 /// Only characters that would otherwise be taken as markup are escaped, because
-/// over-escaping litters the source view with backslashes. `_` is left alone:
-/// CommonMark does not emphasise intra-word underscores, so `snake_case`
-/// survives untouched.
+/// over-escaping litters the source view with backslashes.
+///
+/// - `_` is escaped unless it sits between two letters or digits. CommonMark
+///   never emphasises an intra-word underscore, so `snake_case` survives
+///   untouched, but one at a word edge can open or close emphasis: `__init__`
+///   rendered bold and `_x_` italic.
+/// - `~` is escaped when another `~` can be reached without crossing
+///   whitespace. That covers `~~struck~~` (GFM strikethrough) and `H~2~O`
+///   (subscript, from `markdown-it-sub`), while `~5 mg` reads as written.
 ///
 /// ## Why some characters become entities and not `\`-escapes
 ///
@@ -722,6 +762,9 @@ fn is_critic_opener(a: char, b: char) -> bool {
 fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
     let chars: Vec<char> = text.chars().collect();
+    // Decided once per run of `_`, at its first character, so a long run of
+    // them is not rescanned for every character in it.
+    let mut escape_underscores = false;
     for (i, &c) in chars.iter().enumerate() {
         let next = chars.get(i + 1).copied().unwrap_or(' ');
         let next2 = chars.get(i + 2).copied().unwrap_or(' ');
@@ -730,6 +773,16 @@ fn escape(text: &str) -> String {
                 out.push('\\');
                 out.push(c);
             }
+            '_' => {
+                if i == 0 || chars[i - 1] != '_' {
+                    escape_underscores = underscore_run_can_emphasise(&chars, i);
+                }
+                if escape_underscores {
+                    out.push('\\');
+                }
+                out.push('_');
+            }
+            '~' if tilde_in_run(&chars, i) => out.push_str("\\~"),
             // Only where it could begin a tag or a comment; "a < b" is left be.
             '<' if next == '!' || next == '/' || next.is_ascii_alphabetic() => {
                 out.push_str("&lt;");
@@ -744,13 +797,55 @@ fn escape(text: &str) -> String {
     out
 }
 
+/// Whether the run of `_` starting at `start` could open or close emphasis.
+///
+/// It cannot when it sits inside a word (`snake_case`, `a__b`), which
+/// CommonMark never emphasises, or when whitespace or a line edge is on both
+/// sides — a form blank like `Name: ________`, which escaping would bury in
+/// backslashes. A line of nothing but underscores is a thematic break, but that
+/// is `escape_leading`'s job.
+fn underscore_run_can_emphasise(chars: &[char], start: usize) -> bool {
+    let end = chars[start..]
+        .iter()
+        .position(|&c| c != '_')
+        .map_or(chars.len(), |n| start + n);
+    let before = start.checked_sub(1).map_or(' ', |p| chars[p]);
+    let after = chars.get(end).copied().unwrap_or(' ');
+    let in_word = before.is_alphanumeric() && after.is_alphanumeric();
+    let blank = before.is_whitespace() && after.is_whitespace();
+    !(in_word || blank)
+}
+
+/// Whether another `~` lies in the same whitespace-free run as the one at `i`.
+///
+/// Each scan stops at the nearest `~`, so across a whole line every run is
+/// walked about once rather than once per tilde.
+fn tilde_in_run(chars: &[char], i: usize) -> bool {
+    let not_space = |c: &&char| !c.is_whitespace();
+    chars[i + 1..]
+        .iter()
+        .take_while(not_space)
+        .any(|&c| c == '~')
+        || chars[..i]
+            .iter()
+            .rev()
+            .take_while(not_space)
+            .any(|&c| c == '~')
+}
+
 /// Escape a block's leading characters so a paragraph cannot become a heading,
 /// quote, list or table row.
 fn escape_leading(text: &str) -> String {
     let t = text.trim_start();
     let leading = &text[..text.len() - t.len()];
-    // A run of only `=` or `-` under a paragraph is a setext heading underline.
-    if !t.is_empty() && t.chars().all(|c| c == '=' || c == '-') {
+    // A run of only `=` or `-` under a paragraph is a setext heading underline,
+    // and one of `-` or `_`, spaced or not, is a thematic break. Escaping the
+    // first character means the line is no longer made only of those, so it
+    // can form neither.
+    if !t.is_empty()
+        && t.chars()
+            .all(|c| matches!(c, '=' | '-' | '_') || c.is_whitespace())
+    {
         return format!("{leading}\\{t}");
     }
     // `|` is not listed: `escape` handles it everywhere, leading included.
@@ -772,53 +867,115 @@ fn escape_leading(text: &str) -> String {
     format!("{leading}{}", escape(t))
 }
 
+/// The most recent list item emitted at one nesting level.
+#[derive(Debug, Clone, Copy)]
+struct ListLevel {
+    /// Column the item's marker starts at.
+    indent: usize,
+    /// Width of its marker, trailing space included: 2 for `- `, 4 for `10. `.
+    width: usize,
+    /// The number it was emitted with, or `None` for a bullet.
+    number: Option<u32>,
+}
+
+/// A list item's line prefix, as worked out by [`list_prefix`].
+struct ListPrefix {
+    /// Indent and marker, e.g. `"   - "`.
+    text: String,
+    /// The item opens an ordered list at a number other than 1. CommonMark will
+    /// not let such a list interrupt a paragraph, so straight under another
+    /// list's line it would be read as more text of the item above; it needs a
+    /// blank line before it.
+    needs_blank: bool,
+}
+
+/// Work out a list item's line prefix and record it in `levels`, the most
+/// recent item at each nesting level.
+///
+/// A list keeps the PDF's first number as its start — CommonMark honours it, so
+/// a lone `4) The tenant…` stays item 4 rather than becoming 1 — and counts on
+/// from there, which also smooths over a skipped or repeated number.
+///
+/// A nested item is indented to its parent's *text*, not by a fixed two
+/// spaces: under `1. ` that is three, under `10. ` four. Two spaces under an
+/// ordered parent is not enough for CommonMark to nest it, so the sub-item
+/// would end the list and split one list into three.
+fn list_prefix(
+    levels: &mut Vec<Option<ListLevel>>,
+    level: usize,
+    number: Option<u32>,
+) -> ListPrefix {
+    levels.truncate(level + 1);
+    levels.resize(level + 1, None);
+    // Under the nearest item actually emitted. A list can begin mid-depth (its
+    // indent matched a level from an earlier list on the page), and indenting
+    // it for ancestors that are not there would make it an indented code block,
+    // or glue it onto the item above as plain text.
+    let indent = levels[..level]
+        .iter()
+        .rev()
+        .flatten()
+        .next()
+        .map_or(0, |parent| parent.indent + parent.width);
+    let prev = levels[level].and_then(|l| l.number);
+    let number = number.map(|n| prev.map_or(n, |p| p.saturating_add(1)));
+    let marker = number.map_or_else(|| "- ".to_string(), |n| format!("{n}. "));
+    levels[level] = Some(ListLevel {
+        indent,
+        width: marker.len(),
+        number,
+    });
+    ListPrefix {
+        text: format!("{}{marker}", " ".repeat(indent)),
+        needs_blank: prev.is_none() && number.is_some_and(|n| n != 1),
+    }
+}
+
 /// Render blocks as CommonMark, one blank line between them.
 fn emit(blocks: &[Block]) -> String {
     let mut out = String::new();
-    let mut counters: Vec<usize> = Vec::new();
+    let mut levels: Vec<Option<ListLevel>> = Vec::new();
     let mut prev_was_list = false;
 
     for block in blocks {
-        let is_list = matches!(block, Block::ListItem { .. });
+        // Any other block ends the list, so the next one starts afresh.
+        let item = match block {
+            Block::ListItem { level, number, .. } => {
+                Some(list_prefix(&mut levels, *level, *number))
+            }
+            _ => {
+                levels.clear();
+                None
+            }
+        };
         if !out.is_empty() {
             out.push('\n');
-            // List items sit on consecutive lines; every other block gets a
-            // blank line before it.
-            if !(is_list && prev_was_list) {
+            // List items sit on consecutive lines, unless the prefix says this
+            // one needs a blank line; every other block gets one.
+            let tight = prev_was_list && item.as_ref().is_some_and(|p| !p.needs_blank);
+            if !tight {
                 out.push('\n');
             }
         }
         match block {
             Block::Heading { level, text } => {
-                counters.clear();
                 out.push_str(&"#".repeat(*level as usize));
                 out.push(' ');
                 out.push_str(&escape(text.trim()));
             }
             Block::Paragraph(text) => {
-                counters.clear();
                 out.push_str(escape_leading(text.trim()).trim_end());
             }
-            Block::ListItem {
-                level,
-                ordered,
-                text,
-            } => {
-                counters.truncate(level + 1);
-                while counters.len() <= *level {
-                    counters.push(0);
+            Block::ListItem { text, .. } => {
+                // Worked out above, because the separator depends on it.
+                if let Some(prefix) = &item {
+                    out.push_str(&prefix.text);
                 }
-                counters[*level] += 1;
-                out.push_str(&"  ".repeat(*level));
-                if *ordered {
-                    out.push_str(&format!("{}. ", counters[*level]));
-                } else {
-                    out.push_str("- ");
-                }
-                out.push_str(&escape(text.trim()));
+                // `escape_leading` too, or the item text `# of samples` would
+                // make the item a heading, and `> x` or `1. x` a quote or list.
+                out.push_str(escape_leading(text.trim()).trim_end());
             }
             Block::Table(rows) => {
-                counters.clear();
                 // Width comes from the widest row so no cell is dropped, and the
                 // delimiter row is written to match — a GFM table is sized by
                 // that row, and one that disagrees silently loses columns.
@@ -838,7 +995,7 @@ fn emit(blocks: &[Block]) -> String {
                 }
             }
         }
-        prev_was_list = is_list;
+        prev_was_list = item.is_some();
     }
     if !out.is_empty() {
         out.push('\n');
@@ -1041,15 +1198,129 @@ mod tests {
     }
 
     #[test]
-    fn ordered_markers_are_renumbered_from_one() {
+    fn an_ordered_list_keeps_its_starting_number_and_counts_on() {
+        // Starts at 4, as printed; the repeated "4." is counted on to 5.
         let out = md(vec![
-            line(72.0, 100.0, 11.0, "1. first step of the procedure"),
-            line(72.0, 118.0, 11.0, "2. second step of the procedure"),
-            line(72.0, 136.0, 11.0, "3. third step of the procedure"),
+            line(72.0, 100.0, 11.0, "4) fourth step of the procedure"),
+            line(72.0, 118.0, 11.0, "4) fifth step of the procedure"),
+            line(72.0, 136.0, 11.0, "6) sixth step of the procedure"),
         ]);
         assert_eq!(
             out,
-            "1. first step of the procedure\n2. second step of the procedure\n3. third step of the procedure\n"
+            "4. fourth step of the procedure\n5. fifth step of the procedure\n6. sixth step of the procedure\n"
+        );
+        // A lone numbered clause keeps its number rather than becoming "1.".
+        assert_eq!(
+            md(vec![line(
+                72.0,
+                100.0,
+                11.0,
+                "12) The tenant shall pay rent"
+            )]),
+            "12. The tenant shall pay rent\n"
+        );
+    }
+
+    #[test]
+    fn an_ordered_list_starting_past_one_is_not_glued_to_a_list_above() {
+        // "- a\n4. b" would read "4. b" as more text of item "a", because a list
+        // not starting at 1 cannot interrupt a paragraph; a blank line is needed.
+        let out = md(vec![
+            line(72.0, 100.0, 11.0, "• a bulleted point here"),
+            line(72.0, 118.0, 11.0, "4) then a numbered one"),
+            line(72.0, 136.0, 11.0, "5) and the next number"),
+        ]);
+        assert_eq!(
+            out,
+            "- a bulleted point here\n\n4. then a numbered one\n5. and the next number\n"
+        );
+    }
+
+    #[test]
+    fn a_nested_list_starting_past_one_gets_a_blank_line() {
+        // Straight under "1. a" the sub-list would be read as text of item a.
+        let out = md(vec![
+            line(72.0, 100.0, 11.0, "1. a numbered step here"),
+            line(94.0, 118.0, 11.0, "4) a sub step numbered four"),
+        ]);
+        assert_eq!(
+            out,
+            "1. a numbered step here\n\n   4. a sub step numbered four\n"
+        );
+    }
+
+    #[test]
+    fn a_list_starting_mid_depth_is_not_indented_into_a_code_block() {
+        // The second list's indent matches level 2 of the first, but nothing
+        // above it is emitted any more: four spaces after a blank line would
+        // make it an indented code block.
+        let out = md(vec![
+            line(72.0, 100.0, 11.0, "• outer item of the list"),
+            line(94.0, 118.0, 11.0, "• middle item of the list"),
+            line(116.0, 136.0, 11.0, "• inner item of the list"),
+            line(72.0, 180.0, 11.0, "A paragraph between the lists"),
+            line(116.0, 220.0, 11.0, "• deep item of a new list"),
+        ]);
+        assert!(
+            out.ends_with("\n\n- deep item of a new list\n"),
+            "got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn a_sub_item_is_indented_to_its_ordered_parents_text() {
+        // Two spaces under "9. " would end the list; three (four under "10. ")
+        // nests the bullet inside the item.
+        let out = md(vec![
+            line(72.0, 100.0, 11.0, "9. ninth step of the procedure"),
+            line(94.0, 118.0, 11.0, "• detail of the ninth step"),
+            line(72.0, 136.0, 11.0, "10. tenth step of the procedure"),
+            line(94.0, 154.0, 11.0, "• detail of the tenth step"),
+        ]);
+        assert_eq!(
+            out,
+            "9. ninth step of the procedure\n   - detail of the ninth step\n10. tenth step of the procedure\n    - detail of the tenth step\n"
+        );
+    }
+
+    #[test]
+    fn list_item_text_cannot_become_a_heading_quote_or_list() {
+        let out = md(vec![
+            line(72.0, 100.0, 11.0, "• # of samples per run"),
+            line(72.0, 118.0, 11.0, "• > threshold for a repeat"),
+            line(72.0, 136.0, 11.0, "• 2. replicate of the batch"),
+        ]);
+        assert_eq!(
+            out,
+            "- \\# of samples per run\n- \\> threshold for a repeat\n- 2\\. replicate of the batch\n"
+        );
+    }
+
+    #[test]
+    fn a_number_or_abbreviation_is_not_mistaken_for_a_marker() {
+        // The "marker" used to be deleted: "3.5 mg" lost its "3.".
+        assert_eq!(list_marker("3.5 mg NaCl in buffer"), None);
+        assert_eq!(list_marker("e.g. the control wells"), None);
+        assert_eq!(list_marker("J. Biol. Chem. 12, 34"), None);
+        assert_eq!(list_marker("A. Smith and co-workers"), None);
+        let out = md(vec![line(72.0, 100.0, 11.0, "3.5 mg NaCl in buffer")]);
+        assert!(
+            out.starts_with('3') && out.contains("5 mg NaCl"),
+            "got:\n{out}"
+        );
+    }
+
+    #[test]
+    fn a_lettered_item_keeps_its_letter() {
+        // Markdown has no lettered lists; the label stays in the text so a
+        // reference like "see (b)" still has something to point at.
+        let out = md(vec![
+            line(72.0, 100.0, 11.0, "a) first lettered point"),
+            line(72.0, 118.0, 11.0, "(b) second lettered point"),
+        ]);
+        assert_eq!(
+            out,
+            "- a) first lettered point\n- (b) second lettered point\n"
         );
     }
 
@@ -1074,10 +1345,12 @@ mod tests {
         assert_eq!(list_marker("—"), None); // marker with no text
         assert_eq!(list_marker("42"), None); // no punctuation
         assert_eq!(list_marker("Section 1. Introduction"), None); // not leading
-        assert_eq!(list_marker("1. real item"), Some((true, "real item")));
-        assert_eq!(list_marker("(a) real item"), Some((true, "real item")));
-        assert_eq!(list_marker("b) real item"), Some((true, "real item")));
-        assert_eq!(list_marker("• real item"), Some((false, "real item")));
+        assert_eq!(list_marker("1. real item"), Some((Some(1), "real item")));
+        assert_eq!(list_marker("(2) real item"), Some((Some(2), "real item")));
+        assert_eq!(list_marker("(a) real item"), Some((None, "(a) real item")));
+        assert_eq!(list_marker("b) real item"), Some((None, "b) real item")));
+        assert_eq!(list_marker("c. real item"), Some((None, "c. real item")));
+        assert_eq!(list_marker("• real item"), Some((None, "real item")));
     }
 
     // --- escaping: the Monoleaf metadata channel and stray markup ---
@@ -1229,13 +1502,35 @@ mod tests {
     }
 
     #[test]
-    fn underscores_are_left_alone() {
+    fn intraword_underscores_are_left_alone() {
         // CommonMark does not emphasise intra-word underscores, so escaping
         // would only add noise.
         assert_eq!(
             md(vec![line(72.0, 100.0, 11.0, "snake_case_name")]),
             "snake_case_name\n"
         );
+    }
+
+    #[test]
+    fn underscores_and_tildes_cannot_become_emphasis_or_strikethrough() {
+        // Raw strings, so each expected backslash is written once.
+        for (raw, want) in [
+            ("call __init__ first", r"call \_\_init\_\_ first"),
+            ("an _x_ variable", r"an \_x\_ variable"),
+            ("was ~~y~~ here", r"was \~\~y\~\~ here"),
+            // Subscript in markdown-it-sub.
+            ("water H~2~O", r"water H\~2\~O"),
+            // A lone tilde opens nothing, so it is left readable.
+            ("about ~5 mg or ~10 mg", "about ~5 mg or ~10 mg"),
+            // Nor does a form blank with space on both sides...
+            ("Name: ________ Date", "Name: ________ Date"),
+            // ...but a line of nothing else would be a thematic break.
+            ("________", r"\________"),
+            ("_ _ _", r"\_ _ _"),
+        ] {
+            let out = md(vec![line(72.0, 100.0, 11.0, raw)]);
+            assert_eq!(out, format!("{want}\n"), "{raw}");
+        }
     }
 
     // --- columns ---
@@ -1383,6 +1678,26 @@ mod tests {
         assert!(g.contains(5.0, 10.0));
         assert_eq!(g.column_of(5.0), Some(0));
         assert_eq!(g.row_of(10.0), Some(0));
+    }
+
+    #[test]
+    fn an_oversized_grid_is_not_a_table() {
+        // Rows × columns cells are allocated from PDF-controlled rule counts, so
+        // a grid past the caps must be refused before that happens.
+        let bounds = |n: usize| (0..=n).map(|i| i as f64 * 10.0).collect::<Vec<_>>();
+        assert!(Grid::new(bounds(MAX_GRID_COLUMNS), bounds(MAX_GRID_ROWS)).is_some());
+        assert!(Grid::new(bounds(MAX_GRID_COLUMNS + 1), bounds(1)).is_none());
+        assert!(Grid::new(bounds(1), bounds(MAX_GRID_ROWS + 1)).is_none());
+        // End to end: a dense mesh of rules is ignored, and its text stays prose.
+        let mut rules: Vec<Rule> = (0..=MAX_GRID_ROWS + 1)
+            .map(|i| hrule(0.0, 1000.0, i as f64 * 3.0))
+            .collect();
+        rules.extend((0..=MAX_GRID_COLUMNS + 1).map(|i| vrule(i as f64 * 3.0, 0.0, 7000.0)));
+        let out = to_markdown(&[page_with_rules(
+            vec![line(72.0, 100.0, 11.0, "Text over a dense mesh")],
+            rules,
+        )]);
+        assert_eq!(out, "Text over a dense mesh\n");
     }
 
     #[test]

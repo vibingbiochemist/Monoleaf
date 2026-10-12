@@ -358,6 +358,25 @@ describe("renderDocumentHtml", () => {
     }
   });
 
+  it("renders an inline data: image as <img>, with no loader and remote images off", () => {
+    // The bytes are in the .md, so there is nothing to load: the image must not
+    // degrade to alt text the way an unloaded local reference does.
+    const html = renderDocumentHtml(
+      "![fig](data:image/png;base64,iVBORw0KGgo=)\n",
+      "strict",
+    );
+    expect(html).toContain(
+      '<img src="data:image/png;base64,iVBORw0KGgo=" alt="fig"',
+    );
+    // The image rule trusts markdown-it's validateLink to keep scriptable
+    // data: types (SVG, HTML) from ever becoming an image token.
+    const svg = renderDocumentHtml(
+      "![x](data:image/svg+xml;base64,PHN2Zz4=)\n",
+      "strict",
+    );
+    expect(svg).not.toContain("<img");
+  });
+
   it("embeds a local image the caller has loaded, in markdown and raw HTML alike", () => {
     const images = new Map([
       ["x.png", "data:image/png;base64,AAAA"],
@@ -434,6 +453,34 @@ describe("renderDocumentHtml", () => {
     // Asked for but not returned: alt text, as before.
     expect(html).not.toContain("figures/plot.png");
     expect(html).toContain('alt="a"> b <img');
+  });
+
+  it("collects image sources from a run of unclosed <img in linear time", async () => {
+    // `[^>]*?` before src rescanned to the end of the block from every
+    // unclosed `<img`: 20,000 of them took 1.2 s on every pagination.
+    const doc =
+      // A `<` inside an earlier attribute value must not hide the src.
+      `<div><img alt="a<b" src="y.png">\n${"<img ".repeat(50_000)}\n\n`;
+    const asked: string[][] = [];
+    const start = performance.now();
+    await renderDocumentHtmlAsync(doc, "strict", false, (sources) => {
+      asked.push([...sources]);
+      return Promise.resolve(new Map());
+    });
+    expect(performance.now() - start).toBeLessThan(1000);
+    expect(asked).toEqual([["y.png"]]);
+  });
+
+  it("strips a long line of unclosed comment blocks in linear time", () => {
+    // A plain `.*?` rescanned the rest of the line from every unclosed
+    // opener: 20,000 `<!--c:a {` took 1.6 s per render.
+    const doc =
+      'Text<!--c:a1 {"resolved":false,"thread":[]}-->\n\n' +
+      "<!--c:a {<!--ml:page {<!--ml:meta {".repeat(20_000);
+    const start = performance.now();
+    const html = renderDocumentHtml(doc, "strict");
+    expect(performance.now() - start).toBeLessThan(1000);
+    expect(html.startsWith("<p>Text</p>")).toBe(true);
   });
 
   it("async render: does not call the loader for a document without local images", async () => {

@@ -14,27 +14,111 @@ pub mod pdfimport;
 use filewatch::FileWatches;
 
 /// The file path Monoleaf was asked to open — from being launched with a `.md`
-/// argument (double-clicking an associated file). The frontend drains this on
-/// startup; a second launch while running is delivered via the `open-file`
-/// event instead (see the single-instance hook in `run`).
-struct LaunchFile(Mutex<Option<String>>);
+/// argument (double-clicking an associated file on Windows/Linux), or from the
+/// first `RunEvent::Opened` on macOS. The main window drains this once on
+/// startup; anything arriving later opens in a new window instead (see the
+/// single-instance hook and the run-event handler in `run`).
+///
+/// `taken` records that the drain has happened, under the same lock as the
+/// slot, so a macOS `Opened` racing the frontend's startup is either stored in
+/// time to be drained or sees `taken` and gets its own window — never stored
+/// after the drain, where nothing would ever read it.
+struct LaunchFile(Mutex<LaunchSlot>);
+
+struct LaunchSlot {
+    file: Option<String>,
+    taken: bool,
+}
+
+impl LaunchFile {
+    fn new(file: Option<String>) -> Self {
+        LaunchFile(Mutex::new(LaunchSlot { file, taken: false }))
+    }
+
+    /// Return the pending file and mark the slot drained for good.
+    fn take(&self) -> Option<String> {
+        // `unwrap_or_else(into_inner)` throughout: none of this state carries an
+        // invariant a panic could corrupt, so a single panic while a lock is held
+        // must not poison it and turn every later call into a panic of its own.
+        let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        slot.taken = true;
+        slot.file.take()
+    }
+
+    /// Store `path` as the launch file if the main window has not drained the
+    /// slot yet and it is still empty. Returns false when the caller must open
+    /// the file some other way (a new window).
+    #[cfg(any(target_os = "macos", test))]
+    fn offer(&self, path: String) -> bool {
+        let mut slot = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if slot.taken || slot.file.is_some() {
+            return false;
+        }
+        slot.file = Some(path);
+        true
+    }
+}
+
+/// Whether a path names a Markdown file, by extension.
+fn is_markdown_path(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.ends_with(".md") || lower.ends_with(".markdown")
+}
 
 /// First argument that looks like a Markdown file path (ignores flags and the
 /// executable path, which ends in `.exe`).
 fn first_markdown_arg<I: IntoIterator<Item = String>>(args: I) -> Option<String> {
-    args.into_iter().find(|a| {
-        let lower = a.to_lowercase();
-        !a.starts_with('-') && (lower.ends_with(".md") || lower.ends_with(".markdown"))
-    })
+    args.into_iter()
+        .find(|a| !a.starts_with('-') && is_markdown_path(a))
+}
+
+/// An argv path made absolute against the directory the launching process was
+/// started in. `monoleaf notes.md` typed in a terminal arrives relative to the
+/// terminal's directory — which, for a second instance, is not ours — and the
+/// file watcher and window title need the real path. One routine for first
+/// and second launches, so `./notes.md` is spelled the same either way.
+fn absolute_from(path: &str, cwd: &std::path::Path) -> String {
+    std::path::absolute(cwd.join(path))
+        .ok()
+        .and_then(|p| p.into_os_string().into_string().ok())
+        .unwrap_or_else(|| path.to_string())
+}
+
+/// Open `path` in a new editor window, with the payload shape
+/// `take_window_payload`'s caller in main.ts expects.
+fn open_in_new_window(app: &AppHandle, path: &str) {
+    let payload = serde_json::json!({ "path": path }).to_string();
+    let _ = spawn_document_window(app, Some(payload));
+}
+
+/// The Markdown files among the URLs macOS hands over in `RunEvent::Opened`
+/// (a Finder double-click or a drop on the Dock icon). Non-file URLs and other
+/// file types are ignored.
+#[cfg(any(target_os = "macos", test))]
+fn markdown_paths_from_urls(urls: &[tauri::Url]) -> Vec<String> {
+    urls.iter()
+        .filter(|u| u.scheme() == "file")
+        .filter_map(|u| u.to_file_path().ok()?.into_os_string().into_string().ok())
+        .filter(|p| is_markdown_path(p))
+        .collect()
+}
+
+/// macOS delivers associated files as `RunEvent::Opened`, never in argv: the
+/// first one becomes the launch file if the main window has not started up
+/// yet, every other one opens in its own window (as on a second launch).
+#[cfg(target_os = "macos")]
+fn open_urls(app: &AppHandle, urls: &[tauri::Url]) {
+    for path in markdown_paths_from_urls(urls) {
+        if !app.state::<LaunchFile>().offer(path.clone()) {
+            open_in_new_window(app, &path);
+        }
+    }
 }
 
 /// Return and clear the pending launch file (opened via file association).
 #[tauri::command]
 fn take_launch_file(state: tauri::State<LaunchFile>) -> Option<String> {
-    // `unwrap_or_else(into_inner)` throughout: none of this state carries an
-    // invariant a panic could corrupt, so a single panic while a lock is held
-    // must not poison it and turn every later call into a panic of its own.
-    state.0.lock().unwrap_or_else(|e| e.into_inner()).take()
+    state.take()
 }
 
 /// Payloads queued for windows created at runtime. The frontend calls
@@ -431,8 +515,25 @@ const NETWORK_PATH_REFUSED: &str = "Network paths are not supported";
 
 /// True for a UNC/network path. Windows treats `/` and `\` alike, so
 /// `//host/share` and `\\host\share` are the same thing, as are the mixed forms.
+/// That rule also covers the `\\?\` and `\\.\` device forms, which can name a
+/// share (`\\?\UNC\host\share`).
+///
+/// Also true for anything starting `\??\`. Windows hands such a path straight
+/// to the NT object namespace, where `\??\UNC\host\share` is a share like any
+/// other — yet it has only one leading separator, so the rule above misses it
+/// and a document's `<img src>` counts it as an ordinary absolute path. Refused
+/// whole rather than parsed: the namespace can reach a share by other names too
+/// (`\??\GLOBALROOT\Device\Mup\...`), and nobody types a local file this way.
+///
+/// The cost is that verbatim local paths (`\\?\C:\x`) are refused as well. They
+/// are left that way on purpose: `\\.\C:\..\UNC\host` normalizes to a share, so
+/// telling the safe ones apart takes more than a prefix check, and no dialog or
+/// document produces them.
 fn is_network_path(path: &str) -> bool {
-    matches!(path.as_bytes(), [b'\\' | b'/', b'\\' | b'/', ..])
+    matches!(
+        path.as_bytes(),
+        [b'\\' | b'/', b'\\' | b'/', ..] | [b'\\' | b'/', b'?', b'?', b'\\' | b'/', ..]
+    )
 }
 
 /// Checks every file command applies before touching `fs`.
@@ -508,6 +609,12 @@ fn set_allow_network_paths(app: AppHandle, allow: bool) {
 /// The previous watch is stopped *before* the new path is validated, so a
 /// window that switches to a document that cannot be watched does not go on
 /// reporting changes to the one it left.
+///
+/// Unlike the other file commands this one stays on the main thread. That is
+/// what puts concurrent calls in order: on worker threads, a switch from one
+/// document to the next could finish out of order and leave the window
+/// watching the one it left. Starting a watch opens a directory handle and
+/// reads no file, so it does not wait on a cloud download the way a read does.
 #[tauri::command]
 fn watch_file(
     window: tauri::WebviewWindow,
@@ -547,17 +654,157 @@ fn watch_file(
     Ok(())
 }
 
-#[tauri::command]
-fn read_file(path: String) -> Result<String, String> {
-    validate_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
-    let bytes = fs::read(&path).map_err(|e| format!("Failed to read {path}: {e}"))?;
-    String::from_utf8(bytes).map_err(|_| format!("{path} is not valid UTF-8 text"))
+/// Run a file command's disk work on a blocking-task thread.
+///
+/// A synchronous command runs on the main thread, and a read or write can take
+/// seconds: a OneDrive file that is only in the cloud downloads on first read,
+/// a share answers slowly, a disk flush waits for the hardware. Every window
+/// freezes for that long. `find_image_by_name` and `import_pdf_as_markdown`
+/// are off the main thread for the same reason; a panic becomes an error here
+/// instead of taking the app down.
+async fn off_main_thread<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(work)
+        .await
+        .unwrap_or_else(|_| Err("The file operation failed unexpectedly.".into()))
 }
 
 #[tauri::command]
-fn write_file(path: String, contents: String) -> Result<(), String> {
-    validate_write_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
-    fs::write(&path, contents.as_bytes()).map_err(|e| format!("Failed to write {path}: {e}"))
+async fn read_file(path: String) -> Result<String, String> {
+    off_main_thread(move || {
+        validate_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
+        let bytes = fs::read(&path).map_err(|e| format!("Failed to read {path}: {e}"))?;
+        String::from_utf8(bytes).map_err(|_| format!("{path} is not valid UTF-8 text"))
+    })
+    .await
+}
+
+/// Off the main thread, so two saves can now overlap (an autosave firing during
+/// Ctrl+S). Their order is kept by the frontend, which sends one write at a
+/// time; see `writeFileInOrder` in `main.ts`.
+#[tauri::command]
+async fn write_file(path: String, contents: String) -> Result<(), String> {
+    off_main_thread(move || {
+        validate_write_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
+        replace_file(std::path::Path::new(&path), contents.as_bytes())
+            .map_err(|e| format!("Failed to write {path}: {e}"))
+    })
+    .await
+}
+
+/// Distinguishes the temporary files of writes running at the same time.
+static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// Replace `path`'s contents so that it holds either the old bytes or the new
+/// ones, never something in between.
+///
+/// Writing in place truncates first, so a crash, a full disk or a dropped
+/// network connection partway through left the document empty or cut short.
+/// Instead the new bytes go to a temporary file beside it, are flushed to the
+/// disk, and are then renamed over the original, which replaces it in one step
+/// (on Windows too: `fs::rename` replaces an existing file). The temporary
+/// file sits in the same folder because a rename cannot cross volumes. Its
+/// name is short and fixed rather than derived from the document's, so a
+/// document whose name is near the 255-character limit can still be saved; it
+/// reads as scratch if a crash leaves it behind, and the file watcher ignores
+/// it because only the document's own name counts as a change (see
+/// `filewatch`).
+///
+/// A symlink is resolved first and the file it points at is replaced. Renaming
+/// over the link itself would turn it into an ordinary file and silently cut
+/// it off from the file it shared. A link whose target is missing is an error
+/// rather than a file created at the target. A link that points at a network
+/// share is followed, as `read_file` follows it: the network-path check looks
+/// at the path the user gave, and planting such a link already takes local
+/// access.
+///
+/// A read-only file is refused before anything is written, as writing in place
+/// refused it. A rename does not ask whether the target is writable, only the
+/// folder, so without this check a save would quietly replace it. The old
+/// file's permissions are copied to the new one; otherwise a private note
+/// (0600 on macOS/Linux) would become readable by everyone (0644) on its first
+/// save.
+///
+/// Everything else the old file carried beyond its bytes does not survive: a
+/// hard link to it keeps the old contents; ownership, ACLs, the hidden
+/// attribute, alternate data streams and creation time are those of a new file
+/// in that folder; and the name's capitalisation becomes that of the path saved
+/// to. Editors that save this way (VS Code, vim) make the same trade.
+fn replace_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    use std::io::Write;
+
+    let target = match fs::symlink_metadata(path) {
+        Ok(meta) if meta.file_type().is_symlink() => fs::canonicalize(path)?,
+        _ => path.to_path_buf(),
+    };
+    let existing = fs::metadata(&target).ok();
+    if existing
+        .as_ref()
+        .is_some_and(|m| m.permissions().readonly())
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "the file is read-only",
+        ));
+    }
+    // The time as well as the process and counter, so a file left behind by a
+    // crashed run can never block a later run that got the same process id.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let temp = target.with_file_name(format!(
+        ".~monoleaf-{}-{}-{now}.tmp",
+        std::process::id(),
+        TEMP_FILE_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+    // `create_new`: never truncate a file that happens to have this name, and
+    // only clean up a temporary file this call created.
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temp)?;
+    let written = file
+        .write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .and_then(|()| match &existing {
+            Some(meta) => fs::set_permissions(&temp, meta.permissions()),
+            None => Ok(()),
+        });
+    // Closed before the rename or removal: Windows refuses both on an open file.
+    drop(file);
+    let result = written.and_then(|()| rename_retrying(&temp, &target));
+    if result.is_err() {
+        let _ = fs::remove_file(&temp);
+    }
+    result
+}
+
+/// `fs::rename`, retried for about a second while Windows reports the target
+/// as in use. A virus scanner, the search indexer or a sync client (OneDrive,
+/// Dropbox) often holds a just-changed file open for a moment, and replacing
+/// it fails until they let go. Writing in place was rarely refused this way,
+/// so without the retry an autosave would now fail at random. npm and VS Code
+/// retry here for the same reason.
+fn rename_retrying(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
+    // ERROR_SHARING_VIOLATION; "access denied" is how the rest shows up.
+    const SHARING_VIOLATION: i32 = 32;
+    let mut attempt = 0;
+    loop {
+        match fs::rename(from, to) {
+            Err(e)
+                if cfg!(windows)
+                    && attempt < 9
+                    && (e.kind() == std::io::ErrorKind::PermissionDenied
+                        || e.raw_os_error() == Some(SHARING_VIOLATION)) =>
+            {
+                attempt += 1;
+                std::thread::sleep(Duration::from_millis(20 * attempt));
+            }
+            result => return result,
+        }
+    }
 }
 
 /// Map a file extension to the MIME type an `<img>` needs to decode it.
@@ -587,20 +834,52 @@ fn image_mime_type(ext: &str) -> Option<&'static str> {
 /// frontend already has this level of disk access via `read_file`, so this
 /// adds no new capability, only a new way to reach the same one. No separate
 /// directory scoping on top — see `validate_path`'s doc comment for why.
+///
+/// Images larger than [`IMAGE_MAX_BYTES`] are refused. The whole file is held
+/// in memory three times over (bytes, base64, the webview's decoded copy), and
+/// a document pointing at a multi-gigabyte file would otherwise exhaust memory
+/// rather than show a broken picture.
 #[tauri::command]
-fn read_image_as_data_url(path: String) -> Result<String, String> {
-    validate_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
-    let ext = std::path::Path::new(&path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase);
-    let mime = ext
-        .as_deref()
-        .and_then(image_mime_type)
-        .ok_or_else(|| format!("{path} is not a supported image type"))?;
-    let bytes = fs::read(&path).map_err(|e| format!("Failed to read {path}: {e}"))?;
-    let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
-    Ok(format!("data:{mime};base64,{encoded}"))
+async fn read_image_as_data_url(path: String) -> Result<String, String> {
+    off_main_thread(move || {
+        validate_path(&path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
+        let ext = std::path::Path::new(&path)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase);
+        let mime = ext
+            .as_deref()
+            .and_then(image_mime_type)
+            .ok_or_else(|| format!("{path} is not a supported image type"))?;
+        let bytes = read_capped(&path, IMAGE_MAX_BYTES)
+            .map_err(|e| format!("Failed to read {path}: {e}"))?
+            .ok_or_else(|| {
+                format!(
+                    "{path} is too large to show (the limit is {} MB)",
+                    IMAGE_MAX_BYTES / 1024 / 1024
+                )
+            })?;
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        Ok(format!("data:{mime};base64,{encoded}"))
+    })
+    .await
+}
+
+const IMAGE_MAX_BYTES: u64 = 50 * 1024 * 1024;
+
+/// The file's bytes, or `None` if it is larger than `max`. The size is checked
+/// on the open handle, so it is the same file that is then read, and the read
+/// itself is capped in case the file grows in between.
+fn read_capped(path: &str, max: u64) -> std::io::Result<Option<Vec<u8>>> {
+    use std::io::Read;
+
+    let file = fs::File::open(path)?;
+    if file.metadata()?.len() > max {
+        return Ok(None);
+    }
+    let mut bytes = Vec::new();
+    file.take(max + 1).read_to_end(&mut bytes)?;
+    Ok((bytes.len() as u64 <= max).then_some(bytes))
 }
 
 /// How deep below the document's folder [`find_image_by_name`] looks, and how
@@ -1220,20 +1499,25 @@ fn is_app_url(url: &tauri::Url, dev_url: Option<&tauri::Url>) -> bool {
 pub fn run() {
     // The file this process was launched with (double-clicked .md), captured
     // before the window exists so the frontend can drain it on startup.
-    let launch_file = first_markdown_arg(std::env::args());
+    let cwd = std::env::current_dir().unwrap_or_default();
+    let launch_file = first_markdown_arg(std::env::args()).map(|p| absolute_from(&p, &cwd));
 
     tauri::Builder::default()
         // Must be registered first. When a second instance is launched (e.g.
         // double-clicking another .md while Monoleaf is open), its argv is
         // delivered here to the running instance instead of opening a new
         // window; we forward the file and focus the window.
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
             // A .md double-clicked while Monoleaf is already running opens in
             // its own new window, never replacing an already-open document.
+            // A plain relaunch surfaces "main", or — if the user closed that
+            // one — whichever document window is still open.
             if let Some(path) = first_markdown_arg(argv) {
-                let payload = serde_json::json!({ "path": path }).to_string();
-                let _ = spawn_document_window(app, Some(payload));
-            } else if let Some(win) = app.get_webview_window("main") {
+                open_in_new_window(app, &absolute_from(&path, cwd.as_ref()));
+            } else if let Some(win) = app
+                .get_webview_window("main")
+                .or_else(|| app.webview_windows().into_values().next())
+            {
                 let _ = win.unminimize();
                 let _ = win.set_focus();
             }
@@ -1268,7 +1552,7 @@ pub fn run() {
         // 1. WHY `pubkey` IS IN THE BASE CONFIG. The plugin's `Config` declares
         //    `pubkey: String` with no serde default, and Tauri hands a plugin
         //    `Value::Null` when its config key is absent — so a missing pubkey
-        //    fails plugin initialization, which fails `Builder::run`, which the
+        //    fails plugin initialization, which fails `Builder::build`, which the
         //    `.expect` at the bottom of this function turns into a panic. Not "a
         //    working app with a dead updater": an app that does not start. It is
         //    safe to keep here because a public key demands no signing secret;
@@ -1304,7 +1588,7 @@ pub fn run() {
         //    not an option, and `dangerousInsecureTransportProtocol` must never
         //    be set to make one work.
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .manage(LaunchFile(Mutex::new(launch_file)))
+        .manage(LaunchFile::new(launch_file))
         .manage(PendingPayloads(Mutex::new(HashMap::new())))
         .manage(WindowCounter(AtomicU32::new(1)))
         .manage(PendingUpdate(Mutex::new(None)))
@@ -1353,13 +1637,70 @@ pub fn run() {
             }
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        // macOS hands associated files to a running (or just-launching) app as
+        // `Opened`, not argv; nothing else needs run events today.
+        .run(|_app, _event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Opened { urls } = &_event {
+                open_urls(_app, urls);
+            }
+        });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tauri::async_runtime::block_on;
+
+    #[test]
+    fn a_relative_launch_path_resolves_against_the_launching_cwd() {
+        let cwd = std::env::temp_dir();
+        let expected = cwd.join("notes.md");
+        let expected = expected.to_str().unwrap();
+        assert_eq!(absolute_from("notes.md", &cwd), expected);
+        // `./` is dropped, so it names the file the same way as without it.
+        assert_eq!(absolute_from("./notes.md", &cwd), expected);
+        let abs = cwd.join("elsewhere").join("a.md");
+        let abs = abs.to_str().unwrap();
+        assert_eq!(absolute_from(abs, std::path::Path::new("/other")), abs);
+    }
+
+    #[test]
+    fn opened_urls_keep_only_markdown_files() {
+        let md = std::env::temp_dir().join("Notes.MD");
+        let urls = [
+            tauri::Url::from_file_path(&md).unwrap(),
+            tauri::Url::from_file_path(std::env::temp_dir().join("a.txt")).unwrap(),
+            tauri::Url::parse("https://example.com/readme.md").unwrap(),
+        ];
+        assert_eq!(
+            markdown_paths_from_urls(&urls),
+            vec![md.to_str().unwrap().to_string()]
+        );
+    }
+
+    // The macOS race: an `Opened` before the main window drains the slot is
+    // stored for it; one after (or a second one before) must be refused so the
+    // caller opens a window for it — never stored where nothing reads it.
+    #[test]
+    fn the_launch_slot_takes_one_file_until_drained_then_refuses() {
+        let slot = LaunchFile::new(None);
+        assert!(slot.offer("a.md".into()));
+        assert!(!slot.offer("b.md".into()));
+        assert_eq!(slot.take().as_deref(), Some("a.md"));
+        assert!(!slot.offer("c.md".into()));
+        assert_eq!(slot.take(), None);
+
+        let drained_empty = LaunchFile::new(None);
+        assert_eq!(drained_empty.take(), None);
+        assert!(!drained_empty.offer("d.md".into()));
+
+        let from_argv = LaunchFile::new(Some("argv.md".into()));
+        assert!(!from_argv.offer("e.md".into()));
+        assert_eq!(from_argv.take().as_deref(), Some("argv.md"));
+    }
 
     // Against the real Windows spell checker, so Windows-only. en-US is always
     // among the languages tried (see spell::languages).
@@ -1395,12 +1736,162 @@ mod tests {
         let dst = dir.join("monoleaf_rt_dst.md");
         fs::write(&src, original).unwrap();
 
-        let contents = read_file(src.to_string_lossy().into_owned()).unwrap();
-        write_file(dst.to_string_lossy().into_owned(), contents).unwrap();
+        let contents = block_on(read_file(src.to_string_lossy().into_owned())).unwrap();
+        block_on(write_file(dst.to_string_lossy().into_owned(), contents)).unwrap();
 
         assert_eq!(fs::read(&dst).unwrap(), original);
         let _ = fs::remove_file(&src);
         let _ = fs::remove_file(&dst);
+    }
+
+    /// A fresh, empty folder of its own, so a leftover temporary file is
+    /// visible as an extra directory entry.
+    fn empty_test_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn entries(dir: &std::path::Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn write_file_creates_and_replaces_without_leaving_a_temp_file() {
+        let dir = empty_test_dir("monoleaf_atomic_write");
+        let doc = dir.join("note.md");
+        let path = doc.to_string_lossy().into_owned();
+
+        block_on(write_file(path.clone(), "first".into())).unwrap();
+        assert_eq!(fs::read_to_string(&doc).unwrap(), "first");
+        // Shorter than before: a replace, not an overwrite that leaves a tail.
+        block_on(write_file(path.clone(), "2nd".into())).unwrap();
+        assert_eq!(fs::read_to_string(&doc).unwrap(), "2nd");
+        assert_eq!(entries(&dir), ["note.md"]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_write_leaves_the_original_and_no_temp_file() {
+        let dir = empty_test_dir("monoleaf_atomic_write_fail");
+        // A folder where the document should be: the rename onto it fails
+        // after the temporary file was written.
+        fs::create_dir(dir.join("note.md")).unwrap();
+        let path = dir.join("note.md").to_string_lossy().into_owned();
+
+        let err = block_on(write_file(path.clone(), "x".into())).unwrap_err();
+        assert!(
+            err.starts_with(&format!("Failed to write {path}: ")),
+            "{err}"
+        );
+        assert!(dir.join("note.md").is_dir());
+        assert_eq!(entries(&dir), ["note.md"]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Saving through a symlink replaces the file it points at and leaves the
+    /// link a link. Creating a symlink needs Developer Mode or admin rights on
+    /// Windows, so there the test passes vacuously when it cannot make one.
+    #[test]
+    fn write_file_through_a_symlink_keeps_the_link() {
+        let dir = empty_test_dir("monoleaf_atomic_write_link");
+        let real = dir.join("real.md");
+        let link = dir.join("link.md");
+        fs::write(&real, "old").unwrap();
+        #[cfg(windows)]
+        let made = std::os::windows::fs::symlink_file(&real, &link);
+        #[cfg(unix)]
+        let made = std::os::unix::fs::symlink(&real, &link);
+        if made.is_ok() {
+            block_on(write_file(
+                link.to_string_lossy().into_owned(),
+                "new".into(),
+            ))
+            .unwrap();
+            assert!(fs::symlink_metadata(&link)
+                .unwrap()
+                .file_type()
+                .is_symlink());
+            assert_eq!(fs::read_to_string(&real).unwrap(), "new");
+            assert_eq!(entries(&dir), ["link.md", "real.md"]);
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Replacing by rename must not widen a private file's permissions, nor
+    /// replace a read-only file the old in-place write would have refused.
+    #[cfg(unix)]
+    #[test]
+    fn write_file_keeps_permissions_and_refuses_read_only_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = empty_test_dir("monoleaf_atomic_write_mode");
+        let private = dir.join("private.md");
+        fs::write(&private, "old").unwrap();
+        fs::set_permissions(&private, fs::Permissions::from_mode(0o600)).unwrap();
+        block_on(write_file(
+            private.to_string_lossy().into_owned(),
+            "new".into(),
+        ))
+        .unwrap();
+        assert_eq!(fs::read_to_string(&private).unwrap(), "new");
+        let mode = fs::metadata(&private).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+
+        let locked = dir.join("locked.md");
+        fs::write(&locked, "old").unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o444)).unwrap();
+        let path = locked.to_string_lossy().into_owned();
+        let err = block_on(write_file(path.clone(), "new".into())).unwrap_err();
+        assert!(
+            err.starts_with(&format!("Failed to write {path}: ")),
+            "{err}"
+        );
+        assert_eq!(fs::read_to_string(&locked).unwrap(), "old");
+        assert_eq!(entries(&dir), ["locked.md", "private.md"]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The Windows counterpart: the read-only attribute is refused, not
+    /// replaced.
+    #[cfg(windows)]
+    #[test]
+    fn write_file_refuses_read_only_files() {
+        let dir = empty_test_dir("monoleaf_atomic_write_readonly");
+        let locked = dir.join("locked.md");
+        fs::write(&locked, "old").unwrap();
+        let mut perms = fs::metadata(&locked).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&locked, perms.clone()).unwrap();
+        let path = locked.to_string_lossy().into_owned();
+        assert!(block_on(write_file(path, "new".into())).is_err());
+        assert_eq!(fs::read_to_string(&locked).unwrap(), "old");
+        assert_eq!(entries(&dir), ["locked.md"]);
+
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(&locked, perms).unwrap();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_capped_refuses_files_over_the_limit() {
+        let dir = empty_test_dir("monoleaf_read_capped");
+        let file = dir.join("img.png");
+        fs::write(&file, b"12345").unwrap();
+        let path = file.to_string_lossy().into_owned();
+        assert_eq!(read_capped(&path, 5).unwrap(), Some(b"12345".to_vec()));
+        assert_eq!(read_capped(&path, 4).unwrap(), None);
+        let _ = fs::remove_dir_all(&dir);
     }
 
     /// Exercises the real COM path: initialize, create the factory, check a
@@ -1437,7 +1928,7 @@ mod tests {
         assert!(validate_write_path("/tmp/noextension", false).is_err());
         // And the command itself refuses to touch disk for a bad path.
         let bad = std::env::temp_dir().join("monoleaf_evil.bat");
-        assert!(write_file(bad.to_string_lossy().into_owned(), "x".into()).is_err());
+        assert!(block_on(write_file(bad.to_string_lossy().into_owned(), "x".into())).is_err());
         assert!(!bad.exists());
     }
 
@@ -1464,7 +1955,8 @@ mod tests {
             let path = std::env::temp_dir().join(name);
             fs::write(&path, bytes).unwrap();
 
-            let data_url = read_image_as_data_url(path.to_string_lossy().into_owned()).unwrap();
+            let data_url =
+                block_on(read_image_as_data_url(path.to_string_lossy().into_owned())).unwrap();
             let prefix = format!("data:{mime};base64,");
             assert!(
                 data_url.starts_with(&prefix),
@@ -1484,14 +1976,14 @@ mod tests {
         for name in ["monoleaf_img_reject.txt", "monoleaf_img_reject.exe"] {
             let path = std::env::temp_dir().join(name);
             fs::write(&path, b"not an image").unwrap();
-            let result = read_image_as_data_url(path.to_string_lossy().into_owned());
+            let result = block_on(read_image_as_data_url(path.to_string_lossy().into_owned()));
             assert!(result.is_err(), "{name} should have been refused");
             let _ = fs::remove_file(&path);
         }
         // Extensionless, and a path that never existed: both are refused
         // (the former on the extension check, the latter reaches fs::read
         // only for a path that would have passed it).
-        assert!(read_image_as_data_url("no_extension_here".into()).is_err());
+        assert!(block_on(read_image_as_data_url("no_extension_here".into())).is_err());
     }
 
     #[test]
@@ -1504,7 +1996,7 @@ mod tests {
             "//attacker.test/share/note.png",
         ] {
             assert_eq!(
-                read_image_as_data_url(path.to_string()),
+                block_on(read_image_as_data_url(path.to_string())),
                 Err(NETWORK_PATH_REFUSED.to_string()),
                 "not rejected: {path}"
             );
@@ -1565,6 +2057,13 @@ mod tests {
             "//attacker.test/share/note.md",
             r"\/attacker.test/share/note.md",
             r"/\attacker.test\share\note.md",
+            // NT-namespace and device forms of the same share.
+            r"\??\UNC\attacker.test\share\note.md",
+            "/??/UNC/attacker.test/share/note.md",
+            r"\??\GLOBALROOT\Device\Mup\attacker.test\share\note.md",
+            r"\\?\UNC\attacker.test\share\note.md",
+            "//?/UNC/attacker.test/share/note.md",
+            r"\\.\UNC\attacker.test\share\note.md",
         ] {
             assert_eq!(
                 validate_path(path, false),
@@ -1589,6 +2088,7 @@ mod tests {
         // A single leading separator is an ordinary absolute path.
         assert!(validate_path("/tmp/note.md", false).is_ok());
         assert!(validate_path(r"C:\Users\x\note.md", false).is_ok());
+        assert!(validate_path(r"C:\??\note.md", false).is_ok());
         // A NUL is never a path, opted in or not.
         assert!(validate_path("note.md\0.bat", false).is_err());
         assert!(validate_path("note.md\0.bat", true).is_err());

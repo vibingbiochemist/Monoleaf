@@ -2097,7 +2097,7 @@ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## @tauri-apps/api@2.12.0
+## @tauri-apps/api@2.12.1
 
 License: Apache-2.0 OR MIT
 Repository: https://github.com/tauri-apps/tauri
@@ -2125,7 +2125,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-## @tauri-apps/plugin-clipboard-manager@2.4.0
+## @tauri-apps/plugin-clipboard-manager@2.4.1
 
 License: MIT OR Apache-2.0
 Repository: https://github.com/tauri-apps/plugins-workspace
@@ -2153,7 +2153,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-## @tauri-apps/plugin-dialog@2.8.0
+## @tauri-apps/plugin-dialog@2.8.1
 
 License: MIT OR Apache-2.0
 Repository: https://github.com/tauri-apps/plugins-workspace
@@ -2181,7 +2181,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
 Creator: Person: Daniel Thompson-Yvetot
 ```
 
-## @tauri-apps/plugin-opener@2.6.0
+## @tauri-apps/plugin-opener@2.7.0
 
 License: MIT OR Apache-2.0
 Repository: https://github.com/tauri-apps/plugins-workspace
@@ -2599,35 +2599,6 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE
 LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-```
-
-## codemirror@6.0.2
-
-License: MIT
-Repository: https://github.com/codemirror/basic-setup
-
-```
-MIT License
-
-Copyright (C) 2018-2021 by Marijn Haverbeke <marijn@haverbeke.berlin> and others
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
 ```
 
 ## commander@15.0.0
@@ -3177,7 +3148,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## katex@0.18.9
+## katex@0.19.0
 
 License: MIT
 Repository: https://github.com/KaTeX/KaTeX
@@ -7388,7 +7359,6 @@ DEALINGS IN THE SOFTWARE.
 
 Used by:
 - dirs-sys 0.5.0
-- dirs 6.0.0
 - dirs 7.0.0
 
 ```
@@ -8919,13 +8889,13 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- tauri-build 2.7.0
-- tauri-codegen 2.7.0
-- tauri-macros 2.7.0
-- tauri-runtime-wry 2.12.0
-- tauri-runtime 2.12.0
-- tauri-utils 2.10.0
-- tauri 2.12.0
+- tauri-build 2.7.1
+- tauri-codegen 2.7.1
+- tauri-macros 2.7.1
+- tauri-runtime-wry 2.12.1
+- tauri-runtime 2.12.1
+- tauri-utils 2.10.1
+- tauri 2.12.1
 
 ```
 MIT License
@@ -9046,7 +9016,6 @@ SOFTWARE.
 
 Used by:
 - cfb 0.14.0
-- cfb 0.7.3
 
 ```
 MIT License
@@ -9198,7 +9167,6 @@ SOFTWARE.
 ## MIT License
 
 Used by:
-- infer 0.19.0
 - infer 0.22.0
 
 ```
@@ -9903,35 +9871,28 @@ Used by:
 - r-efi 6.0.0
 - rustls-platform-verifier-android 0.1.1
 - siphasher 1.0.3
-- tauri-plugin-clipboard-manager 2.4.0
-- tauri-plugin-dialog 2.8.0
+- tauri-plugin-clipboard-manager 2.4.1
+- tauri-plugin-dialog 2.8.1
 - tauri-plugin-fs 2.6.0
-- tauri-plugin-opener 2.6.0
-- tauri-plugin-single-instance 2.5.0
-- tauri-plugin-updater 2.13.0
-- tauri-plugin 2.7.0
+- tauri-plugin-opener 2.7.0
+- tauri-plugin-single-instance 2.5.2
+- tauri-plugin-updater 2.13.1
+- tauri-plugin 2.7.1
 - type1-encoding-parser 0.1.1
 - webview2-com-macros 0.8.1
 - webview2-com-sys 0.39.1
 - webview2-com 0.39.1
 - winapi-i686-pc-windows-gnu 0.4.0
 - winapi-x86_64-pc-windows-gnu 0.4.0
-- windows-collections 0.2.0
 - windows-collections 0.3.2
-- windows-core 0.61.2
 - windows-core 0.62.2
-- windows-future 0.2.1
 - windows-future 0.3.2
 - windows-implement 0.60.2
 - windows-interface 0.59.3
-- windows-link 0.1.3
 - windows-link 0.2.1
-- windows-numerics 0.2.0
 - windows-numerics 0.3.1
 - windows-registry 0.6.1
-- windows-result 0.3.4
 - windows-result 0.4.1
-- windows-strings 0.4.2
 - windows-strings 0.5.1
 - windows-sys 0.45.0
 - windows-sys 0.52.0
@@ -9941,10 +9902,8 @@ Used by:
 - windows-targets 0.42.2
 - windows-targets 0.52.6
 - windows-targets 0.53.5
-- windows-threading 0.1.0
 - windows-threading 0.2.1
 - windows-version 0.1.7
-- windows 0.61.3
 - windows 0.62.2
 - windows_aarch64_gnullvm 0.42.2
 - windows_aarch64_gnullvm 0.52.6

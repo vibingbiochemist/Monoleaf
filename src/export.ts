@@ -287,13 +287,16 @@ export function setPageConfigSpec(
 // ---------------------------------------------------------------------------
 // Markdown -> HTML
 
+// The JSON blocks stop at the next `<!--`: what Monoleaf writes never holds
+// one (escapeDashes, htmlcomment.ts), and a plain `.*?` rescanned the rest of
+// the line from every unclosed opener, so a long line of them took seconds.
 const STRIP_RES = [
   /<!--c:[a-z0-9]+[se]-->/g, // comment anchors
-  /<!--c:[a-z0-9]+ \{.*?\}-->/g, // comment bodies
-  /<!--ml:page \{.*?\}-->/g, // page config
+  /<!--c:[a-z0-9]+ \{(?:(?!<!--).)*?\}-->/g, // comment bodies
+  /<!--ml:page \{(?:(?!<!--).)*?\}-->/g, // page config
   /<!--ml:toc-end-->/g, // TOC boundary markers (list itself stays)
   /<!--ml:toc-->/g,
-  /<!--ml:meta \{.*?\}-->/g, // document metadata (comment form)
+  /<!--ml:meta \{(?:(?!<!--).)*?\}-->/g, // document metadata (comment form)
 ];
 
 /**
@@ -376,8 +379,12 @@ interface TokenLike {
 // `<img … src="…">` in raw HTML, double- or single-quoted, each form matched
 // on its own quote so an apostrophe inside a double-quoted path survives.
 // Deliberately the same closed shape the live preview (parseImgTag) and the
-// image context menu already parse.
-const IMG_SRC_RE = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)')/gi;
+// image context menu already parse. The attributes before src stop at the
+// next `<img`: with a bare `[^>]*?`, every unclosed `<img` rescanned to the
+// end of the block (seconds for a pasted run of them, on every pagination).
+// Not `[^<>]*?`: a `<` inside an attribute value (alt="a<b") is legal HTML.
+const IMG_SRC_RE =
+  /(<img\b(?:(?!<img\b)[^>])*?\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)')/gi;
 
 /**
  * The attribute that keeps an embedded image's reference as written, so the
@@ -539,9 +546,16 @@ function buildRenderer(
     );
     return self.renderToken(tokens, idx, opts);
   };
-  // https images render. A local reference renders only when the caller has
-  // already loaded its bytes into `env.localImages` (loadLocalImagesForExport,
-  // localimages.ts), keyed by the reference exactly as markdown-it reports it
+  // https and inline `data:image/` images render. A data: image carries its
+  // bytes in the .md, so collectImageSources never asks the loader for it, and
+  // it must not fall through to the localImages lookup below or it degrades to
+  // alt text while live preview shows the picture. markdown-it's validateLink
+  // only lets gif/png/jpeg/webp data: URLs become image tokens at all, and the
+  // exported HTML's CSP allows `img-src data:`.
+  //
+  // A local reference renders only when the caller has already loaded its
+  // bytes into `env.localImages` (loadLocalImagesForExport, localimages.ts),
+  // keyed by the reference exactly as markdown-it reports it
   // (percent-encoded, see resolveLocalImagePath); otherwise it becomes its
   // alt text. The renderer itself never touches the disk, and the .md holds
   // only the reference, never image bytes — the bytes go into the exported
@@ -559,7 +573,7 @@ function buildRenderer(
     if (isRemoteUrl(src) && !remoteImagesAllowed()) {
       return tokens[idx].content ?? "";
     }
-    if (/^https?:\/\//i.test(src)) {
+    if (/^(?:https?:\/\/|data:image\/)/i.test(src)) {
       return defaultImage(tokens, idx, opts, env, self);
     }
     const renderEnv = env as Partial<RenderEnv> | undefined;
@@ -887,7 +901,7 @@ export function buildPrintCss(
 ${root} {
   font-family: ${fontStack(cfg.font)};
   font-size: 11pt;
-  line-height: 1.5;
+  line-height: ${PRINT_LINE_HEIGHT};
   color: #111111;
   /* Print backgrounds/borders (table header shading etc.) instead of the
      browser stripping them to save ink. */
