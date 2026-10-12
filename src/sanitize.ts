@@ -27,7 +27,7 @@ import { blockRemoteContent, remoteImagesAllowed } from "./remoteimages";
 // closed by blockRemoteContent, which sweeps `src` on every element.
 //
 // This module is only ever imported in a DOM context (the webview, or a
-// happy-dom test); in a bare Node context DOMPurify has no `sanitize` to call.
+// jsdom test); in a bare Node context DOMPurify has no `sanitize` to call.
 // Remote content is stripped in a hook rather than by a config option, because
 // the decision depends on the URL's scheme (https fetches, data: does not) and
 // on which attribute carries it — see blockRemoteContent. The hook is registered
