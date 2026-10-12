@@ -1407,7 +1407,7 @@ function updatePageMetrics() {
     // afterwards needs an explicit re-measure — otherwise the caret,
     // selection and page-gap widgets stay positioned against the previous
     // font's metrics until the next zoom change. Guarded on an actual id
-    // change: this runs on every edit via refreshComments, and an
+    // change: this runs on every edit via scheduleDocRefresh, and an
     // unconditional document.fonts.load(...).then(...) would queue a
     // promise and a forced measure per keystroke.
     void document.fonts
@@ -1418,7 +1418,6 @@ function updatePageMetrics() {
 }
 
 function refreshComments() {
-  updatePageMetrics();
   const threads = parseComments(view.state.doc.toString());
   const open = threads.filter((t) => t.body !== null && !t.resolved).length;
   const badge = document.getElementById("comments-count")!;
@@ -1511,13 +1510,23 @@ function dispatchCommentRemoval(spec: TransactionSpec | null) {
   view.focus();
 }
 
-let commentsRefreshQueued = false;
-function scheduleCommentsRefresh() {
-  if (commentsRefreshQueued) return;
-  commentsRefreshQueued = true;
+// Page setup and comments are both parsed from the document text. An edit
+// re-derives both through scheduleDocRefresh, coalesced to one pass per frame;
+// loading a document (setState, which fires no update listener) and startup
+// call refreshFromDocText directly. Nothing else can change the page config,
+// so the name, sidebar and new-comment paths refresh only the comments.
+function refreshFromDocText() {
+  updatePageMetrics();
+  refreshComments();
+}
+
+let docRefreshQueued = false;
+function scheduleDocRefresh() {
+  if (docRefreshQueued) return;
+  docRefreshQueued = true;
   requestAnimationFrame(() => {
-    commentsRefreshQueued = false;
-    refreshComments();
+    docRefreshQueued = false;
+    refreshFromDocText();
   });
 }
 
@@ -2294,7 +2303,7 @@ const editorExtensions = () => [
   EditorView.updateListener.of((update) => {
     if (update.docChanged) {
       setDirty(true);
-      scheduleCommentsRefresh();
+      scheduleDocRefresh();
       schedulePagination();
       scheduleAutosaveRecovery();
     }
@@ -2420,7 +2429,7 @@ function loadIntoEditor(
   // rather than let a matching cache key short-circuit it to an empty field.
   lastMeasureKey = "";
   refreshTitle();
-  refreshComments();
+  refreshFromDocText();
   refreshPageIndicator();
   refreshWordCount();
   schedulePagination(300);
@@ -4148,7 +4157,7 @@ applyViewClass();
 applyZoom();
 refreshTitle();
 refreshModeButtons();
-refreshComments();
+refreshFromDocText();
 refreshReviewButtons();
 refreshPageIndicator();
 refreshStyleButton();

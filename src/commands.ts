@@ -10,6 +10,7 @@ import {
 import type { Command } from "@codemirror/view";
 import { insertedLength } from "./document";
 import { trimRange } from "./ranges";
+import { ancestorMatches } from "./syntax";
 import {
   hardBreakLineEnd,
   inlineConstructsAt,
@@ -791,16 +792,8 @@ export function setHeading(level: number): StateCommand {
 
 const BLOCK_CONTEXT = /^(ListItem|Blockquote|FencedCode|CodeBlock|Table)$/;
 
-function inBlockContext(state: EditorState, pos: number): boolean {
-  for (
-    let n: SyntaxNode | null = syntaxTree(state).resolveInner(pos, -1);
-    n !== null;
-    n = n.parent
-  ) {
-    if (BLOCK_CONTEXT.test(n.name)) return true;
-  }
-  return false;
-}
+const inBlockContext = (state: EditorState, pos: number) =>
+  ancestorMatches(state, pos, BLOCK_CONTEXT, -1);
 
 /**
  * Word-like Enter in the live view: a new PARAGRAPH, which in markdown is a
