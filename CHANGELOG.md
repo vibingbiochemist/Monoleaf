@@ -32,6 +32,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image links and the metadata block were inserted with Unix line breaks,
   which showed several lines as one (Document Properties could fold the whole
   file into a single line) and saved stray Unix line endings into the file.
+- **PDF import no longer loses or garbles text that looks like list markup.**
+  A line starting `3.5 mg` or `e.g.` was turned into a numbered item and
+  lost its first characters; numbered lists now keep their printed starting
+  number, sub-items under a numbered step stay in the same list, lettered
+  items keep their letter, and text such as `__init__` or `~~x~~` no longer
+  turns bold or struck through. A PDF with an enormous grid of drawn lines
+  can no longer crash Monoleaf by exhausting memory.
 
 ## [1.3.2] - 2026-10-06
 
