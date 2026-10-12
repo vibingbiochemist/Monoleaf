@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { clampSelection, coalesce, decideExternalChange } from "./filewatch";
+import {
+  clampSelection,
+  coalesce,
+  decideExternalChange,
+  serialize,
+} from "./filewatch";
 
 describe("decideExternalChange", () => {
   it("ignores Monoleaf's own save", () => {
@@ -183,5 +188,45 @@ describe("coalesce", () => {
     await run();
     await run();
     expect(runs).toBe(2);
+  });
+});
+
+describe("serialize", () => {
+  it("runs every call, one at a time, in call order", async () => {
+    const started: string[] = [];
+    const finish: Record<string, (err?: Error) => void> = {};
+    const writes = serialize(
+      (text: string) =>
+        new Promise<void>((resolve, reject) => {
+          started.push(text);
+          finish[text] = (err) => (err ? reject(err) : resolve());
+        }),
+    );
+
+    const a = writes.run("a");
+    const b = writes.run("b");
+    const c = writes.run("c");
+    const idle = writes.idle();
+    await Promise.resolve();
+    expect(started).toEqual(["a"]);
+
+    // A failure is reported to its own caller and does not stop the queue.
+    finish.a(new Error("disk full"));
+    await expect(a).rejects.toThrow("disk full");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started).toEqual(["a", "b"]);
+
+    finish.b();
+    await b;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started).toEqual(["a", "b", "c"]);
+
+    let idleSettled = false;
+    void idle.then(() => (idleSettled = true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(idleSettled).toBe(false);
+    finish.c();
+    await c;
+    await idle;
   });
 });

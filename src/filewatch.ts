@@ -108,3 +108,27 @@ export function coalesce(task: () => Promise<void>): () => Promise<void> {
     return running;
   };
 }
+
+/**
+ * Run calls of `task` one at a time, in the order they were made. Each call's
+ * promise settles with that call's own outcome, and a failed call does not
+ * hold up the ones queued behind it. `idle()` settles once every call made so
+ * far has.
+ *
+ * Unlike `coalesce`, nothing is dropped: every save has to reach the disk, and
+ * in order, or an older text could land last. `write_file` runs off the main
+ * thread, so an autosave firing during Ctrl+S could otherwise finish second.
+ */
+export function serialize<A extends unknown[]>(
+  task: (...args: A) => Promise<void>,
+): { run: (...args: A) => Promise<void>; idle: () => Promise<void> } {
+  let tail: Promise<void> = Promise.resolve();
+  return {
+    run: (...args) => {
+      const result = tail.then(() => task(...args));
+      tail = result.catch(() => {});
+      return result;
+    },
+    idle: () => tail,
+  };
+}

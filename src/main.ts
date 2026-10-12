@@ -142,7 +142,12 @@ import {
   recoveryKey,
   writeDraft,
 } from "./recovery";
-import { clampSelection, coalesce, decideExternalChange } from "./filewatch";
+import {
+  clampSelection,
+  coalesce,
+  decideExternalChange,
+  serialize,
+} from "./filewatch";
 import {
   loadRemoteImagePreference,
   setRemoteImagesAllowed,
@@ -571,6 +576,9 @@ const checkDiskVersion = coalesce(async () => {
     return;
   }
 
+  // Our own saves first: a read that slipped between two queued writes would
+  // see the older one and take it for another program's edit.
+  await persist.idle();
   let diskText: string;
   try {
     diskText = await invoke<string>("read_file", { path });
@@ -2561,6 +2569,26 @@ async function openFile() {
 // scheduleAutosaveRecovery).
 let autosaveErrorShown = false;
 
+// Saves reach the disk one at a time, in the order they were made (see
+// `serialize`), so a Ctrl+S during a slow autosave cannot finish first and
+// then be overwritten by the older text. The baseline moves with each write
+// inside the queue, so it always describes the write actually happening.
+const persist = serialize(async (path: string, contents: string) => {
+  // Recorded before writing, not after. The change event our own write
+  // causes is judged against this baseline, and it must not be able to
+  // arrive first and read as an edit by someone else. Restored if the write
+  // fails, since the disk then still holds whatever it held before. A plain
+  // restore is enough: in the queue no other save can have moved it since.
+  const previousBaseline = diskBaseline;
+  diskBaseline = contents;
+  try {
+    await invoke("write_file", { path, contents });
+  } catch (err) {
+    diskBaseline = previousBaseline;
+    throw err;
+  }
+});
+
 // True while saveFile is writing. Autosave waits for it rather than starting a
 // second write of the same file (see scheduleAutosaveRecovery).
 let saveInFlight = false;
@@ -2586,27 +2614,17 @@ async function saveFile(
     // as saved if, afterwards, the editor still holds what was written.
     const written = view.state.doc;
     const contents = serializeDocument(view.state);
-    // Recorded before writing, not after. The change event our own write
-    // causes is judged against this baseline, and it must not be able to
-    // arrive first and read as an edit by someone else. Restored if the write
-    // fails, since the disk then still holds whatever it held before; unless
-    // another save has replaced it meanwhile, whose baseline is the newer one.
-    const previousBaseline = diskBaseline;
-    diskBaseline = contents;
     saveInFlight = true;
     try {
       try {
-        await invoke("write_file", { path, contents });
+        await persist.run(path, contents);
       } catch (err) {
         // Same offer as on open: saving to a share is the user's call to make,
         // so it is only made when they asked to save. Asked from autosave it
         // would reopen after every typing pause.
         if (autosave || !(await offerNetworkPaths(err))) throw err;
-        await invoke("write_file", { path, contents });
+        await persist.run(path, contents);
       }
-    } catch (err) {
-      if (diskBaseline === contents) diskBaseline = previousBaseline;
-      throw err;
     } finally {
       saveInFlight = false;
     }

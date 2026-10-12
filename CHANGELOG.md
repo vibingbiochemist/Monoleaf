@@ -32,6 +32,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image links and the metadata block were inserted with Unix line breaks,
   which showed several lines as one (Document Properties could fold the whole
   file into a single line) and saved stray Unix line endings into the file.
+- **A save that is interrupted no longer leaves an empty or cut-off file.**
+  Monoleaf used to overwrite the document in place, so a crash, a full disk
+  or a dropped network connection partway through could lose it. It now
+  writes the new version beside it first and swaps it in only once it is
+  complete.
+- **Opening or saving a slow file no longer freezes every window.** Reading
+  a OneDrive file that is only in the cloud, a file on a slow share, or a
+  large image now happens in the background. Images over 50 MB are no longer
+  loaded into the editor; they show as a broken picture instead.
+- **An image path written in a rarer Windows form (`\??\UNC\...`) can no
+  longer reach a network share.** Such a path slipped past the check that
+  keeps Monoleaf off network paths unless you allow them, so a document could
+  make Windows contact another computer and send it your sign-in details in
+  hashed form.
 
 ## [1.3.2] - 2026-10-06
 
