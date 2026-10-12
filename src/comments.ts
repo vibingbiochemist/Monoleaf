@@ -54,7 +54,10 @@ export interface CommentThread {
 }
 
 const ANCHOR_RE = /<!--c:([a-z0-9]+)([se])-->/g;
-const BODY_RE = /<!--c:([a-z0-9]+) (\{.*?\})-->/g;
+// The body stops at the next `<!--`, which serializeBody never writes
+// (escapeDashes); a plain `.*?` rescanned the rest of the line from every
+// unclosed `<!--c:id {`, so a long line of them froze parsing for seconds.
+const BODY_RE = /<!--c:([a-z0-9]+) (\{(?:(?!<!--).)*?\})-->/g;
 
 function serializeBody(id: string, resolved: boolean, thread: CommentEntry[]) {
   return `<!--c:${id} ${escapeDashes(JSON.stringify({ resolved, thread }))}-->`;

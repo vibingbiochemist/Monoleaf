@@ -32,6 +32,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image links and the metadata block were inserted with Unix line breaks,
   which showed several lines as one (Document Properties could fold the whole
   file into a single line) and saved stray Unix line endings into the file.
+- **Unfinished markup no longer freezes the editor.** Many tracked-change
+  openers without their closing marks (such as `{~~old~>` or `{++`), many
+  unclosed `<img` tags, or a long line of unclosed review-comment blocks
+  could make Monoleaf hang for seconds on every keystroke or page layout.
+  These are now read in a single pass, however much of the document they
+  fill.
 
 ## [1.3.2] - 2026-10-06
 
