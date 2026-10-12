@@ -71,7 +71,8 @@ fn spawn_document_window(app: &AppHandle, payload: Option<String>) -> Result<Str
     // config-defined "main" window, because a window builder call like this
     // one is NOT covered by the JSON config merge and would otherwise revert a
     // New/Open window to the Windows-style chrome on Mac. inner_size is the
-    // restored (un-maximized) size the window falls back to.
+    // restored (un-maximized) size the window falls back to. It also starts
+    // hidden like "main" outside macOS, for the reason given at `reveal_window`.
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title("Monoleaf")
         .inner_size(1000.0, 720.0)
@@ -79,12 +80,53 @@ fn spawn_document_window(app: &AppHandle, payload: Option<String>) -> Result<Str
     #[cfg(target_os = "macos")]
     let builder = builder.maximized(false).decorations(true);
     #[cfg(not(target_os = "macos"))]
-    let builder = builder.maximized(true).decorations(false);
+    let builder = builder.maximized(true).decorations(false).visible(false);
     let win = builder.build().map_err(|e| e.to_string())?;
     // Windows can otherwise place the new window behind the current foreground
     // window; force it to the front so New / Open always surfaces the document.
+    // (A no-op while the window is still hidden; `reveal` focuses it then.)
     let _ = win.set_focus();
+    reveal_later(win);
     Ok(label)
+}
+
+/// Show a window that started hidden, and bring it to the front. Does nothing
+/// to a window that is already visible.
+fn reveal(win: &tauri::WebviewWindow) {
+    if win.is_visible().unwrap_or(true) {
+        return;
+    }
+    let _ = win.show();
+    // Focus only after showing: tao ignores set_focus on a hidden window.
+    let _ = win.unminimize();
+    let _ = win.set_focus();
+}
+
+/// Called by each window's frontend once its page is laid out, to show the
+/// window it starts hidden in (outside macOS: tauri.conf.json `visible: false`
+/// for "main", `spawn_document_window` for the rest).
+///
+/// Why hidden: since tao 0.37 (Tauri 2.12) a window is made visible while it is
+/// being created and only maximized afterwards, so a visible-from-the-start
+/// maximized window first appeared as a black, empty maximized frame with the
+/// still-unsized white WebView in one corner. Showing it once the page is ready
+/// skips all of that. Sync on purpose: sync commands run on the main thread,
+/// where `show` takes effect at once, so the `set_focus` after it sees a
+/// visible window.
+#[tauri::command]
+fn reveal_window(window: tauri::WebviewWindow) {
+    reveal(&window);
+}
+
+/// Safety net for `reveal_window`: if the frontend never calls it (a script
+/// error before the end of main.ts, say), show the window anyway after a few
+/// seconds rather than leave a running app with no window.
+fn reveal_later(win: tauri::WebviewWindow) {
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_secs(5));
+        let w = win.clone();
+        let _ = win.run_on_main_thread(move || reveal(&w));
+    });
 }
 
 /// Open a new editor window (blank when `payload` is None). See `PendingPayloads`.
@@ -1252,6 +1294,7 @@ pub fn run() {
             take_launch_file,
             open_document_window,
             take_window_payload,
+            reveal_window,
             check_for_update,
             get_pending_update,
             download_update,
@@ -1270,10 +1313,13 @@ pub fn run() {
         // On Windows the OS foreground-lock policy can let the config-defined
         // "main" window open *behind* whatever already has focus. Explicitly
         // raise and focus it once at startup so Monoleaf always comes to front.
+        // Outside macOS it is still hidden here, which makes these no-ops; the
+        // same raise then happens when it is revealed (see `reveal_window`).
         .setup(|app| {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.unminimize();
                 let _ = win.set_focus();
+                reveal_later(win);
             }
             Ok(())
         })
