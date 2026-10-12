@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Double-clicking a Markdown file in the macOS Finder opens it.** macOS
+  hands the file to the app differently from Windows and Linux, and Monoleaf
+  ignored it, so the window opened empty.
+- **`monoleaf notes.md` from a terminal opens the right file.** A relative
+  path is now resolved against the folder the command was typed in, also
+  when Monoleaf is already running, and changes to the file on disk are
+  picked up for such launches too. Starting Monoleaf again while only extra
+  windows are open (the first one closed) now brings one of them to the
+  front instead of doing nothing.
 - **Starting Monoleaf no longer flashes a black screen with a white
   rectangle.** Since 1.3.0 the window appeared before it was maximized and
   before the editor had drawn anything. It now stays hidden until the editor
