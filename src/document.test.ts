@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { createDocumentState, serializeDocument } from "./document";
+import { EditorView } from "@codemirror/view";
+import {
+  createDocumentState,
+  documentLineBreakInput,
+  serializeDocument,
+  toDocumentLineBreaks,
+} from "./document";
 
 /**
  * The hard requirement from the brief: opening a .md and saving it with no
@@ -57,5 +63,44 @@ describe("edits stay consistent with the file's separator", () => {
   it("state.lineBreak defaults to LF for LF documents", () => {
     const state = createDocumentState("a\nb\n");
     expect(state.lineBreak).toBe("\n");
+  });
+});
+
+describe("outside text takes the document's line breaks", () => {
+  // Clipboard text from anywhere: LF, Windows CRLF and a classic-Mac CR.
+  const pasted = "one\ntwo\r\nthree\rfour";
+
+  const insertAtEnd = (doc: string, text: string) => {
+    const state = createDocumentState(doc);
+    return state.update({
+      changes: {
+        from: state.doc.length,
+        insert: toDocumentLineBreaks(state, text),
+      },
+    }).state;
+  };
+
+  it("CRLF document: every break becomes CRLF and a real line", () => {
+    const after = insertAtEnd("a\r\n", pasted);
+    expect(serializeDocument(after)).toBe("a\r\none\r\ntwo\r\nthree\r\nfour");
+    expect(after.doc.lines).toBe(5);
+  });
+
+  it("CR document: every break becomes CR and a real line", () => {
+    const after = insertAtEnd("a\r", pasted);
+    expect(serializeDocument(after)).toBe("a\rone\rtwo\rthree\rfour");
+    expect(after.doc.lines).toBe(5);
+  });
+
+  it("LF document: CRLF and CR become LF", () => {
+    const after = insertAtEnd("a\n", pasted);
+    expect(serializeDocument(after)).toBe("a\none\ntwo\nthree\nfour");
+  });
+
+  it("CodeMirror's own paste runs through the same conversion", () => {
+    const state = createDocumentState("a\r\n", [documentLineBreakInput]);
+    const filters = state.facet(EditorView.clipboardInputFilter);
+    const filtered = filters.reduce((t, f) => f(t, state), pasted);
+    expect(filtered).toBe("one\r\ntwo\r\nthree\r\nfour");
   });
 });

@@ -39,7 +39,13 @@ import {
 } from "./paste";
 import { insertTable, insertTableSized, tableMenuItems } from "./tablewidget";
 import { countWords } from "./wordcount";
-import { createDocumentState, serializeDocument } from "./document";
+import {
+  createDocumentState,
+  documentLineBreakInput,
+  insertedLength,
+  serializeDocument,
+  toDocumentLineBreaks,
+} from "./document";
 import { applyMeta, parseMeta, type DocMeta, type MetaFormat } from "./meta";
 import { PortabilityMode, portabilityExtensions } from "./portability";
 import { livePreviewExtensions } from "./livepreview";
@@ -661,7 +667,9 @@ function setupCloseGuard() {
         const choice = await promptClose();
         if (choice === "cancel") return; // stay open
         // Save failed or the Save-As dialog was cancelled: keep the window.
-        if (choice === "save" && !(await saveFile())) return;
+        // Likewise if the user typed on while the save was writing, since
+        // those edits are not in the file.
+        if (choice === "save" && (!(await saveFile()) || dirty)) return;
         // Discarded: forget this window's recovery snapshot so it isn't
         // offered on the next launch.
         if (choice === "discard") discardDraft(RECOVERY_KEY);
@@ -1070,7 +1078,7 @@ const metaFrontmatter = document.getElementById(
 ) as HTMLInputElement;
 
 function openMetaDialog() {
-  const { meta, format } = parseMeta(view.state.doc.toString());
+  const { meta, format } = parseMeta(serializeDocument(view.state));
   metaFields.title.value = meta.title;
   metaFields.author.value =
     meta.author || (localStorage.getItem(AUTHOR_KEY)?.trim() ?? "");
@@ -1095,8 +1103,11 @@ function openMetaDialog() {
       const fmt: MetaFormat = metaFrontmatter.checked
         ? "frontmatter"
         : "comment";
-      const current = view.state.doc.toString();
-      const updated = applyMeta(current, next, fmt);
+      // In the file's own line endings, not doc.toString()'s LF: the result
+      // replaces the whole document, and a CRLF or CR state would read LF
+      // breaks as line content, folding the file into one line.
+      const current = serializeDocument(view.state);
+      const updated = applyMeta(current, next, fmt, view.state.lineBreak);
       if (updated !== current) {
         view.dispatch({
           changes: { from: 0, to: view.state.doc.length, insert: updated },
@@ -1207,10 +1218,10 @@ void getCurrentWebview().onDragDropEvent((event) => {
         baseNameWithoutExtension(p),
       ),
     )
-    .join("\n");
+    .join(view.state.lineBreak);
   view.dispatch({
     changes: { from: pos, insert: markdown },
-    selection: { anchor: pos + markdown.length },
+    selection: { anchor: pos + insertedLength(view.state, markdown) },
     userEvent: "input.image",
   });
   view.focus();
@@ -2248,7 +2259,7 @@ const richPaste = Prec.highest(
       e.preventDefault();
       // Inserted strings split only on the document's configured separator,
       // so turndown's \n must become the document's line break first.
-      const text = markdown.replace(/\n/g, v.state.lineBreak);
+      const text = toDocumentLineBreaks(v.state, markdown);
       v.dispatch({
         ...v.state.replaceSelection(text),
         userEvent: "input.paste",
@@ -2263,6 +2274,7 @@ const editorExtensions = () => [
   editorSetup,
   linkClickExtension,
   richPaste,
+  documentLineBreakInput, // the plain-text paste richPaste falls back to
   Prec.high(formattingKeymap),
   modeCompartment.of(portabilityExtensions(mode, showFlags)),
   liveCompartment.of(liveView ? livePreviewExtensions() : rawViewExtensions),
@@ -2542,7 +2554,23 @@ async function openFile() {
   }
 }
 
-async function saveFile(forcePrompt = false): Promise<boolean> {
+// True once an autosave failure has been reported, until a save succeeds. A
+// locked or read-only file fails every autosave, one per typing pause, and a
+// modal error each time would make the document impossible to edit; the
+// recovery snapshot keeps the work safe in the meantime (see
+// scheduleAutosaveRecovery).
+let autosaveErrorShown = false;
+
+// True while saveFile is writing. Autosave waits for it rather than starting a
+// second write of the same file (see scheduleAutosaveRecovery).
+let saveInFlight = false;
+
+/** `autosave` marks a save nobody asked for: its failure is reported once per
+ * streak rather than every time, and it never asks about network paths. */
+async function saveFile(
+  forcePrompt = false,
+  autosave = false,
+): Promise<boolean> {
   try {
     let path = currentPath;
     if (path === null || forcePrompt) {
@@ -2552,25 +2580,40 @@ async function saveFile(forcePrompt = false): Promise<boolean> {
       });
       if (path === null) return false;
     }
+    // A write is not instant (OneDrive, a virus scanner, or the network-path
+    // question below can hold it for seconds) and the user can keep typing
+    // meanwhile. Those edits are not in the file, so the document only counts
+    // as saved if, afterwards, the editor still holds what was written.
+    const written = view.state.doc;
     const contents = serializeDocument(view.state);
     // Recorded before writing, not after. The change event our own write
     // causes is judged against this baseline, and it must not be able to
     // arrive first and read as an edit by someone else. Restored if the write
-    // fails, since the disk then still holds whatever it held before.
+    // fails, since the disk then still holds whatever it held before; unless
+    // another save has replaced it meanwhile, whose baseline is the newer one.
     const previousBaseline = diskBaseline;
     diskBaseline = contents;
+    saveInFlight = true;
     try {
       try {
         await invoke("write_file", { path, contents });
       } catch (err) {
-        // Same offer as on open: saving to a share is the user's call to make.
-        if (!(await offerNetworkPaths(err))) throw err;
+        // Same offer as on open: saving to a share is the user's call to make,
+        // so it is only made when they asked to save. Asked from autosave it
+        // would reopen after every typing pause.
+        if (autosave || !(await offerNetworkPaths(err))) throw err;
         await invoke("write_file", { path, contents });
       }
     } catch (err) {
-      diskBaseline = previousBaseline;
+      if (diskBaseline === contents) diskBaseline = previousBaseline;
       throw err;
+    } finally {
+      saveInFlight = false;
     }
+    // Compared by content, so typing and undoing it during the write still
+    // counts as saved.
+    const upToDate = view.state.doc.eq(written);
+    autosaveErrorShown = false;
     currentPath = path;
     setCurrentDocumentPath(path);
     // Save As moves the watch to the new file.
@@ -2587,13 +2630,22 @@ async function saveFile(forcePrompt = false): Promise<boolean> {
     });
     // The document has a real name now, so any imported suggestion is spent.
     suggestedName = null;
-    dirty = false;
     missingOnDisk = false; // written back (or saved elsewhere); refreshed below
     rememberLastFile(path);
-    discardDraft(RECOVERY_KEY); // the file now matches
+    // Edits typed while the write was in flight are not in the file: the
+    // document stays unsaved and keeps its snapshot. Nothing to schedule for
+    // them, since those edits already scheduled their own autosave/snapshot.
+    if (upToDate) {
+      dirty = false;
+      discardDraft(RECOVERY_KEY); // the file now matches
+    }
     refreshTitle();
     return true;
   } catch (err) {
+    if (autosave) {
+      if (autosaveErrorShown) return false;
+      autosaveErrorShown = true;
+    }
     await showError(err);
     return false;
   }
@@ -2613,26 +2665,31 @@ for (const [id, handler] of Object.entries(actions)) {
 // --- autosave / crash recovery ---
 let autosaveTimer: number | undefined;
 
-// Debounced after edits settle: autosave to the file when enabled, otherwise
-// keep a recovery snapshot of the unsaved work.
+// Debounced after edits settle: keep a recovery snapshot of the unsaved work,
+// and autosave to the file as well when enabled.
 function scheduleAutosaveRecovery() {
   window.clearTimeout(autosaveTimer);
   autosaveTimer = window.setTimeout(() => {
     if (!dirty) return;
-    // Not while the user is being asked whether to reload a version another
-    // program wrote: autosaving now would overwrite that version before they
-    // have answered. The prompt reschedules this once it closes.
+    // Written even when autosave is about to run: the write can fail (file
+    // locked, read-only, disk full) and then this is the only other copy. A
+    // save that succeeds discards it again. Returns false if storage refused
+    // it (over quota); skipping one snapshot is preferable to interrupting
+    // the user.
+    writeDraft(RECOVERY_KEY, currentPath, serializeDocument(view.state));
+    // No autosave while the user is being asked whether to reload a version
+    // another program wrote: it would overwrite that version before they have
+    // answered. The prompt reschedules this once it closes.
     if (externalChangePrompt) return;
     // Nor while the file is gone: it may have been renamed, and writing the old
     // name back on its own would leave two copies. Saving it again is the
-    // user's call; until then the recovery snapshot below keeps the work.
+    // user's call; until then the recovery snapshot keeps the work.
     if (autosaveEnabled && currentPath !== null && !missingOnDisk) {
-      void saveFile(); // writes, clears dirty, clears the recovery snapshot
-      return;
+      // A save still writing (a slow disk, or the user's own Ctrl+S): try
+      // again after it rather than racing it with a second write.
+      if (saveInFlight) scheduleAutosaveRecovery();
+      else void saveFile(false, true); // on success clears dirty and snapshot
     }
-    // Returns false if storage refused it (over quota); skipping one snapshot
-    // is preferable to interrupting the user.
-    writeDraft(RECOVERY_KEY, currentPath, serializeDocument(view.state));
   }, 1500);
 }
 
@@ -3561,11 +3618,7 @@ async function clipboardCopy() {
  * fall back to plain text. */
 async function menuPasteRich() {
   const insert = (markdown: string) => {
-    // Normalise any CR/CRLF first, then to the document's separator, so pasting
-    // plain text that carries Windows line endings can't produce doubled "\r".
-    const text = markdown
-      .replace(/\r\n?/g, "\n")
-      .replace(/\n/g, view.state.lineBreak);
+    const text = toDocumentLineBreaks(view.state, markdown);
     view.dispatch({
       ...view.state.replaceSelection(text),
       userEvent: "input.paste",
@@ -3603,7 +3656,7 @@ async function clipboardPaste() {
     const text = await readText();
     if (text !== "") {
       view.dispatch({
-        ...view.state.replaceSelection(text),
+        ...view.state.replaceSelection(toDocumentLineBreaks(view.state, text)),
         userEvent: "input.paste",
         scrollIntoView: true,
       });

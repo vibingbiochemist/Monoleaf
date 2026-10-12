@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer splits in two.** Editing such a table, or pasting it from Excel,
   saved the cell in a form Monoleaf read back as two cells the next time the
   file was opened, which added a column to that row.
+- **Typing while a save is still writing no longer loses those edits.** A
+  slow save (OneDrive, a virus scanner, or the network-folder question) marked
+  everything as saved when it finished, including what was typed meanwhile,
+  so closing the window dropped it without asking. Those edits now stay
+  unsaved until the next save.
+- **A failed autosave no longer leaves you without a recovery copy or
+  repeats its error on every pause.** When autosave could not write the file
+  (locked, read-only, disk full), no recovery snapshot was kept, and the same
+  error popped up after each pause in typing. The snapshot is now kept until a
+  save succeeds, and the error is shown once until saving works again.
+- **Files with Windows (CRLF) or classic Mac (CR) line endings keep them when
+  you paste, drop images or edit Document Properties.** Pasted text, dropped
+  image links and the metadata block were inserted with Unix line breaks,
+  which showed several lines as one (Document Properties could fold the whole
+  file into a single line) and saved stray Unix line endings into the file.
 
 ## [1.3.2] - 2026-10-06
 

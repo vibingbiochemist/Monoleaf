@@ -35,9 +35,12 @@ const FIELDS: (keyof DocMeta)[] = [
   "keywords",
 ];
 
-const META_COMMENT_RE = /<!--ml:meta (\{[\s\S]*?\})-->\r?\n?/;
+// Line breaks are matched as LF, CRLF or a lone CR alike: the text is the file
+// in its own line endings (see applyMeta), and a classic-Mac CR file is as
+// entitled to its metadata as a Windows one.
+const META_COMMENT_RE = /<!--ml:meta (\{[\s\S]*?\})-->(?:\r\n?|\n)?/;
 // Front matter is only front matter at the very top of the file.
-const FRONTMATTER_RE = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?/;
+const FRONTMATTER_RE = /^---(?:\r\n?|\n)([\s\S]*?)(?:\r\n?|\n)---(?:\r\n?|\n)?/;
 
 export function isEmptyMeta(meta: DocMeta): boolean {
   return FIELDS.every((f) => meta[f].trim() === "");
@@ -55,7 +58,7 @@ function pickStrings(data: Record<string, unknown>): DocMeta {
 // all this metadata ever is. Avoids pulling in a YAML dependency.
 function parseYamlish(block: string): DocMeta {
   const data: Record<string, string> = {};
-  for (const line of block.split(/\r?\n/)) {
+  for (const line of block.split(/\r\n?|\n/)) {
     const m = /^([A-Za-z_]+)\s*:\s*(.*)$/.exec(line);
     if (m === null) continue;
     data[m[1].toLowerCase()] = m[2].trim().replace(/^"(.*)"$|^'(.*)'$/, "$1$2");
@@ -91,7 +94,7 @@ export function stripMeta(text: string): string {
   } else {
     t = t.replace(META_COMMENT_RE, "");
   }
-  return t.replace(/^(\r?\n)+/, "");
+  return t.replace(/^(?:\r\n?|\n)+/, "");
 }
 
 function yamlScalar(value: string): string {
@@ -100,27 +103,35 @@ function yamlScalar(value: string): string {
     : value;
 }
 
-/** The metadata block in the chosen format, or "" when every field is blank. */
-export function metaBlock(meta: DocMeta, format: MetaFormat): string {
+/** The metadata block in the chosen format, or "" when every field is blank.
+ * `nl` is the document's line break (state.lineBreak), so a block written into
+ * a CRLF or CR file uses that file's endings rather than adding LF ones. */
+export function metaBlock(
+  meta: DocMeta,
+  format: MetaFormat,
+  nl = "\n",
+): string {
   if (isEmptyMeta(meta)) return "";
   const present = FIELDS.filter((f) => meta[f].trim() !== "");
   if (format === "frontmatter") {
     const lines = present.map((f) => `${f}: ${yamlScalar(meta[f].trim())}`);
-    return `---\n${lines.join("\n")}\n---`;
+    return `---${nl}${lines.join(nl)}${nl}---`;
   }
   const obj: Record<string, string> = {};
   for (const f of present) obj[f] = meta[f].trim();
   return `<!--ml:meta ${escapeDashes(JSON.stringify(obj))}-->`;
 }
 
-/** Return the document text with its metadata block replaced/inserted at top. */
+/** Return the document text with its metadata block replaced/inserted at top.
+ * `text` is the serialized document and `nl` its line break, see metaBlock. */
 export function applyMeta(
   text: string,
   meta: DocMeta,
   format: MetaFormat,
+  nl = "\n",
 ): string {
   const body = stripMeta(text);
-  const block = metaBlock(meta, format);
+  const block = metaBlock(meta, format, nl);
   if (block === "") return body;
-  return body === "" ? `${block}\n` : `${block}\n\n${body}`;
+  return body === "" ? `${block}${nl}` : `${block}${nl}${nl}${body}`;
 }
