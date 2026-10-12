@@ -894,7 +894,7 @@ export function buildPrintCss(
 ${root} {
   font-family: ${fontStack(cfg.font)};
   font-size: 11pt;
-  line-height: 1.5;
+  line-height: ${PRINT_LINE_HEIGHT};
   color: #111111;
   /* Print backgrounds/borders (table header shading etc.) instead of the
      browser stripping them to save ink. */
