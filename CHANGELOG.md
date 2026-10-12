@@ -32,6 +32,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image links and the metadata block were inserted with Unix line breaks,
   which showed several lines as one (Document Properties could fold the whole
   file into a single line) and saved stray Unix line endings into the file.
+- **A document can no longer load remote content through an embedded
+  stylesheet, or restyle Monoleaf itself.** A `<style>` block in a Markdown
+  file could fetch images from the internet even with "Load remote images"
+  off, and could hide or change parts of the app. Such blocks are now removed
+  when the document is rendered.
+- **Clicking an image-map area or an SVG link in print preview opens it in
+  your browser instead of replacing the editor.** Previously such a link
+  navigated the whole Monoleaf window away, with no way back to the document.
+  The window now also refuses any navigation away from the app itself.
 
 ## [1.3.2] - 2026-10-06
 

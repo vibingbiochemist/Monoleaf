@@ -1202,6 +1202,20 @@ async fn install_update(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// True for a URL served by the app itself: the bundled frontend, which wry
+/// serves as `tauri://localhost` on macOS/Linux and `http(s)://tauri.localhost`
+/// on Windows, or — in `tauri dev` only — the Vite dev server. Everything else
+/// leaves the app. IPC is a fetch to ipc.localhost, not a navigation, so it
+/// never reaches this.
+fn is_app_url(url: &tauri::Url, dev_url: Option<&tauri::Url>) -> bool {
+    let host = url.host_str();
+    match url.scheme() {
+        "tauri" if host == Some("localhost") => true,
+        "http" | "https" if host == Some("tauri.localhost") => true,
+        _ => dev_url.is_some_and(|dev| dev.origin() == url.origin()),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // The file this process was launched with (double-clicked .md), captured
@@ -1227,6 +1241,22 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        // Defence in depth behind the frontend's link interception: a window
+        // that navigates away has lost its editor, and there is no back
+        // button. Only leaving the app is refused; a same-origin link would
+        // still reload it (refusing that would also refuse reload in dev), so
+        // the frontend interception stays the primary guard. A plugin hook
+        // rather than WebviewWindowBuilder::on_navigation
+        // because it covers every webview, including the config-defined "main"
+        // window that no builder call here creates.
+        .plugin(
+            tauri::plugin::Builder::<_, ()>::new("navigation-guard")
+                .on_navigation(|webview, url| {
+                    let dev_url = webview.config().build.dev_url.as_ref();
+                    is_app_url(url, dev_url.filter(|_| tauri::is_dev()))
+                })
+                .build(),
+        )
         // The updater. Its configuration lives in `plugins.updater` in
         // tauri.conf.json, which is strict JSON and cannot hold comments, so the
         // four things a reader needs to know about it are recorded here.
@@ -1564,5 +1594,36 @@ mod tests {
         assert!(validate_path("note.md\0.bat", true).is_err());
         // The extension allow-list still applies to an opted-in network path.
         assert!(validate_write_path(r"\\host\share\evil.bat", true).is_err());
+    }
+
+    #[test]
+    fn navigation_guard_allows_only_the_app_itself() {
+        let u = |s: &str| tauri::Url::parse(s).unwrap();
+        let dev = u("http://localhost:1420");
+        for ok in [
+            "tauri://localhost",
+            "tauri://localhost/index.html",
+            "http://tauri.localhost/",
+            "https://tauri.localhost/index.html#x",
+        ] {
+            assert!(is_app_url(&u(ok), None), "refused: {ok}");
+        }
+        assert!(is_app_url(
+            &u("http://localhost:1420/index.html"),
+            Some(&dev)
+        ));
+        for bad in [
+            "https://example.com/",
+            "http://localhost:1420/", // dev server outside `tauri dev`
+            "tauri://example.com/",
+            "https://tauri.localhost.example.com/",
+            "about:blank",
+            "file:///C:/x.html",
+            "data:text/html,x",
+        ] {
+            assert!(!is_app_url(&u(bad), None), "allowed: {bad}");
+        }
+        // Same host, other port: a different origin.
+        assert!(!is_app_url(&u("http://localhost:1421/"), Some(&dev)));
     }
 }

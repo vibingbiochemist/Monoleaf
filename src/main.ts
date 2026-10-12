@@ -134,7 +134,7 @@ import {
   fontStack,
   isFontId,
 } from "./fonts";
-import { sanitizeDocumentHtml } from "./sanitize";
+import { linkHrefForClick, sanitizeDocumentHtml } from "./sanitize";
 import {
   collectRecoveryDrafts,
   discardDraft,
@@ -1795,7 +1795,8 @@ function pageSetup() {
 
 // The app webview must NEVER navigate away (there is no back button — the
 // editor would be lost). Links are routed to the system's default browser
-// instead: plain click on <a> elements (print preview), Ctrl+click on
+// instead: plain click on any link in the document (print preview; see
+// linkHrefForClick for what counts as one), Ctrl+click on
 // editor links (which carry data-url and say so in their hover tooltip).
 function openExternal(url: string) {
   if (/^(https?:|mailto:|tel:)/i.test(url)) {
@@ -1848,13 +1849,12 @@ for (const eventName of ["click", "auxclick"] as const) {
         followLink(editorLink.getAttribute("data-url")!);
         return;
       }
-      const anchor = target.closest("a");
-      if (anchor !== null && anchor.hasAttribute("href")) {
+      // <a>, image-map <area> and SVG <a xlink:href> all navigate the window.
+      const href = linkHrefForClick(target);
+      if (href !== null) {
         e.preventDefault();
         e.stopPropagation();
-        if (eventName === "click") {
-          openExternal(anchor.getAttribute("href")!);
-        }
+        if (eventName === "click") openExternal(href);
       }
     },
     { capture: true },
