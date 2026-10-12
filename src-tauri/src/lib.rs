@@ -635,12 +635,18 @@ static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 /// at the path the user gave, and planting such a link already takes local
 /// access.
 ///
-/// What the old file carried beyond its bytes does not survive: a hard link to
-/// it keeps the old contents; permissions, ACLs, the hidden attribute,
-/// alternate data streams and creation time are those of a new file in that
-/// folder; and the name's capitalisation becomes that of the path saved to.
-/// Editors that save this way (VS Code, vim) make the same trade. A read-only
-/// file is still refused, as before.
+/// A read-only file is refused before anything is written, as writing in place
+/// refused it. A rename does not ask whether the target is writable, only the
+/// folder, so without this check a save would quietly replace it. The old
+/// file's permissions are copied to the new one; otherwise a private note
+/// (0600 on macOS/Linux) would become readable by everyone (0644) on its first
+/// save.
+///
+/// Everything else the old file carried beyond its bytes does not survive: a
+/// hard link to it keeps the old contents; ownership, ACLs, the hidden
+/// attribute, alternate data streams and creation time are those of a new file
+/// in that folder; and the name's capitalisation becomes that of the path saved
+/// to. Editors that save this way (VS Code, vim) make the same trade.
 fn replace_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
 
@@ -648,6 +654,16 @@ fn replace_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
         Ok(meta) if meta.file_type().is_symlink() => fs::canonicalize(path)?,
         _ => path.to_path_buf(),
     };
+    let existing = fs::metadata(&target).ok();
+    if existing
+        .as_ref()
+        .is_some_and(|m| m.permissions().readonly())
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "the file is read-only",
+        ));
+    }
     // The time as well as the process and counter, so a file left behind by a
     // crashed run can never block a later run that got the same process id.
     let now = std::time::SystemTime::now()
@@ -665,7 +681,13 @@ fn replace_file(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
         .write(true)
         .create_new(true)
         .open(&temp)?;
-    let written = file.write_all(bytes).and_then(|()| file.sync_all());
+    let written = file
+        .write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .and_then(|()| match &existing {
+            Some(meta) => fs::set_permissions(&temp, meta.permissions()),
+            None => Ok(()),
+        });
     // Closed before the rename or removal: Windows refuses both on an open file.
     drop(file);
     let result = written.and_then(|()| rename_retrying(&temp, &target));
@@ -1626,6 +1648,63 @@ mod tests {
             assert_eq!(fs::read_to_string(&real).unwrap(), "new");
             assert_eq!(entries(&dir), ["link.md", "real.md"]);
         }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// Replacing by rename must not widen a private file's permissions, nor
+    /// replace a read-only file the old in-place write would have refused.
+    #[cfg(unix)]
+    #[test]
+    fn write_file_keeps_permissions_and_refuses_read_only_files() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = empty_test_dir("monoleaf_atomic_write_mode");
+        let private = dir.join("private.md");
+        fs::write(&private, "old").unwrap();
+        fs::set_permissions(&private, fs::Permissions::from_mode(0o600)).unwrap();
+        block_on(write_file(
+            private.to_string_lossy().into_owned(),
+            "new".into(),
+        ))
+        .unwrap();
+        assert_eq!(fs::read_to_string(&private).unwrap(), "new");
+        let mode = fs::metadata(&private).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o600);
+
+        let locked = dir.join("locked.md");
+        fs::write(&locked, "old").unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o444)).unwrap();
+        let path = locked.to_string_lossy().into_owned();
+        let err = block_on(write_file(path.clone(), "new".into())).unwrap_err();
+        assert!(
+            err.starts_with(&format!("Failed to write {path}: ")),
+            "{err}"
+        );
+        assert_eq!(fs::read_to_string(&locked).unwrap(), "old");
+        assert_eq!(entries(&dir), ["locked.md", "private.md"]);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// The Windows counterpart: the read-only attribute is refused, not
+    /// replaced.
+    #[cfg(windows)]
+    #[test]
+    fn write_file_refuses_read_only_files() {
+        let dir = empty_test_dir("monoleaf_atomic_write_readonly");
+        let locked = dir.join("locked.md");
+        fs::write(&locked, "old").unwrap();
+        let mut perms = fs::metadata(&locked).unwrap().permissions();
+        perms.set_readonly(true);
+        fs::set_permissions(&locked, perms.clone()).unwrap();
+        let path = locked.to_string_lossy().into_owned();
+        assert!(block_on(write_file(path, "new".into())).is_err());
+        assert_eq!(fs::read_to_string(&locked).unwrap(), "old");
+        assert_eq!(entries(&dir), ["locked.md"]);
+
+        #[allow(clippy::permissions_set_readonly_false)]
+        perms.set_readonly(false);
+        fs::set_permissions(&locked, perms).unwrap();
         let _ = fs::remove_dir_all(&dir);
     }
 
