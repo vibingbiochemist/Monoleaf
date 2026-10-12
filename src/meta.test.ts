@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyMeta, metaBlock, parseMeta, stripMeta, EMPTY_META } from "./meta";
+import { createDocumentState, serializeDocument } from "./document";
 
 describe("parseMeta", () => {
   it("reads an ml:meta comment block", () => {
@@ -71,4 +72,42 @@ describe("applyMeta round-trip", () => {
     const start = "---\ntitle: X\n---\n\n# Body\n";
     expect(applyMeta(start, EMPTY_META, "comment")).toBe("# Body\n");
   });
+});
+
+describe("applyMeta keeps the file's line endings", () => {
+  const meta = { ...EMPTY_META, title: "T", author: "A" };
+
+  // Through an editor state, as the Document Properties dialog does it: the
+  // result replaces the whole document and has to stay one line per line.
+  const applyInEditor = (doc: string, format: "comment" | "frontmatter") => {
+    const state = createDocumentState(doc);
+    const current = serializeDocument(state);
+    const updated = applyMeta(current, meta, format, state.lineBreak);
+    return state.update({
+      changes: { from: 0, to: state.doc.length, insert: updated },
+    }).state;
+  };
+
+  for (const [name, nl] of [
+    ["CRLF", "\r\n"],
+    ["CR", "\r"],
+  ] as const) {
+    it(`${name}: front matter is written with ${name} and stays separate lines`, () => {
+      const after = applyInEditor(`# Body${nl}text${nl}`, "frontmatter");
+      expect(serializeDocument(after)).toBe(
+        `---${nl}title: T${nl}author: A${nl}---${nl}${nl}# Body${nl}text${nl}`,
+      );
+      expect(after.doc.lines).toBe(8);
+    });
+
+    it(`${name}: replacing existing metadata leaves no stray blank lines`, () => {
+      const start = `---${nl}title: Old${nl}---${nl}${nl}# Body${nl}`;
+      expect(parseMeta(start).meta.title).toBe("Old");
+      const once = serializeDocument(applyInEditor(start, "comment"));
+      expect(once).toBe(
+        `<!--ml:meta {"title":"T","author":"A"}-->${nl}${nl}# Body${nl}`,
+      );
+      expect(serializeDocument(applyInEditor(once, "comment"))).toBe(once);
+    });
+  }
 });

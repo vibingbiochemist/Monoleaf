@@ -1,4 +1,5 @@
 import { EditorState, Extension } from "@codemirror/state";
+import { EditorView } from "@codemirror/view";
 
 /**
  * Pick the line separator for a document, or undefined for CodeMirror's
@@ -54,3 +55,32 @@ export function insertedLength(state: EditorState, text: string): number {
 export function serializeDocument(state: EditorState): string {
   return state.sliceDoc();
 }
+
+/**
+ * `text` with every line break in it (LF, CRLF or a lone CR) rewritten as the
+ * document's own separator.
+ *
+ * Needed for any outside text inserted as a string: in a CRLF or CR file the
+ * state splits inserted text only on that file's separator, so a bare "\n"
+ * from the clipboard, or from code that joins with "\n", stays inside one line
+ * as a control character (two lines shown as one) and is saved as a stray LF.
+ * The regex takes CRLF as one break, so a Windows clipboard can't produce a
+ * doubled "\r". A no-op in an LF document, which splits on all three anyway.
+ *
+ * In a mixed file, copying a stray LF that the editor holds as line content
+ * (see detectLineSeparator) and pasting it back turns it into a real break in
+ * the file's separator. Deliberate: inserted text gets one kind of break.
+ */
+export function toDocumentLineBreaks(state: EditorState, text: string): string {
+  return text.replace(/\r\n?|\n/g, state.lineBreak);
+}
+
+/**
+ * Applies toDocumentLineBreaks to text CodeMirror pastes or drops itself, which
+ * otherwise inserts the clipboard's LF verbatim into a CRLF or CR file. Paths
+ * that insert clipboard text on their own (the menu's paste, Ctrl+Shift+V) do
+ * not pass through here and call toDocumentLineBreaks directly.
+ */
+export const documentLineBreakInput = EditorView.clipboardInputFilter.of(
+  (text, state) => toDocumentLineBreaks(state, text),
+);
