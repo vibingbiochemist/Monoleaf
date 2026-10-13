@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, expect, it } from "vitest";
-import { sanitizeDocumentHtml } from "./sanitize";
+import { linkHrefForClick, sanitizeDocumentHtml } from "./sanitize";
 
 describe("sanitizeDocumentHtml", () => {
   it("strips event-handler attributes (the opened-file XSS vector)", () => {
@@ -109,5 +109,62 @@ describe("sanitizeDocumentHtml", () => {
     );
     expect(table).toContain("border");
     expect(table).toContain("<td");
+  });
+
+  it("removes <style> elements, HTML and SVG", () => {
+    // A remote fetch blockRemoteContent never sees, and a restyle of the app.
+    for (const html of [
+      "<style>*{background-image:url(https://t.example/x)}</style><p>ok</p>",
+      "<style>.cm-editor{display:none}</style><p>ok</p>",
+      "<svg><style>*{fill:url(https://t.example/x)}</style><rect/></svg><p>ok</p>",
+    ]) {
+      const out = sanitizeDocumentHtml(html);
+      expect(out, html).not.toMatch(/<style|t\.example|cm-editor/i);
+      expect(out, html).toContain("<p>ok</p>");
+    }
+  });
+});
+
+describe("linkHrefForClick", () => {
+  // Parsed via the sanitizer, so the elements are the ones that actually reach
+  // the print preview (SVG xlink:href in the XLink namespace, as the HTML
+  // parser puts it).
+  function clickTarget(html: string): Element {
+    const root = document.createElement("div");
+    root.innerHTML = sanitizeDocumentHtml(html);
+    return root.querySelector("#t")!;
+  }
+
+  it("finds the URL of every link-like element that survives sanitizing", () => {
+    for (const html of [
+      '<a href="https://example.com/"><b id="t">x</b></a>',
+      '<map name="m"><area id="t" href="https://example.com/"></map>',
+      '<svg><a xlink:href="https://example.com/"><rect id="t"/></a></svg>',
+      '<svg><a href="https://example.com/"><rect id="t"/></a></svg>',
+    ]) {
+      expect(linkHrefForClick(clickTarget(html)), html).toBe(
+        "https://example.com/",
+      );
+    }
+  });
+
+  it("returns null outside any link, and skips a link with no URL", () => {
+    expect(linkHrefForClick(clickTarget('<p id="t">x</p>'))).toBeNull();
+    expect(linkHrefForClick(clickTarget('<a><b id="t">x</b></a>'))).toBeNull();
+    // An <a> without a URL has no activation behaviour; the click goes to the
+    // link around it, so that is the one the handler has to cancel.
+    expect(
+      linkHrefForClick(
+        clickTarget(
+          '<a href="https://example.com/"><svg><a><rect id="t"/></a></svg></a>',
+        ),
+      ),
+    ).toBe("https://example.com/");
+  });
+
+  it('returns "" for an empty href, so the handler still cancels the reload', () => {
+    expect(
+      linkHrefForClick(clickTarget('<a href=""><b id="t">x</b></a>')),
+    ).toBe("");
   });
 });

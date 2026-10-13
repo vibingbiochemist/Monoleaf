@@ -455,6 +455,34 @@ describe("renderDocumentHtml", () => {
     expect(html).toContain('alt="a"> b <img');
   });
 
+  it("collects image sources from a run of unclosed <img in linear time", async () => {
+    // `[^>]*?` before src rescanned to the end of the block from every
+    // unclosed `<img`: 20,000 of them took 1.2 s on every pagination.
+    const doc =
+      // A `<` inside an earlier attribute value must not hide the src.
+      `<div><img alt="a<b" src="y.png">\n${"<img ".repeat(50_000)}\n\n`;
+    const asked: string[][] = [];
+    const start = performance.now();
+    await renderDocumentHtmlAsync(doc, "strict", false, (sources) => {
+      asked.push([...sources]);
+      return Promise.resolve(new Map());
+    });
+    expect(performance.now() - start).toBeLessThan(1000);
+    expect(asked).toEqual([["y.png"]]);
+  });
+
+  it("strips a long line of unclosed comment blocks in linear time", () => {
+    // A plain `.*?` rescanned the rest of the line from every unclosed
+    // opener: 20,000 `<!--c:a {` took 1.6 s per render.
+    const doc =
+      'Text<!--c:a1 {"resolved":false,"thread":[]}-->\n\n' +
+      "<!--c:a {<!--ml:page {<!--ml:meta {".repeat(20_000);
+    const start = performance.now();
+    const html = renderDocumentHtml(doc, "strict");
+    expect(performance.now() - start).toBeLessThan(1000);
+    expect(html.startsWith("<p>Text</p>")).toBe(true);
+  });
+
   it("async render: does not call the loader for a document without local images", async () => {
     let calls = 0;
     const html = await renderDocumentHtmlAsync(

@@ -287,13 +287,16 @@ export function setPageConfigSpec(
 // ---------------------------------------------------------------------------
 // Markdown -> HTML
 
+// The JSON blocks stop at the next `<!--`: what Monoleaf writes never holds
+// one (escapeDashes, htmlcomment.ts), and a plain `.*?` rescanned the rest of
+// the line from every unclosed opener, so a long line of them took seconds.
 const STRIP_RES = [
   /<!--c:[a-z0-9]+[se]-->/g, // comment anchors
-  /<!--c:[a-z0-9]+ \{.*?\}-->/g, // comment bodies
-  /<!--ml:page \{.*?\}-->/g, // page config
+  /<!--c:[a-z0-9]+ \{(?:(?!<!--).)*?\}-->/g, // comment bodies
+  /<!--ml:page \{(?:(?!<!--).)*?\}-->/g, // page config
   /<!--ml:toc-end-->/g, // TOC boundary markers (list itself stays)
   /<!--ml:toc-->/g,
-  /<!--ml:meta \{.*?\}-->/g, // document metadata (comment form)
+  /<!--ml:meta \{(?:(?!<!--).)*?\}-->/g, // document metadata (comment form)
 ];
 
 /**
@@ -376,8 +379,12 @@ interface TokenLike {
 // `<img … src="…">` in raw HTML, double- or single-quoted, each form matched
 // on its own quote so an apostrophe inside a double-quoted path survives.
 // Deliberately the same closed shape the live preview (parseImgTag) and the
-// image context menu already parse.
-const IMG_SRC_RE = /(<img\b[^>]*?\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)')/gi;
+// image context menu already parse. The attributes before src stop at the
+// next `<img`: with a bare `[^>]*?`, every unclosed `<img` rescanned to the
+// end of the block (seconds for a pasted run of them, on every pagination).
+// Not `[^<>]*?`: a `<` inside an attribute value (alt="a<b") is legal HTML.
+const IMG_SRC_RE =
+  /(<img\b(?:(?!<img\b)[^>])*?\bsrc\s*=\s*)(?:"([^"]*)"|'([^']*)')/gi;
 
 /**
  * The attribute that keeps an embedded image's reference as written, so the

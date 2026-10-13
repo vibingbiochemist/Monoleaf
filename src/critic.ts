@@ -45,55 +45,78 @@ export interface CriticRegion {
   segments: CriticSegment[];
 }
 
-const CRITIC_RE =
-  /\{\+\+([\s\S]*?)\+\+\}|\{--([\s\S]*?)--\}|\{~~([\s\S]*?)~>([\s\S]*?)~~\}|\{==([\s\S]*?)==\}|\{>>([\s\S]*?)<<\}/g;
+const SIMPLE_KINDS: ReadonlyMap<
+  string,
+  { kind: CriticKind; role: CriticSegment["role"]; close: string }
+> = new Map([
+  ["{++", { kind: "insertion", role: "ins", close: "++}" }],
+  ["{--", { kind: "deletion", role: "del", close: "--}" }],
+  ["{==", { kind: "highlight", role: "hl", close: "==}" }],
+  ["{>>", { kind: "comment", role: "comment", close: "<<}" }],
+]);
 
+/**
+ * Every CriticMarkup region in the text, left to right, each closed at the
+ * nearest closer (so `{++a++} {++b++}` is two regions, not one).
+ *
+ * This used to be one lazy regex over the whole document, and it runs on
+ * every decoration rebuild. A lazy group that never finds its closer rescans
+ * to the end of the text from every opener, and the substitution form nests
+ * two of them: a few thousand unclosed `{~~a~>` froze the editor for seconds
+ * (cubic), and unclosed `{++` was quadratic. So it is a scanner now, with the
+ * regex's exact results: the nearest closer after each opener, the old half
+ * of a substitution ending at its first `~>`. The five openers differ in
+ * their second character, so at most one kind can start at a position and
+ * the regex's alternation order never mattered.
+ *
+ * Openers only move forward, so the nearest occurrence of a token after one
+ * opener is still the nearest after the next, as long as it lies past it.
+ * `find` remembers that, and remembers a miss for good: once a closer is not
+ * found after some position, it is not found after any later one either.
+ * Each token is therefore searched across the text at most once.
+ */
 export function parseCritic(text: string): CriticRegion[] {
   const out: CriticRegion[] = [];
-  for (const m of text.matchAll(CRITIC_RE)) {
-    const from = m.index;
-    const to = from + m[0].length;
-    if (m[1] !== undefined) {
-      out.push({
-        kind: "insertion",
-        from,
-        to,
-        segments: [{ role: "ins", from: from + 3, to: to - 3 }],
-      });
-    } else if (m[2] !== undefined) {
-      out.push({
-        kind: "deletion",
-        from,
-        to,
-        segments: [{ role: "del", from: from + 3, to: to - 3 }],
-      });
-    } else if (m[3] !== undefined) {
-      const oldFrom = from + 3;
-      const oldTo = oldFrom + m[3].length;
-      out.push({
-        kind: "substitution",
-        from,
-        to,
-        segments: [
-          { role: "del", from: oldFrom, to: oldTo },
-          { role: "ins", from: oldTo + 2, to: to - 3 },
-        ],
-      });
-    } else if (m[5] !== undefined) {
-      out.push({
-        kind: "highlight",
-        from,
-        to,
-        segments: [{ role: "hl", from: from + 3, to: to - 3 }],
-      });
+  const found = new Map<string, number>();
+  const find = (token: string, from: number): number => {
+    const hit = found.get(token);
+    if (hit !== undefined && (hit === -1 || hit >= from)) return hit;
+    const at = text.indexOf(token, from);
+    found.set(token, at);
+    return at;
+  };
+  for (let from = text.indexOf("{"); from !== -1;) {
+    const open = text.slice(from, from + 3);
+    let to = -1;
+    if (open === "{~~") {
+      const arrow = find("~>", from + 3);
+      const close = arrow === -1 ? -1 : find("~~}", arrow + 2);
+      if (close !== -1) {
+        to = close + 3;
+        out.push({
+          kind: "substitution",
+          from,
+          to,
+          segments: [
+            { role: "del", from: from + 3, to: arrow },
+            { role: "ins", from: arrow + 2, to: close },
+          ],
+        });
+      }
     } else {
-      out.push({
-        kind: "comment",
-        from,
-        to,
-        segments: [{ role: "comment", from: from + 3, to: to - 3 }],
-      });
+      const simple = SIMPLE_KINDS.get(open);
+      const close = simple === undefined ? -1 : find(simple.close, from + 3);
+      if (close !== -1) {
+        to = close + 3;
+        out.push({
+          kind: simple!.kind,
+          from,
+          to,
+          segments: [{ role: simple!.role, from: from + 3, to: close }],
+        });
+      }
     }
+    from = text.indexOf("{", to === -1 ? from + 1 : to);
   }
   return out;
 }

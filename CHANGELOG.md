@@ -44,6 +44,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   image links and the metadata block were inserted with Unix line breaks,
   which showed several lines as one (Document Properties could fold the whole
   file into a single line) and saved stray Unix line endings into the file.
+- **A document can no longer load remote content through an embedded
+  stylesheet, or restyle Monoleaf itself.** A `<style>` block in a Markdown
+  file could fetch images from the internet even with "Load remote images"
+  off, and could hide or change parts of the app. Such blocks are now removed
+  when the document is rendered.
+- **Clicking an image-map area or an SVG link in print preview opens it in
+  your browser instead of replacing the editor.** Previously such a link
+  navigated the whole Monoleaf window away, with no way back to the document.
+  The window now also refuses any navigation away from the app itself.
+- **A save that is interrupted no longer leaves an empty or cut-off file.**
+  Monoleaf used to overwrite the document in place, so a crash, a full disk
+  or a dropped network connection partway through could lose it. It now
+  writes the new version beside it first and swaps it in only once it is
+  complete.
+- **Opening or saving a slow file no longer freezes every window.** Reading
+  a OneDrive file that is only in the cloud, a file on a slow share, or a
+  large image now happens in the background. Images over 50 MB are no longer
+  loaded into the editor; they show as a broken picture instead.
+- **An image path written in a rarer Windows form (`\??\UNC\...`) can no
+  longer reach a network share.** Such a path slipped past the check that
+  keeps Monoleaf off network paths unless you allow them, so a document could
+  make Windows contact another computer and send it your sign-in details in
+  hashed form.
+- **Unfinished markup no longer freezes the editor.** Many tracked-change
+  openers without their closing marks (such as `{~~old~>` or `{++`), many
+  unclosed `<img` tags, or a long line of unclosed review-comment blocks
+  could make Monoleaf hang for seconds on every keystroke or page layout.
+  These are now read in a single pass, however much of the document they
+  fill.
 - **PDF import no longer loses or garbles text that looks like list markup.**
   A line starting `3.5 mg` or `e.g.` was turned into a numbered item and
   lost its first characters; numbered lists now keep their printed starting
