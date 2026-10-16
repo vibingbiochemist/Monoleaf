@@ -1,6 +1,6 @@
 [package]
 name = "monoleaf"
-version = "1.3.2"
+version = "1.3.3"
 description = "Monoleaf - a portable, single-file markdown editor"
 authors = ["vibingbiochemist <info@monoleaf.org>"]
 license = "MIT"
