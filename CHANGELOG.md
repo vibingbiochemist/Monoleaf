@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.3] - 2026-10-16
+
+### Security
+
+- **The connection Monoleaf uses to check for updates uses a patched TLS
+  library.** rustls 0.23.46 fixes four advisories (RUSTSEC-2026-0346 to
+  0349), among them a downgrade of the key exchange to classical
+  cryptography. Updates were already protected by their own signature, so
+  this hardens the connection rather than closing a way to install a
+  tampered update. Tauri moves to 2.12.2.
+
 ### Fixed
 
 - **Double-clicking a Markdown file in the macOS Finder opens it.** macOS
