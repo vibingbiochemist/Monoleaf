@@ -67,6 +67,10 @@ jobs:
           src/footnotes.test.ts
           src/htmlcomment.ts
           src/htmlcomment.test.ts
+          src/imagefit.ts
+          src/imagefit.test.ts
+          src/imageref.ts
+          src/imageref.test.ts
           src/livepreview.ts
           src/livepreview.test.ts
           src/math.ts
@@ -86,12 +90,15 @@ jobs:
           src/recovery.test.ts
           src/remoteimages.ts
           src/remoteimages.test.ts
+          src/repair.ts
+          src/repair.test.ts
           src/repro.test.ts
           src/sanitize.ts
           src/sanitize.test.ts
           src/setup.ts
           src/shims.d.ts
           src/sidebar.ts
+          src/syntax.ts
           src/table.ts
           src/table.test.ts
           src/tablecell.ts
