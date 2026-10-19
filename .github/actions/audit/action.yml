@@ -43,6 +43,14 @@ runs:
     # host: the Wayland stack that drags quick-xml in only exists in the Linux
     # dependency graph.
     #
+    # RUSTSEC-2026-0367/0368/0369 (zip 4.x: archive extraction follows
+    # symlinks out of the target folder and keeps permission/SUID bits) come
+    # only through tauri-plugin-updater, which unpacks an update only after
+    # its minisign signature has been verified, and only on Windows when the
+    # update is a .zip. Monoleaf ships a bare NSIS .exe, so that path never
+    # runs. No updater release allows zip >= 9 yet (2.14.0 still pins ^4);
+    # remove these three ignores once one does.
+    #
     # Deliberately NOT `--deny warnings`. In cargo-audit that means "any
     # warning", which today is 19 findings: 17 unmaintained + 2 unsound, almost
     # all in the GTK 3 stack Tauri pulls in on Linux (atk, gdk, gtk, glib,
@@ -61,4 +69,6 @@ runs:
       run: |
         cargo install cargo-audit --version 0.22.2 --locked
         cargo audit --file src-tauri/Cargo.lock \
-          --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195
+          --ignore RUSTSEC-2026-0194 --ignore RUSTSEC-2026-0195 \
+          --ignore RUSTSEC-2026-0367 --ignore RUSTSEC-2026-0368 \
+          --ignore RUSTSEC-2026-0369
