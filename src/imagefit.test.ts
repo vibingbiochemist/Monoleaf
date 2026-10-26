@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { fittedImageWidth, requestedImageWidth } from "./imagefit";
+import {
+  fittedImageWidth,
+  imageWidthCss,
+  requestedImageWidth,
+} from "./imagefit";
 
 describe("fittedImageWidth", () => {
   // A 1080×2400 phone screenshot on an A4 body of 956px.
@@ -36,5 +40,20 @@ describe("requestedImageWidth", () => {
     expect(requestedImageWidth("", 642)).toBeNaN();
     expect(requestedImageWidth("auto", 642)).toBeNaN();
     expect(requestedImageWidth("12em", 642)).toBeNaN();
+  });
+});
+
+describe("imageWidthCss", () => {
+  it("treats a bare number as px", () => {
+    expect(imageWidthCss("400")).toBe("400px");
+  });
+
+  it("makes a percentage relative to the page body, not the image", () => {
+    expect(imageWidthCss("100%")).toBe("calc(var(--page-body-w, 100%) * 1)");
+    expect(imageWidthCss("50%")).toBe("calc(var(--page-body-w, 100%) * 0.5)");
+  });
+
+  it("passes other units through", () => {
+    expect(imageWidthCss("12em")).toBe("12em");
   });
 });

@@ -59,6 +59,18 @@ export function requestedImageWidth(
   return NaN;
 }
 
+/** The editor's CSS width for an image's `width`: a bare number is px, and a
+ * percentage is of the page body (--page-body-w, applyPageVars), as in the
+ * PDF. A plain `N%` would resolve against the image's shrink-to-fit wrapper,
+ * i.e. its own natural size, so "Full width" left a small image small. */
+export function imageWidthCss(width: string): string {
+  if (/^\d+$/.test(width)) return `${width}px`;
+  const pct = /^(\d+(?:\.\d+)?)%$/.exec(width);
+  return pct === null
+    ? width
+    : `calc(var(--page-body-w, 100%) * ${Number(pct[1]) / 100})`;
+}
+
 /**
  * Shrink every explicitly sized `<img>` under `root` so none is taller than
  * `capHeight` px (see fittedImageWidth), waiting for each to decode first.
