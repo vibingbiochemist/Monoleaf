@@ -1169,6 +1169,24 @@ html.theme-dark .brand-dark {
   box-shadow: 0 2px 16px rgba(0, 0, 0, 0.13);
 }
 
+/* Page layout off (#129): no sheet, the text column fills the window up to the
+   Editor width setting (--editor-max-w, set by applyPageVars). The extra
+   .pageless class outranks the card rule above, including the width and
+   padding applyPageVars writes into that rule. Unlike the colours noted
+   elsewhere, these var()s set on #editor do resolve (measured in a release
+   build's WebView2, #129). */
+#editor.live.pageless .cm-scroller {
+  background: var(--editor-bg);
+}
+
+#editor.live.pageless .cm-content {
+  width: min(100%, var(--editor-max-w, 1000px)) !important;
+  min-height: 0;
+  padding: 24px 48px;
+  border: none;
+  box-shadow: none;
+}
+
 #editor .cm-scroller {
   /* Raw view and the document text's monospace runs (code blocks, inline
      code). Keep in sync with fonts.ts's MONO_STACK and export.ts's print
@@ -1524,7 +1542,9 @@ html.theme-dark #editor .cm-cursor {
 }
 
 .cm-live-image {
-  max-width: 100%;
+  /* Never wider than the page body (--page-body-w, applyPageVars), as in the
+     PDF — matters once Page layout is off and the line is wider than a page. */
+  max-width: min(100%, var(--page-body-w, 100%));
   /* Page-body cap, mirroring the print sheet (export.ts buildPrintCss): an
      image cannot cross a page, so a tall one scales down to fit one, with
      room left for a lead-in line or caption. A4 / 20mm baseline; set live
