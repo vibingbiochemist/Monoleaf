@@ -5,7 +5,11 @@ import {
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
-import { fittedImageWidth, requestedImageWidth } from "./imagefit";
+import {
+  fittedImageWidth,
+  imageWidthCss,
+  requestedImageWidth,
+} from "./imagefit";
 import { imageReferenceAt } from "./imageref";
 import {
   AmbiguousImageError,
@@ -219,9 +223,7 @@ class ImageWidget extends WidgetType {
     img.alt = this.alt;
     if (this.alt !== "") img.title = this.alt;
     if (this.width !== "") {
-      img.style.width = /^\d+$/.test(this.width)
-        ? `${this.width}px`
-        : this.width; // e.g. "100%"
+      img.style.width = imageWidthCss(this.width);
     }
     img.addEventListener("load", () => {
       // An explicit width can ask for more height than the page body allows
