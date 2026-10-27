@@ -40,6 +40,12 @@ import {
 import { insertTable, insertTableSized, tableMenuItems } from "./tablewidget";
 import { countWords } from "./wordcount";
 import {
+  EDITOR_WIDTHS,
+  editorMaxWidthCss,
+  parseEditorWidth,
+  type EditorWidth,
+} from "./editorwidth";
+import {
   createDocumentState,
   documentLineBreakInput,
   insertedLength,
@@ -764,6 +770,10 @@ let showFlags = loadShowFlags();
 // The user works in the pretty view by default; raw view is the opt-out.
 let liveView = localStorage.getItem(VIEW_STORAGE_KEY) !== "raw";
 let tracking = localStorage.getItem(TRACKING_STORAGE_KEY) === "true";
+const EDITOR_WIDTH_KEY = "monoleaf.editorWidth";
+let editorWidth: EditorWidth = parseEditorWidth(
+  localStorage.getItem(EDITOR_WIDTH_KEY),
+);
 const modeCompartment = new Compartment();
 const liveCompartment = new Compartment();
 const trackingCompartment = new Compartment();
@@ -800,6 +810,11 @@ function refreshModeButtons() {
   document
     .getElementById("btn-pagination")!
     .setAttribute("aria-pressed", String(paginationEnabled));
+  // The width only applies to the sheet-less live view.
+  (document.getElementById("btn-editor-width") as HTMLButtonElement).disabled =
+    paginationEnabled || !liveView;
+  document.getElementById("menu-editor-width")!.textContent =
+    `${EDITOR_WIDTHS[editorWidth].label} ›`;
   // Flag visibility only means something when enhanced parsing is on.
   flagsButton.disabled = mode !== "enhanced";
   flagsButton.setAttribute("aria-pressed", String(showFlags));
@@ -1358,6 +1373,14 @@ function applyPageVars() {
       editorFontRule = findRule("#editor .cm-editor");
     }
     editorFontRule?.style.setProperty("font-size", `${PRINT_FONT_PX * z}px`);
+    // Page layout off (#editor.pageless): the text column's cap, and the page
+    // body width that .cm-live-image keeps images within in either mode.
+    const editorEl = document.getElementById("editor")!;
+    editorEl.style.setProperty(
+      "--editor-max-w",
+      editorMaxWidthCss(editorWidth, zoom),
+    );
+    editorEl.style.setProperty("--page-body-w", `${pageBodyWidthPx() * z}px`);
     // Images are capped to the page body here exactly as the print sheet
     // caps them (buildPrintCss, export.ts): an image cannot cross a page, so
     // both views scale a tall one down to a page — otherwise the editor shows
@@ -1993,9 +2016,42 @@ function togglePagination() {
       view.dispatch({ effects: setPageBreaks.of([]) });
     }
   }
+  applyViewClass();
+  view.requestMeasure(); // the text column changed width underneath CodeMirror
   refreshModeButtons();
   refreshPageIndicator();
   view.focus();
+}
+
+function chooseEditorWidth(id: EditorWidth) {
+  toggleSettingsMenu(false);
+  editorWidth = id;
+  localStorage.setItem(EDITOR_WIDTH_KEY, id);
+  applyPageVars();
+  refreshModeButtons();
+  view.requestMeasure();
+  view.focus();
+}
+
+function openEditorWidthMenu() {
+  const rect = document
+    .getElementById("btn-editor-width")!
+    .getBoundingClientRect();
+  // To the left of the row: the settings menu sits at the window's right edge.
+  // 236 = .context-menu min-width (220) + its padding and border.
+  showContextMenu(
+    rect.left - 236,
+    rect.top - 6,
+    (Object.keys(EDITOR_WIDTHS) as EditorWidth[]).map((id) => {
+      const { label, px } = EDITOR_WIDTHS[id];
+      return {
+        kind: "item",
+        label: px === null ? label : `${label} (${px} px)`,
+        strong: id === editorWidth,
+        action: () => chooseEditorWidth(id),
+      };
+    }),
+  );
 }
 
 async function runPagination() {
@@ -2368,9 +2424,12 @@ function toggleFlags() {
   applyModeConfig();
 }
 
-// The `live` class drives the page-card CSS (styles.css #editor.live …).
+// The `live` class drives the page-card CSS (styles.css #editor.live …);
+// `pageless` drops the card for a window-wide column when Page layout is off.
 function applyViewClass() {
-  document.getElementById("editor")!.classList.toggle("live", liveView);
+  const editorEl = document.getElementById("editor")!;
+  editorEl.classList.toggle("live", liveView);
+  editorEl.classList.toggle("pageless", !paginationEnabled);
 }
 
 function toggleLiveView() {
@@ -3742,6 +3801,7 @@ const formatButtons: Record<string, () => void> = {
     void changeName();
   },
   pagination: togglePagination,
+  "editor-width": openEditorWidthMenu,
   theme: toggleTheme,
   spellcheck: toggleSpellcheck,
   autosave: toggleAutosave,
