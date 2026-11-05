@@ -39,15 +39,13 @@ const FIELDS: (keyof DocMeta)[] = [
 // in its own line endings (see applyMeta), and a classic-Mac CR file is as
 // entitled to its metadata as a Windows one.
 const META_COMMENT_RE = /<!--ml:meta (\{[\s\S]*?\})-->(?:\r\n?|\n)?/;
-// Front matter is only front matter at the very top of the file. Three groups:
-// the opening fence line, the block between the fences, the closing fence.
+// Front matter is only front matter at the very top of the file.
 const FRONTMATTER_RE =
   /^(---(?:\r\n?|\n))([\s\S]*?)((?:\r\n?|\n)---(?:\r\n?|\n)?)/;
 // One front-matter line as the reader takes it: `key: value` at column 0. The
 // writer uses the same pattern, so both agree on which line sets a field.
 const KEY_VALUE_RE = /^([A-Za-z_]+)\s*:\s*(.*)$/;
-// A line that carries on the value of the key above it: indented, or a list
-// item.
+// A line that carries on the value of the key above: indented, or a list item.
 const VALUE_LINE_RE = /^[ \t-]/;
 // One item of a plain list, `- Jane`. An item that is a `key: value` pair of
 // its own (`- name: Jane`) is a nested entry and does not match.
@@ -81,7 +79,6 @@ function parseYamlish(block: string): {
   locked: (keyof DocMeta)[];
 } {
   const data: Record<string, string> = {};
-  // The lines below each key that carry on its value.
   const below = new Map<string, string[]>();
   let valueLines: string[] | null = null;
   for (const line of block.split(/\r\n?|\n/)) {
@@ -186,22 +183,19 @@ function fieldOfLine(line: string): keyof DocMeta | null {
 
 /**
  * The front-matter block with the metadata fields set to `meta`, edited line
- * by line rather than rebuilt. A header also carries keys Monoleaf does not
- * know (pandoc's `bibliography`, `csl`, `lang`, a nested `references:` list),
- * and those lines have to survive a save byte for byte. A field whose value
- * did not change keeps its line as well. Returns "" when no line with content
- * is left.
+ * by line rather than rebuilt: a header also carries keys Monoleaf does not
+ * know (pandoc's `csl`, a nested `references:` list), and those lines have to
+ * survive a save byte for byte. Returns "" when no line with content is left.
  */
 function mergeFrontmatter(block: string, meta: DocMeta, nl: string): string {
   const { meta: current, locked } = parseYamlish(block);
   const changed = FIELDS.filter(
     (f) => !locked.includes(f) && meta[f].trim() !== current[f],
   );
-  // Changed fields that still have to be written; emptied ones are only removed.
+  // Changed fields still to be written; emptied ones are only removed.
   const pending = new Set(changed.filter((f) => meta[f].trim() !== ""));
   const lines: { text: string; eol: string }[] = [];
-  // True while passing the indented or list lines under a replaced field: they
-  // are the old value and go with it.
+  // True while passing the old value lines under a replaced field.
   let inReplaced = false;
   // Split with the line breaks captured, so every line keeps its own.
   const parts = block.split(/(\r\n?|\n)/);
