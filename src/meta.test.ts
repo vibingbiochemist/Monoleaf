@@ -136,6 +136,36 @@ describe("applyMeta keeps front-matter keys it does not know", () => {
   });
 });
 
+describe("a field the header holds as a list or block", () => {
+  const doc = (author: string) =>
+    `---\ntitle: T\nauthor:\n${author}\nlang: en\n---\n\nbody\n`;
+
+  it("reads a plain list as one line of text and reports it locked", () => {
+    const { meta, locked } = parseMeta(doc('- Jane\n  - "John Doe"'));
+    expect(meta.author).toBe("Jane, John Doe");
+    expect(locked).toEqual(["author"]);
+    expect(meta.title).toBe("T");
+  });
+
+  it("reads nested entries as empty, still locked", () => {
+    const { meta, locked } = parseMeta(doc("- name: Jane\n  affiliation: X"));
+    expect(meta.author).toBe("");
+    expect(locked).toEqual(["author"]);
+  });
+
+  it("reports no locked field for one-line values", () => {
+    expect(parseMeta("---\ntitle: T\nauthor: Jane\n---\n").locked).toEqual([]);
+  });
+
+  it("is never rewritten, whatever value is passed for it", () => {
+    const start = doc("- Jane\n- John");
+    const meta = { ...EMPTY_META, title: "New", author: "Somebody else" };
+    expect(applyMeta(start, meta, "frontmatter")).toBe(
+      start.replace("title: T", "title: New"),
+    );
+  });
+});
+
 describe("applyMeta keeps the file's line endings", () => {
   const meta = { ...EMPTY_META, title: "T", author: "A" };
 
