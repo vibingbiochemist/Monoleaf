@@ -74,6 +74,68 @@ describe("applyMeta round-trip", () => {
   });
 });
 
+describe("applyMeta keeps front-matter keys it does not know", () => {
+  // A pandoc header: keys Monoleaf has no field for, and a nested list with a
+  // `title:` of its own that is not the document's.
+  const header = (nl: string) =>
+    [
+      "title: My paper",
+      "csl: apa",
+      "references:",
+      "- id: ERA5",
+      "  title: ERA5-Land hourly data",
+      "  author:",
+      "  - literal: Copernicus",
+      "lang: en-GB",
+    ].join(nl);
+  const doc = (nl: string, block = header(nl)) =>
+    `---${nl}${block}${nl}---${nl}${nl}As shown by [@ERA5].${nl}`;
+  const paper = { ...EMPTY_META, title: "My paper" };
+
+  for (const [name, nl] of [
+    ["LF", "\n"],
+    ["CRLF", "\r\n"],
+    ["CR", "\r"],
+  ] as const) {
+    it(`${name}: saving unchanged values leaves the file byte-identical`, () => {
+      expect(applyMeta(doc(nl), paper, "frontmatter", nl)).toBe(doc(nl));
+    });
+
+    it(`${name}: a new title changes only the title line`, () => {
+      const renamed = { ...paper, title: "Our paper" };
+      expect(applyMeta(doc(nl), renamed, "frontmatter", nl)).toBe(
+        doc(nl).replace("title: My paper", "title: Our paper"),
+      );
+    });
+
+    it(`${name}: a new field goes below the existing lines`, () => {
+      const signed = { ...paper, author: "Martin" };
+      expect(applyMeta(doc(nl), signed, "frontmatter", nl)).toBe(
+        doc(nl, `${header(nl)}${nl}author: Martin`),
+      );
+    });
+
+    it(`${name}: clearing a field removes only its line`, () => {
+      expect(applyMeta(doc(nl), EMPTY_META, "frontmatter", nl)).toBe(
+        doc(nl).replace(`title: My paper${nl}`, ""),
+      );
+    });
+  }
+
+  it("keeps the order of the fields already in the header", () => {
+    const start = "---\nauthor: Martin\ntitle: Old\n---\n\n# Body\n";
+    const meta = { ...EMPTY_META, author: "Martin", title: "New" };
+    expect(applyMeta(start, meta, "frontmatter")).toBe(
+      "---\nauthor: Martin\ntitle: New\n---\n\n# Body\n",
+    );
+  });
+
+  it("removes a header that is left without any line", () => {
+    const start = "---\ntitle: X\n---\n\n# Body\n";
+    expect(applyMeta(start, EMPTY_META, "frontmatter")).toBe("# Body\n");
+  });
+});
+
 describe("applyMeta keeps the file's line endings", () => {
   const meta = { ...EMPTY_META, title: "T", author: "A" };
 
