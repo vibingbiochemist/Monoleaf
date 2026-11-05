@@ -113,26 +113,28 @@ export function parseMeta(text: string): {
   format: MetaFormat;
   locked: (keyof DocMeta)[];
 } {
-  if (text.startsWith("---")) {
-    const fm = FRONTMATTER_RE.exec(text);
-    if (fm !== null) {
-      const [, , content] = fm;
-      return { ...parseYamlish(content), format: "frontmatter" };
-    }
+  let header = parseYamlish("");
+  const fm = text.startsWith("---") ? FRONTMATTER_RE.exec(text) : null;
+  if (fm !== null) {
+    const [, , content] = fm;
+    header = parseYamlish(content);
   }
-  const c = META_COMMENT_RE.exec(text);
+  // A header that sets none of the fields as a line of text belongs to other
+  // tools; the values are then in the comment below it, if there is one.
+  const inHeader = FIELDS.some(
+    (f) => header.meta[f] !== "" && !header.locked.includes(f),
+  );
+  const c = inHeader ? null : META_COMMENT_RE.exec(text);
   if (c !== null) {
     try {
-      return {
-        meta: pickStrings(JSON.parse(c[1]) as Record<string, unknown>),
-        format: "comment",
-        locked: [],
-      };
+      const meta = pickStrings(JSON.parse(c[1]) as Record<string, unknown>);
+      for (const f of header.locked) meta[f] = header.meta[f];
+      return { meta, format: "comment", locked: header.locked };
     } catch {
       /* malformed — treat as no metadata */
     }
   }
-  return { meta: { ...EMPTY_META }, format: "comment", locked: [] };
+  return { ...header, format: fm !== null ? "frontmatter" : "comment" };
 }
 
 /** Remove any metadata block (front matter or ml:meta comment) from the text. */
@@ -230,14 +232,24 @@ export function applyMeta(
   nl = "\n",
 ): string {
   const fm = text.startsWith("---") ? FRONTMATTER_RE.exec(text) : null;
-  if (format === "frontmatter" && fm !== null) {
+  let body = stripMeta(text);
+  let block = metaBlock(meta, format, nl);
+  if (fm !== null) {
+    // The header stays for the keys Monoleaf does not know and for fields held
+    // as a list or block; only one-line fields move between it and the comment.
     const [whole, open, content, close] = fm;
-    const merged = mergeFrontmatter(content, meta, nl);
-    if (merged === "") return stripMeta(text);
-    return open + merged + close + text.slice(whole.length);
+    const rest = text.slice(whole.length);
+    const asHeader = format === "frontmatter";
+    const merged = mergeFrontmatter(content, asHeader ? meta : EMPTY_META, nl);
+    if (asHeader && merged !== "" && !META_COMMENT_RE.test(rest))
+      return open + merged + close + rest;
+    const forComment = { ...meta };
+    for (const f of parseYamlish(content).locked) forComment[f] = "";
+    const header = merged === "" ? "" : open + merged + close.trimEnd();
+    const comment = asHeader ? "" : metaBlock(forComment, "comment", nl);
+    block = [header, comment].filter((part) => part !== "").join(nl + nl);
+    body = rest.replace(META_COMMENT_RE, "").replace(/^(?:\r\n?|\n)+/, "");
   }
-  const body = stripMeta(text);
-  const block = metaBlock(meta, format, nl);
   if (block === "") return body;
   return body === "" ? `${block}${nl}` : `${block}${nl}${nl}${body}`;
 }

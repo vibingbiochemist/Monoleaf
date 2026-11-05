@@ -166,6 +166,50 @@ describe("a field the header holds as a list or block", () => {
   });
 });
 
+describe("the ml:meta comment below a header of other tools", () => {
+  const header = "---\ncsl: apa\n---\n\n";
+  const mixed = `${header}<!--ml:meta {"title":"Real"}-->\n\nbody\n`;
+  const real = { ...EMPTY_META, title: "Real" };
+
+  it("is read", () => {
+    const { meta, format } = parseMeta(mixed);
+    expect(meta.title).toBe("Real");
+    expect(format).toBe("comment");
+  });
+
+  it("is replaced on save, not written a second time", () => {
+    expect(applyMeta(mixed, real, "comment")).toBe(mixed);
+    expect(applyMeta(mixed, { ...real, title: "New" }, "comment")).toBe(
+      mixed.replace("Real", "New"),
+    );
+  });
+
+  it("takes the fields out of the header and leaves the other keys", () => {
+    const start = "---\ntitle: Real\ncsl: apa\n---\n\nbody\n";
+    expect(applyMeta(start, real, "comment")).toBe(mixed);
+  });
+
+  it("gives the fields back to the header", () => {
+    expect(applyMeta(mixed, real, "frontmatter")).toBe(
+      "---\ncsl: apa\ntitle: Real\n---\n\nbody\n",
+    );
+  });
+
+  it("leaves a list in the header and reads it back from there", () => {
+    const start = "---\ntitle: Real\nauthor:\n- Jane\n- John\n---\n\nbody\n";
+    const meta = { ...real, author: "Jane, John" };
+    const saved = applyMeta(start, meta, "comment");
+    expect(saved).toBe(
+      '---\nauthor:\n- Jane\n- John\n---\n\n<!--ml:meta {"title":"Real"}-->\n\nbody\n',
+    );
+    expect(parseMeta(saved)).toEqual({
+      meta,
+      format: "comment",
+      locked: ["author"],
+    });
+  });
+});
+
 describe("applyMeta keeps the file's line endings", () => {
   const meta = { ...EMPTY_META, title: "T", author: "A" };
 
