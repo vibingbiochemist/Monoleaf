@@ -1101,7 +1101,7 @@ const metaFrontmatter = document.getElementById(
 ) as HTMLInputElement;
 
 function openMetaDialog() {
-  const { meta, format } = parseMeta(serializeDocument(view.state));
+  const { meta, format, locked } = parseMeta(serializeDocument(view.state));
   metaFields.title.value = meta.title;
   metaFields.author.value =
     meta.author || (localStorage.getItem(AUTHOR_KEY)?.trim() ?? "");
@@ -1110,6 +1110,17 @@ function openMetaDialog() {
   metaFields.date.value = meta.date || new Date().toLocaleDateString();
   metaFields.subject.value = meta.subject;
   metaFields.keywords.value = meta.keywords;
+  // A field the header holds as a list or block is shown, not edited: one line
+  // of text cannot hold it. It gets no default either, which would read as the
+  // document's own value.
+  for (const field of Object.keys(metaFields) as (keyof DocMeta)[]) {
+    const input = metaFields[field];
+    input.readOnly = locked.includes(field);
+    input.title = input.readOnly
+      ? "A list in the document's header. Edit it there."
+      : "";
+    if (input.readOnly) input.value = meta[field];
+  }
   metaFrontmatter.checked = format === "frontmatter";
   metaDialog.returnValue = "cancel";
   metaDialog.addEventListener(
