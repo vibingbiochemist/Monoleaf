@@ -74,6 +74,142 @@ describe("applyMeta round-trip", () => {
   });
 });
 
+describe("applyMeta keeps front-matter keys it does not know", () => {
+  // A pandoc header: keys Monoleaf has no field for, and a nested list with a
+  // `title:` of its own that is not the document's.
+  const header = (nl: string) =>
+    [
+      "title: My paper",
+      "csl: apa",
+      "references:",
+      "- id: ERA5",
+      "  title: ERA5-Land hourly data",
+      "  author:",
+      "  - literal: Copernicus",
+      "lang: en-GB",
+    ].join(nl);
+  const doc = (nl: string, block = header(nl)) =>
+    `---${nl}${block}${nl}---${nl}${nl}As shown by [@ERA5].${nl}`;
+  const paper = { ...EMPTY_META, title: "My paper" };
+
+  for (const [name, nl] of [
+    ["LF", "\n"],
+    ["CRLF", "\r\n"],
+    ["CR", "\r"],
+  ] as const) {
+    it(`${name}: saving unchanged values leaves the file byte-identical`, () => {
+      expect(applyMeta(doc(nl), paper, "frontmatter", nl)).toBe(doc(nl));
+    });
+
+    it(`${name}: a new title changes only the title line`, () => {
+      const renamed = { ...paper, title: "Our paper" };
+      expect(applyMeta(doc(nl), renamed, "frontmatter", nl)).toBe(
+        doc(nl).replace("title: My paper", "title: Our paper"),
+      );
+    });
+
+    it(`${name}: a new field goes below the existing lines`, () => {
+      const signed = { ...paper, author: "Martin" };
+      expect(applyMeta(doc(nl), signed, "frontmatter", nl)).toBe(
+        doc(nl, `${header(nl)}${nl}author: Martin`),
+      );
+    });
+
+    it(`${name}: clearing a field removes only its line`, () => {
+      expect(applyMeta(doc(nl), EMPTY_META, "frontmatter", nl)).toBe(
+        doc(nl).replace(`title: My paper${nl}`, ""),
+      );
+    });
+  }
+
+  it("keeps the order of the fields already in the header", () => {
+    const start = "---\nauthor: Martin\ntitle: Old\n---\n\n# Body\n";
+    const meta = { ...EMPTY_META, author: "Martin", title: "New" };
+    expect(applyMeta(start, meta, "frontmatter")).toBe(
+      "---\nauthor: Martin\ntitle: New\n---\n\n# Body\n",
+    );
+  });
+
+  it("removes a header that is left without any line", () => {
+    const start = "---\ntitle: X\n---\n\n# Body\n";
+    expect(applyMeta(start, EMPTY_META, "frontmatter")).toBe("# Body\n");
+  });
+});
+
+describe("a field the header holds as a list or block", () => {
+  const doc = (author: string) =>
+    `---\ntitle: T\nauthor:\n${author}\nlang: en\n---\n\nbody\n`;
+
+  it("reads a plain list as one line of text and reports it locked", () => {
+    const { meta, locked } = parseMeta(doc('- Jane\n  - "John Doe"'));
+    expect(meta.author).toBe("Jane, John Doe");
+    expect(locked).toEqual(["author"]);
+    expect(meta.title).toBe("T");
+  });
+
+  it("reads nested entries as empty, still locked", () => {
+    const { meta, locked } = parseMeta(doc("- name: Jane\n  affiliation: X"));
+    expect(meta.author).toBe("");
+    expect(locked).toEqual(["author"]);
+  });
+
+  it("reports no locked field for one-line values", () => {
+    expect(parseMeta("---\ntitle: T\nauthor: Jane\n---\n").locked).toEqual([]);
+  });
+
+  it("is never rewritten, whatever value is passed for it", () => {
+    const start = doc("- Jane\n- John");
+    const meta = { ...EMPTY_META, title: "New", author: "Somebody else" };
+    expect(applyMeta(start, meta, "frontmatter")).toBe(
+      start.replace("title: T", "title: New"),
+    );
+  });
+});
+
+describe("the ml:meta comment below a header of other tools", () => {
+  const header = "---\ncsl: apa\n---\n\n";
+  const mixed = `${header}<!--ml:meta {"title":"Real"}-->\n\nbody\n`;
+  const real = { ...EMPTY_META, title: "Real" };
+
+  it("is read", () => {
+    const { meta, format } = parseMeta(mixed);
+    expect(meta.title).toBe("Real");
+    expect(format).toBe("comment");
+  });
+
+  it("is replaced on save, not written a second time", () => {
+    expect(applyMeta(mixed, real, "comment")).toBe(mixed);
+    expect(applyMeta(mixed, { ...real, title: "New" }, "comment")).toBe(
+      mixed.replace("Real", "New"),
+    );
+  });
+
+  it("takes the fields out of the header and leaves the other keys", () => {
+    const start = "---\ntitle: Real\ncsl: apa\n---\n\nbody\n";
+    expect(applyMeta(start, real, "comment")).toBe(mixed);
+  });
+
+  it("gives the fields back to the header", () => {
+    expect(applyMeta(mixed, real, "frontmatter")).toBe(
+      "---\ncsl: apa\ntitle: Real\n---\n\nbody\n",
+    );
+  });
+
+  it("leaves a list in the header and reads it back from there", () => {
+    const start = "---\ntitle: Real\nauthor:\n- Jane\n- John\n---\n\nbody\n";
+    const meta = { ...real, author: "Jane, John" };
+    const saved = applyMeta(start, meta, "comment");
+    expect(saved).toBe(
+      '---\nauthor:\n- Jane\n- John\n---\n\n<!--ml:meta {"title":"Real"}-->\n\nbody\n',
+    );
+    expect(parseMeta(saved)).toEqual({
+      meta,
+      format: "comment",
+      locked: ["author"],
+    });
+  });
+});
+
 describe("applyMeta keeps the file's line endings", () => {
   const meta = { ...EMPTY_META, title: "T", author: "A" };
 

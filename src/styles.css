@@ -1935,6 +1935,10 @@ html.theme-dark #editor .cm-cursor {
   color: inherit;
 }
 
+.ml-dialog input[readonly] {
+  color: var(--muted);
+}
+
 .ml-dialog input:focus-visible,
 .ml-dialog select:focus-visible,
 .ml-dialog textarea:focus-visible {
