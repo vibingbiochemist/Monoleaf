@@ -1,0 +1,39 @@
+{
+  "citations": [
+    "(Doe and Roe 2020)",
+    "(Smith 2019, 3)",
+    "(Smith 2019, chap. 2)",
+    "(Doe and Roe 2020, fig. 1)",
+    "(see Kim 2018, chap. 2, for the method)",
+    "(Doe and Roe 2020; Smith 2019)",
+    "Lee (2021)",
+    "Smith (2019, 7)",
+    "(2018)",
+    "(Doe and Roe 2020)"
+  ],
+  "bibliography": [
+    {
+      "key": "doe2020",
+      "label": null,
+      "html": "Doe, Jane, and Richard Roe. 2020. “How to Cite in a Markdown Document.” <span style=\"font-style: italic;\">Journal of Examples</span> 3 (2): 1–9. <a href=\"https://doi.org/10.1000/example.2020.3\">https://doi.org/10.1000/example.2020.3</a>."
+    },
+    {
+      "key": "kim2018",
+      "label": null,
+      "html": "Kim, Min-jun. 2018. “Citation Styles Compared.” PhD thesis, Example University."
+    },
+    {
+      "key": "lee2021",
+      "label": null,
+      "html": "Lee, Ana. 2021. “Citing a Web Page.” Example Site,. <a href=\"https://example.org/citing\">https://example.org/citing</a>."
+    },
+    {
+      "key": "smith2019",
+      "label": null,
+      "html": "Smith, John. 2019. <span style=\"font-style: italic;\">The Reference List</span>. Example Press."
+    }
+  ],
+  "hangingIndent": true,
+  "title": null,
+  "warnings": []
+}

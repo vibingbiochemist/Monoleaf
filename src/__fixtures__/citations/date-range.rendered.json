@@ -1,0 +1,24 @@
+{
+  "citations": [
+    "(Range, 2019)",
+    "(Late, n.d.)"
+  ],
+  "bibliography": [
+    {
+      "key": "soon",
+      "label": null,
+      "html": "Late, L. (n.d.). <span style=\"font-style: italic;\">Not Yet Out</span>."
+    },
+    {
+      "key": "range",
+      "label": null,
+      "html": "Range, R. (2019). <span style=\"font-style: italic;\">A Multi-Year Report</span>."
+    }
+  ],
+  "hangingIndent": true,
+  "title": null,
+  "warnings": [
+    "header: entry 1: issued is a range, only its start is used",
+    "header: entry 2: issued is not a date"
+  ]
+}

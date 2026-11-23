@@ -30,7 +30,12 @@ const loadImages = async (sources: readonly string[]) =>
 
 describe("export HTML matches its snapshot", () => {
   for (const file of loadCorpus()) {
-    for (const mode of ["enhanced", "strict"] as const) {
+    // A citation document exports alike in both modes, so its strict
+    // snapshot would only repeat the enhanced one.
+    const modes = file.name.startsWith("citations/")
+      ? (["enhanced"] as const)
+      : (["enhanced", "strict"] as const);
+    for (const mode of modes) {
       it(`${file.name} (${mode})`, async () => {
         const markdown = file.bytes.toString("utf8");
         const html = sanitizeDocumentHtml(

@@ -43,6 +43,18 @@ runs:
     # host: the Wayland stack that drags quick-xml in only exists in the Linux
     # dependency graph.
     #
+    # The same two IDs also cover a third copy, quick-xml 0.38.4, which the
+    # citation engine brings in on every platform: hayagriva -> citationberg,
+    # whose style reader parses Citation Style Language XML with it. Unlike
+    # wayland-scanner this one is compiled into the app, so the question is
+    # what XML can reach it. Today: nothing. The bundled styles are stored
+    # pre-parsed (CBOR) and no code path reads a style from XML. That changes
+    # the day a document may name its own `.csl` file: then a hostile style
+    # reaches this parser, and the ignore must go, or citationberg must have
+    # moved to quick-xml >= 0.41.0 (its "^0.38" requirement is the blocker).
+    # That the linker really drops it is checked on every build: the step
+    # "The release binary holds no quick-xml 0.38" in build.yml.
+    #
     # RUSTSEC-2026-0367/0368/0369 (zip 4.x: archive extraction follows
     # symlinks out of the target folder and keeps permission/SUID bits) come
     # only through tauri-plugin-updater, which unpacks an update only after

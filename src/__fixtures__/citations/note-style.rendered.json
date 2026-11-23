@@ -1,0 +1,20 @@
+{
+  "citations": [
+    "",
+    "John Smith",
+    "",
+    "",
+    "(Smith, <span style=\"font-style: italic;\">The Book of Citations</span>)"
+  ],
+  "notes": [
+    "Jane Doe and Richard Roe, “A Study of Reference Lists,” <span style=\"font-style: italic;\">Journal of Studies</span> 3, no. 2 (2020): 1–9, <a href=\"https://doi.org/10.1000/jos.2020.3\">https://doi.org/10.1000/jos.2020.3</a>.",
+    "<span style=\"font-style: italic;\">The Book of Citations</span> (Example Press, 2019).",
+    "“A Study of Reference Lists,” 4.",
+    "See Smith, <span style=\"font-style: italic;\">The Book of Citations</span>; Ana Lee, “Citations yet to Come,” <span style=\"font-style: italic;\">Journal of Studies</span>, in press.",
+    null
+  ],
+  "bibliography": [],
+  "hangingIndent": true,
+  "title": null,
+  "warnings": []
+}

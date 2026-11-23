@@ -4,7 +4,10 @@ import { join } from "node:path";
 /**
  * The document corpus the round-trip and export-snapshot suites run over:
  * samples/ plus src/__fixtures__/roundtrip/, which is the place for real
- * documents written with earlier versions of Monoleaf.
+ * documents written with earlier versions of Monoleaf, plus
+ * src/__fixtures__/citations/, the documents of the citation chain (see
+ * citations.fixtures.test.ts), which export as written when nothing renders
+ * their citations.
  *
  * Fixtures are committed with `-text` (see .gitattributes), so a CRLF file
  * stays CRLF on every checkout and CI exercises Windows line endings even on
@@ -13,9 +16,16 @@ import { join } from "node:path";
  */
 
 const ROOT = join(__dirname, "..");
+export const CITATION_FIXTURES_DIR = join(
+  ROOT,
+  "src",
+  "__fixtures__",
+  "citations",
+);
 const SOURCES = [
   { prefix: "samples", dir: join(ROOT, "samples") },
   { prefix: "fixtures", dir: join(ROOT, "src", "__fixtures__", "roundtrip") },
+  { prefix: "citations", dir: CITATION_FIXTURES_DIR },
 ];
 
 export interface CorpusFile {

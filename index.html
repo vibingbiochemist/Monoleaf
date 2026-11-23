@@ -54,6 +54,12 @@
           <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
           <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
         </symbol>
+        <symbol id="i-references" viewBox="0 0 24 24">
+          <path
+            d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"
+          />
+          <path d="M12 7v6M9 10h6" />
+        </symbol>
         <symbol id="i-comment-add" viewBox="0 0 24 24">
           <path d="M21 12a8 8 0 0 1-8 8H4l2.5-2.9A8 8 0 1 1 21 12z" />
           <path d="M12 8.5v6M9 11.5h6" />
@@ -593,6 +599,14 @@
                 <svg class="icon"><use href="#i-link" /></svg>
               </button>
               <button
+                id="btn-references"
+                class="icon-btn"
+                title="References: citation style, bibliography files, an example"
+                aria-label="References"
+              >
+                <svg class="icon"><use href="#i-references" /></svg>
+              </button>
+              <button
                 id="btn-table"
                 class="icon-btn"
                 data-tool="table"
@@ -753,6 +767,7 @@
           <span>Document properties…</span>
         </button>
       </div>
+      <div id="references-panel" class="menu references-panel" hidden></div>
       <div id="table-picker" class="menu" hidden>
         <div
           id="tp-grid"
@@ -896,6 +911,12 @@
         <span id="file-name" title="Unsaved document">Untitled</span>
         <span class="status-spacer"></span>
         <span id="word-count"></span>
+        <button
+          id="references-status"
+          title="The references the header names, and what could not be read"
+          aria-expanded="false"
+          hidden
+        ></button>
         <span
           id="page-indicator"
           title="Current page / total pages (computed from the real print layout)"
@@ -1089,6 +1110,65 @@
         <label class="meta-check"
           ><input id="meta-frontmatter" type="checkbox" /> Store as YAML front
           matter (visible at the top; for pandoc, Obsidian, etc.)</label
+        >
+        <menu>
+          <button value="ok" type="submit">Save</button>
+          <button value="cancel" type="submit">Cancel</button>
+        </menu>
+      </form>
+    </dialog>
+    <dialog id="references-dialog" class="ml-dialog">
+      <form method="dialog">
+        <label for="refs-style">Citation style (csl)</label>
+        <select id="refs-style"></select>
+        <label for="refs-lang">Language (lang)</label>
+        <select id="refs-lang">
+          <option value="">The style's own</option>
+        </select>
+        <label for="refs-files"
+          >Bibliography files in the document's folder, comma-separated
+          (bibliography)</label
+        >
+        <input
+          id="refs-files"
+          type="text"
+          spellcheck="false"
+          placeholder="refs.bib, data.json"
+        />
+        <label class="check-row"
+          ><input id="refs-inline" type="checkbox" /> Add an inline references
+          list with the example works (references)</label
+        >
+        <label for="refs-title"
+          >Reference section title (reference-section-title)</label
+        >
+        <input id="refs-title" type="text" spellcheck="false" />
+        <fieldset>
+          <legend>Reference list (suppress-bibliography)</legend>
+          <label class="check-row"
+            ><input type="radio" name="refs-suppress" value="false" /> Show the
+            reference list</label
+          >
+          <label class="check-row"
+            ><input type="radio" name="refs-suppress" value="true" /> No
+            reference list</label
+          >
+        </fieldset>
+        <fieldset>
+          <legend>Lists per chapter (refsegment)</legend>
+          <label class="check-row"
+            ><input type="radio" name="refs-segment" value="false" /> Every refs
+            block lists all works</label
+          >
+          <label class="check-row"
+            ><input type="radio" name="refs-segment" value="true" /> A list per
+            chapter at each refs block</label
+          >
+        </fieldset>
+        <label class="check-row"
+          ><input id="refs-template" type="checkbox" /> Generate with citation
+          template: an example text, a refs block and example.bib beside the
+          document</label
         >
         <menu>
           <button value="ok" type="submit">Save</button>

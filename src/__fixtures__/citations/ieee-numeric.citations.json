@@ -1,0 +1,8 @@
+[
+{"from":0,"to":12,"items":[{"key":"smith2019","prefix":"","suffix":"","suppressAuthor":false}],"inText":false},
+{"from":0,"to":16,"items":[{"key":"doe2020","prefix":"","suffix":"p. 3","suppressAuthor":false}],"inText":false},
+{"from":0,"to":22,"items":[{"key":"doe2020","prefix":"","suffix":"","suppressAuthor":false},{"key":"smith2019","prefix":"","suffix":"","suppressAuthor":false}],"inText":false},
+{"from":0,"to":16,"items":[{"key":"smith2019","prefix":"see","suffix":"","suppressAuthor":false}],"inText":false},
+{"from":0,"to":11,"items":[{"key":"doe2020","prefix":"","suffix":"","suppressAuthor":true}],"inText":false},
+{"from":0,"to":17,"items":[{"key":"doe2020","prefix":"","suffix":"sec. 2","suppressAuthor":false}],"inText":true}
+]

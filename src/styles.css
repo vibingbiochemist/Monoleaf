@@ -373,6 +373,42 @@ html.theme-dark .brand-dark {
   margin-right: 0.35em;
 }
 
+/* Live citations: the rendering reads as text; a dotted edge says it is a
+   widget whose source returns on its line. An unknown key keeps its source
+   under a dashed accent edge, like a missing image. */
+.cm-citation {
+  cursor: text;
+  border-bottom: 1px dotted light-dark(#b9b8b4, #565650);
+}
+.cm-citation-unknown {
+  text-decoration: underline dashed var(--accent);
+  text-underline-offset: 3px;
+}
+
+/* The reference list at a `::: {#refs}` block, laid out as the PDF prints
+   it: a hanging indent where the style asks for one, a numeric style's label
+   in a left margin. The marker lines return when the cursor is on them. */
+.cm-refs {
+  margin: 0.4em 0;
+  cursor: text;
+}
+.cm-refs-entry {
+  margin: 0 0 0.35em;
+}
+.cm-refs-hanging .cm-refs-entry {
+  padding-left: 2em;
+  text-indent: -2em;
+}
+.cm-refs-label {
+  display: inline-block;
+  min-width: 2.5em;
+  text-indent: 0;
+}
+.cm-refs-suppressed {
+  font-style: italic;
+  opacity: 0.6;
+}
+
 /* Rendered math (KaTeX) in the live view */
 .cm-math {
   cursor: default;
@@ -1935,6 +1971,10 @@ html.theme-dark #editor .cm-cursor {
   color: inherit;
 }
 
+.ml-dialog input[readonly] {
+  color: var(--muted);
+}
+
 .ml-dialog input:focus-visible,
 .ml-dialog select:focus-visible,
 .ml-dialog textarea:focus-visible {
@@ -1955,9 +1995,26 @@ html.theme-dark #editor .cm-cursor {
   cursor: pointer;
 }
 
-.ml-dialog input[type="checkbox"] {
+.ml-dialog input[type="checkbox"],
+.ml-dialog input[type="radio"] {
   width: auto;
   accent-color: var(--accent);
+}
+
+/* A radio group: its legend reads as a field label, its options sit close
+   together under it. */
+.ml-dialog fieldset {
+  border: 0;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.ml-dialog legend {
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.ml-dialog fieldset .check-row {
+  margin: 4px 0 0;
 }
 
 .ml-dialog input + label,
@@ -2154,4 +2211,89 @@ html.theme-dark #editor .cm-cursor {
     box-shadow: none;
     margin: 0;
   }
+}
+
+/* Citation completion and hover: the list after `@`, the title beside the
+   chosen entry, and the box over a citation key. The package's own colours
+   are for a light page and the entry's title would come out white on white
+   in dark mode, so all three follow the app's menus instead. */
+.cm-tooltip.cm-tooltip-autocomplete,
+.cm-tooltip.cm-completionInfo,
+.cm-tooltip.cm-tooltip-hover {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.24);
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li {
+  padding: 4px 10px;
+}
+
+.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected] {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.cm-tooltip.cm-completionInfo {
+  padding: 6px 10px;
+}
+
+/* Authors and year on the first line, the title on the second. */
+.cm-citation-hover {
+  padding: 6px 10px;
+  max-width: 480px;
+  white-space: pre-line;
+}
+
+.cm-completionDetail {
+  margin-left: 0.6em;
+  color: var(--muted);
+  font-style: normal;
+}
+
+/* The references entry in the status bar and the panel it opens. */
+#references-status {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+  font: inherit;
+  padding: 2px 6px;
+  white-space: nowrap;
+}
+
+#references-status:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+#references-status.has-warnings {
+  color: var(--accent);
+}
+
+/* Opens upward from the status bar; its left edge is set when it opens. */
+.menu.references-panel {
+  top: auto;
+  bottom: 34px;
+  right: auto;
+  max-width: 560px;
+}
+
+.references-source {
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.references-source .summary {
+  margin-left: 0.5em;
+  color: var(--muted);
+}
+
+.references-source .warning {
+  padding-left: 14px;
+  font-size: 12px;
+  color: var(--muted);
 }

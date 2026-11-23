@@ -8,10 +8,13 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_updater::Update;
 
+pub mod biblatex_csl;
+pub mod citations;
 mod filewatch;
 pub mod pdfimport;
+pub mod references;
 
-use filewatch::FileWatches;
+use filewatch::{FileWatches, ReferenceWatches};
 
 /// The file path Monoleaf was asked to open — from being launched with a `.md`
 /// argument (double-clicking an associated file on Windows/Linux), or from the
@@ -597,6 +600,8 @@ fn set_allow_network_paths(app: AppHandle, allow: bool) {
     if !allow {
         app.state::<FileWatches>()
             .retain(|path| validate_path(path, false).is_ok());
+        app.state::<ReferenceWatches>()
+            .retain(|path| validate_path(path, false).is_ok());
     }
 }
 
@@ -654,6 +659,50 @@ fn watch_file(
     Ok(())
 }
 
+/// Watch the `bibliography:` files the header of the window's document names,
+/// so that a change to one of them reaches the editor's reference list. The
+/// paths are resolved with the rules that reading applies; a path those rules
+/// refuse is skipped here, since its warning came with the load. On the main
+/// thread for the same reason as `watch_file`.
+#[tauri::command]
+fn watch_references(
+    window: tauri::WebviewWindow,
+    state: tauri::State<ReferenceWatches>,
+    document_path: Option<String>,
+    front_matter: String,
+) -> Result<(), String> {
+    let label = window.label().to_string();
+    let dir = document_path
+        .as_deref()
+        .map(std::path::Path::new)
+        .and_then(std::path::Path::parent);
+    let mut watches = Vec::new();
+    for path in references::bibliography_paths(&front_matter).unwrap_or_default() {
+        let Some(file) = dir.and_then(|dir| references::bibliography_file(dir, &path).ok()) else {
+            continue;
+        };
+        let file = file.to_string_lossy().into_owned();
+        if validate_path(&file, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed)).is_err() {
+            continue;
+        }
+        let app = window.app_handle().clone();
+        let target = label.clone();
+        let watch = filewatch::start(&file, move |kind| {
+            let _ = app.emit_to(
+                target.as_str(),
+                filewatch::REFERENCES_CHANGED_EVENT,
+                filewatch::FileChange {
+                    path: path.clone(),
+                    kind,
+                },
+            );
+        });
+        watches.extend(watch.ok());
+    }
+    state.replace(&label, watches);
+    Ok(())
+}
+
 /// Run a file command's disk work on a blocking-task thread.
 ///
 /// A synchronous command runs on the main thread, and a read or write can take
@@ -691,6 +740,48 @@ async fn write_file(path: String, contents: String) -> Result<(), String> {
             .map_err(|e| format!("Failed to write {path}: {e}"))
     })
     .await
+}
+
+/// The example bibliography the references dialog lays out beside the
+/// document: a fixed name next to `document_path`, written once. An existing
+/// file of that name is left as it is, and `false` says so. The general
+/// write_file command does not take a `.bib`, and this one takes nothing else.
+#[tauri::command]
+async fn write_example_bibliography(
+    document_path: String,
+    contents: String,
+) -> Result<bool, String> {
+    off_main_thread(move || {
+        validate_path(&document_path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
+        let dir = std::path::Path::new(&document_path)
+            .parent()
+            .ok_or_else(|| "The document has no folder".to_string())?;
+        write_example_beside(dir, contents.as_bytes())
+    })
+    .await
+}
+
+fn write_example_beside(dir: &std::path::Path, contents: &[u8]) -> Result<bool, String> {
+    use std::io::Write;
+    let path = dir.join(references::EXAMPLE_FILE);
+    let mut file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+    {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(e) => return Err(format!("Failed to write {}: {e}", path.display())),
+    };
+    file.write_all(contents)
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    Ok(true)
+}
+
+/// The bundled citation styles and locales, for the references dialog.
+#[tauri::command]
+fn citation_catalogue() -> citations::Catalogue {
+    citations::catalogue()
 }
 
 /// Distinguishes the temporary files of writes running at the same time.
@@ -972,6 +1063,45 @@ fn find_images_named(dir: &str, name: &str) -> Result<Vec<String>, String> {
         level = next;
     }
     Ok(Vec::new())
+}
+
+/// The references the document's header names, for `@` completion and the
+/// hover. A problem with a file comes back as a warning inside the result,
+/// never as an error, so the editor keeps what could be read. Off the main
+/// thread like the other file reads: a `.bib` on a slow disk must not freeze
+/// the window.
+#[tauri::command]
+async fn load_references(
+    document_path: Option<String>,
+    front_matter: String,
+) -> Result<references::LoadedSummaries, String> {
+    off_main_thread(move || {
+        Ok(references::load_summaries(
+            document_path.as_deref(),
+            &front_matter,
+            ALLOW_NETWORK_PATHS.load(Ordering::Relaxed),
+        ))
+    })
+    .await
+}
+
+/// Render the citations the export found, and the reference list, from the
+/// references the header names. Reads the files again, off the main thread.
+#[tauri::command]
+async fn render_citations(
+    document_path: Option<String>,
+    front_matter: String,
+    citations: Vec<citations::Citation>,
+) -> Result<citations::RenderedCitations, String> {
+    off_main_thread(move || {
+        citations::render_document(
+            document_path.as_deref(),
+            &front_matter,
+            ALLOW_NETWORK_PATHS.load(Ordering::Relaxed),
+            &citations,
+        )
+    })
+    .await
 }
 
 /// Convert a PDF to Markdown for opening as a new, unsaved document.
@@ -1594,13 +1724,19 @@ pub fn run() {
         .manage(PendingUpdate(Mutex::new(None)))
         .manage(FlushGate::new())
         .manage(FileWatches::default())
+        .manage(ReferenceWatches::default())
         .invoke_handler(tauri::generate_handler![
             read_file,
             write_file,
             read_image_as_data_url,
             find_image_by_name,
+            load_references,
+            render_citations,
+            write_example_bibliography,
+            citation_catalogue,
             set_allow_network_paths,
             watch_file,
+            watch_references,
             import_pdf_as_markdown,
             spell_suggest,
             spell_check,
@@ -1622,6 +1758,9 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::Destroyed = event {
                 window.state::<FileWatches>().stop(window.label());
+                window
+                    .state::<ReferenceWatches>()
+                    .replace(window.label(), Vec::new());
             }
         })
         // On Windows the OS foreground-lock policy can let the config-defined
@@ -1651,6 +1790,20 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_example_bibliography_is_written_once_and_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!("ml-example-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(
+            write_example_beside(&dir, b"@book{a, title={A}}\n"),
+            Ok(true)
+        );
+        assert_eq!(write_example_beside(&dir, b"other"), Ok(false));
+        let kept = std::fs::read_to_string(dir.join(references::EXAMPLE_FILE)).unwrap();
+        assert_eq!(kept, "@book{a, title={A}}\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     use super::*;
     use tauri::async_runtime::block_on;
 

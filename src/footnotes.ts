@@ -72,7 +72,7 @@ function cursorOnLine(state: EditorState, from: number, to: number): boolean {
   );
 }
 
-const DEF_RE = /^(\s*)\[\^([^\]\s]+)\]:[ \t]?/;
+export const DEF_RE = /^(\s*)\[\^([^\]\s]+)\]:[ \t]?/;
 const REF_RE = /\[\^([^\]\s]+)\]/g;
 
 // Scan one line, classifying the definition marker (if any) and references.
@@ -177,6 +177,21 @@ export function footnoteRefPos(
     }
     const idx = line.text.indexOf(needle);
     if (idx >= 0) return line.from + idx;
+  }
+  return null;
+}
+
+/** The label of the footnote definition that holds `pos`: on its first
+ * line or on the indented lines after it; null outside a definition. */
+export function footnoteLabelAt(
+  state: EditorState,
+  pos: number,
+): string | null {
+  for (let n = state.doc.lineAt(pos).number; n >= 1; n--) {
+    const text = state.doc.line(n).text;
+    const def = DEF_RE.exec(text);
+    if (def !== null) return def[2];
+    if (text.trim() !== "" && !/^[ \t]/.test(text)) return null;
   }
   return null;
 }

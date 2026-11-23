@@ -27,4 +27,12 @@ accepted = [
     # also silence it — but a scoping config that quietly stops covering a target
     # under-discloses, and over-disclosing one licence costs nothing.
     "CDLA-Permissive-2.0",
+    # hayagriva, the citation engine behind references. Its code is MIT or
+    # Apache-2.0; what carries this licence is *data* the crate embeds: the
+    # Citation Style Language styles and locales of the CSL project (its NOTICE
+    # file). We ship them unmodified, so the only duty is attribution, which
+    # about.hbs adds because cargo-about reports a crate's code licence only.
+    # Share-alike binds the style files alone, not Monoleaf; a style we ever
+    # modified would have to be published under CC BY-SA, so we never do.
+    "CC-BY-SA-3.0",
 ]

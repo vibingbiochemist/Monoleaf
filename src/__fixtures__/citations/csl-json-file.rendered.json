@@ -1,0 +1,15 @@
+{
+  "citations": [
+    "(Jones, 2021, p. 11)"
+  ],
+  "bibliography": [
+    {
+      "key": "json2021",
+      "label": null,
+      "html": "Jones, J. (2021). A JSON Reference. <span style=\"font-style: italic;\">Journal of JSON</span>, <span style=\"font-style: italic;\">1</span>, 10–20."
+    }
+  ],
+  "hangingIndent": true,
+  "title": null,
+  "warnings": []
+}

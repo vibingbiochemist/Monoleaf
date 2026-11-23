@@ -1,0 +1,40 @@
+{
+  "citations": [
+    "[1]",
+    "[2]",
+    "[3]",
+    "[1]",
+    "[4]",
+    "[5]"
+  ],
+  "bibliography": [
+    {
+      "key": "doe2020",
+      "label": "[1]",
+      "html": "J. Doe and R. Roe, “A study of reference lists,” <span style=\"font-style: italic;\">Journal of Studies</span>, vol. 3, no. 2, pp. 1–9, 2020, doi: <a href=\"https://doi.org/10.1000/jos.2020.3\">10.1000/jos.2020.3</a>."
+    },
+    {
+      "key": "smith2019",
+      "label": "[2]",
+      "html": "J. Smith, <span style=\"font-style: italic;\">The book of citations</span>. Berlin: Example Press, 2019."
+    },
+    {
+      "key": "kim2018",
+      "label": "[3]",
+      "html": "M.-jun Kim, “Reference lists at scale,” PhD thesis, Example University, 2018."
+    },
+    {
+      "key": "lee2024",
+      "label": "[4]",
+      "html": "A. Lee, “Citations yet to come,” <span style=\"font-style: italic;\">Journal of Studies</span>, <span style=\"font-weight: bold;\">In press</span>."
+    },
+    {
+      "key": "nasa2021",
+      "label": "[5]",
+      "html": "National Aeronautics and Space Administration, “Citing data sets,” NASA, TM-2021–1, 2021."
+    }
+  ],
+  "hangingIndent": false,
+  "title": null,
+  "warnings": []
+}

@@ -1,0 +1,8 @@
+[
+{"from":0,"to":16,"items":[{"key":"doe2020","prefix":"","suffix":"S. 3","suppressAuthor":false}],"inText":false},
+{"from":0,"to":18,"items":[{"key":"doe2020","prefix":"","suffix":"Kap. 2","suppressAuthor":false}],"inText":false},
+{"from":0,"to":18,"items":[{"key":"doe2020","prefix":"","suffix":"Abb. 1","suppressAuthor":false}],"inText":false},
+{"from":0,"to":21,"items":[{"key":"doe2020","prefix":"","suffix":"Abschn. 4","suppressAuthor":false}],"inText":false},
+{"from":0,"to":16,"items":[{"key":"doe2020","prefix":"","suffix":"p. 5","suppressAuthor":false}],"inText":false},
+{"from":0,"to":39,"items":[{"key":"smith2019","prefix":"vgl.","suffix":"S. 7-9, Hervorhebung","suppressAuthor":false}],"inText":false}
+]

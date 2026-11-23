@@ -1,0 +1,25 @@
+{
+  "citations": [
+    "(Doe &amp; Roe, 2020)",
+    "(Young, 2022)",
+    null
+  ],
+  "bibliography": [
+    {
+      "key": "doe2020",
+      "label": null,
+      "html": "Doe, J., &amp; Roe, R. (2020). A study of reference lists. <span style=\"font-style: italic;\">Journal of Studies</span>, <span style=\"font-style: italic;\">3</span>(2), 1–9. <a href=\"https://doi.org/10.1000/jos.2020.3\">https://doi.org/10.1000/jos.2020.3</a>"
+    },
+    {
+      "key": "yaml2022",
+      "label": null,
+      "html": "Young, Y. (2022). <span style=\"font-style: italic;\">A YAML Reference</span>. Yaml Press."
+    }
+  ],
+  "hangingIndent": true,
+  "title": null,
+  "warnings": [
+    "gone.bib: not found",
+    "citation 3: no reference has the key nobody"
+  ]
+}

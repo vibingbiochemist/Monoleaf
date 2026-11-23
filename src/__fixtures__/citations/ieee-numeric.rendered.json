@@ -1,0 +1,25 @@
+{
+  "citations": [
+    "[1]",
+    "[2, p. 3]",
+    "[1], [2]",
+    "see [1]",
+    "[2]",
+    "[2, Sec. 2]"
+  ],
+  "bibliography": [
+    {
+      "key": "smith2019",
+      "label": "[1]",
+      "html": "J. Smith, <span style=\"font-style: italic;\">The book of citations</span>. Berlin: Example Press, 2019."
+    },
+    {
+      "key": "doe2020",
+      "label": "[2]",
+      "html": "J. Doe and R. Roe, “A study of reference lists,” <span style=\"font-style: italic;\">Journal of Studies</span>, vol. 3, no. 2, pp. 1–9, 2020, doi: <a href=\"https://doi.org/10.1000/jos.2020.3\">10.1000/jos.2020.3</a>."
+    }
+  ],
+  "hangingIndent": false,
+  "title": null,
+  "warnings": []
+}

@@ -1,0 +1,3 @@
+[
+  {"id": "json2021", "type": "article-journal", "title": "A JSON Reference", "author": [{"family": "Jones", "given": "Jill"}], "issued": {"date-parts": [[2021]]}, "container-title": "Journal of JSON", "volume": "1", "page": "10-20"}
+]

@@ -1,0 +1,5 @@
+[
+{"from":0,"to":10,"items":[{"key":"doe2020","prefix":"","suffix":"","suppressAuthor":false}],"inText":false},
+{"from":0,"to":18,"items":[{"key":"smith2019","prefix":"","suffix":"p. 4","suppressAuthor":false}],"inText":false},
+{"from":0,"to":8,"items":[{"key":"doe2020","prefix":"","suffix":"","suppressAuthor":false}],"inText":true}
+]

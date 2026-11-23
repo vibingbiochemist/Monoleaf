@@ -193,11 +193,70 @@ impl FileWatches {
     }
 }
 
+/// Emitted to the owning window when one of the reference files its header
+/// names changed or vanished on disk.
+///
+/// COUPLED: `REFERENCES_CHANGED_EVENT` in `src/main.ts`.
+pub const REFERENCES_CHANGED_EVENT: &str = "references-changed-on-disk";
+
+/// The reference files watched per window label. A document may name several
+/// `bibliography:` files, and they are replaced together whenever its header
+/// changes, so the newest header always decides what is watched.
+#[derive(Default)]
+pub struct ReferenceWatches(pub Mutex<HashMap<String, Vec<Watch>>>);
+
+impl ReferenceWatches {
+    /// Replace the watches of `label`; an empty list stops them all.
+    pub fn replace(&self, label: &str, watches: Vec<Watch>) {
+        let previous = self
+            .0
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(label.to_string(), watches);
+        drop(previous);
+    }
+
+    /// Stop every watch whose path no longer passes `keep`.
+    pub fn retain(&self, keep: impl Fn(&str) -> bool) {
+        let mut all = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        for watches in all.values_mut() {
+            watches.retain(|w| keep(&w.path));
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::path::PathBuf;
     use std::sync::mpsc;
+
+    #[test]
+    fn reference_watches_are_replaced_as_a_whole_and_trimmed_by_path() {
+        let dir = std::env::temp_dir().join(format!("ml-refwatch-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let paths: Vec<String> = ["a.bib", "b.json"]
+            .iter()
+            .map(|name| {
+                let path = dir.join(name);
+                std::fs::write(&path, "").unwrap();
+                path.to_string_lossy().into_owned()
+            })
+            .collect();
+        let held = ReferenceWatches(Mutex::new(HashMap::new()));
+        let count =
+            |held: &ReferenceWatches| held.0.lock().unwrap().values().map(Vec::len).sum::<usize>();
+        let watches = paths.iter().map(|p| start(p, |_| {}).unwrap()).collect();
+        held.replace("window-1", watches);
+        assert_eq!(count(&held), 2);
+        // Network paths switched off: only the watch that still passes stays.
+        held.retain(|path| path.ends_with("a.bib"));
+        assert_eq!(count(&held), 1);
+        // A header without files ends the window's watches.
+        held.replace("window-1", Vec::new());
+        assert_eq!(count(&held), 0);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn only_events_for_the_target_file_name_count() {

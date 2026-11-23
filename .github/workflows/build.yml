@@ -100,6 +100,23 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # The citation engine (hayagriva -> citationberg) compiles quick-xml 0.38,
+      # which two ignored advisories cover (see .github/actions/audit). Nothing
+      # reads a style from XML, so the linker drops that code; this proves it on
+      # the binary that ships. A Rust crate leaves its source paths in its panic
+      # messages, so the crate's name in the binary means its code is there.
+      # When this fails, a change made the style parser reachable: revisit the
+      # audit ignore, or wait for citationberg to reach quick-xml 0.41. The
+      # hayagriva line guards the check itself: it proves the file looked at is
+      # the binary with the engine in it, not some other file of that name.
+      - name: The release binary holds no quick-xml 0.38
+        shell: bash
+        run: |
+          binary=$(find src-tauri/target/release -maxdepth 1 -type f \( -name monoleaf -o -name monoleaf.exe \))
+          test -f "$binary"
+          grep -a -q 'hayagriva-0' "$binary"
+          ! grep -a -q 'quick-xml-0\.38' "$binary"
+
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: monoleaf-${{ matrix.platform }}
