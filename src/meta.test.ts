@@ -6,6 +6,7 @@ import {
   parseMeta,
   stripMeta,
   EMPTY_META,
+  setHeaderLines,
 } from "./meta";
 import { createDocumentState, serializeDocument } from "./document";
 
@@ -262,4 +263,47 @@ describe("applyMeta keeps the file's line endings", () => {
       expect(serializeDocument(applyInEditor(once, "comment"))).toBe(once);
     });
   }
+});
+
+describe("setHeaderLines", () => {
+  const header =
+    "---\ntitle: T\ncsl: apa\nreferences:\n- id: a\n  title: A\nlang: en-GB\n---\n\nBody\n";
+
+  it("replaces a key in place, value lines included, and keeps the rest", () => {
+    const out = setHeaderLines(header, {
+      csl: "ieee",
+      references: ["- id: b", "  title: B"],
+    });
+    expect(out).toBe(
+      "---\ntitle: T\ncsl: ieee\nreferences:\n- id: b\n  title: B\nlang: en-GB\n---\n\nBody\n",
+    );
+  });
+
+  it("removes a key with its lines, adds new keys below, quotes what needs it", () => {
+    const out = setHeaderLines(header, {
+      references: null,
+      "reference-section-title": "Sources: all",
+      "suppress-bibliography": "true",
+    });
+    expect(out).toBe(
+      '---\ntitle: T\ncsl: apa\nlang: en-GB\nreference-section-title: "Sources: all"\nsuppress-bibliography: true\n---\n\nBody\n',
+    );
+  });
+
+  it("gives a document without a header one, above an ml:meta comment", () => {
+    const doc = '<!--ml:meta {"title":"T"}-->\n\nBody\n';
+    const out = setHeaderLines(doc, { bibliography: "refs.bib" });
+    expect(out).toBe("---\nbibliography: refs.bib\n---\n\n" + doc);
+    expect(parseMeta(out).meta.title).toBe("T");
+    expect(setHeaderLines("", { csl: "apa" })).toBe("---\ncsl: apa\n---\n");
+    expect(setHeaderLines("Body\n", {})).toBe("Body\n");
+  });
+
+  it("keeps CRLF line breaks and removes a header left empty", () => {
+    const crlf = "---\r\ncsl: apa\r\n---\r\n\r\nBody\r\n";
+    expect(setHeaderLines(crlf, { lang: "de-DE" }, "\r\n")).toBe(
+      "---\r\ncsl: apa\r\nlang: de-DE\r\n---\r\n\r\nBody\r\n",
+    );
+    expect(setHeaderLines(crlf, { csl: null }, "\r\n")).toBe("Body\r\n");
+  });
 });

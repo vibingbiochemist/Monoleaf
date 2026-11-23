@@ -145,6 +145,13 @@ export function frontMatter(text: string): string {
   return content;
 }
 
+/** How far the front matter reaches, its closing fence and line break
+ * included; 0 without one. Where text that follows the header goes. */
+export function headerLength(text: string): number {
+  const fm = text.startsWith("---") ? FRONTMATTER_RE.exec(text) : null;
+  return fm === null ? 0 : fm[0].length;
+}
+
 /** Remove any metadata block (front matter or ml:meta comment) from the text. */
 export function stripMeta(text: string): string {
   let t = text;
@@ -156,8 +163,13 @@ export function stripMeta(text: string): string {
   return t.replace(/^(?:\r\n?|\n)+/, "");
 }
 
-function yamlScalar(value: string): string {
-  return /[:#"']/.test(value) || /^\s|\s$/.test(value)
+/** A header value written so that YAML reads it back unchanged: quoted when
+ * it holds a colon, "#" or a quote, has a space at an end, or starts with a
+ * character YAML gives a meaning, `*` an alias or `[` a list. */
+export function yamlScalar(value: string): string {
+  return /[:#"']/.test(value) ||
+    /^\s|\s$/.test(value) ||
+    /^[-?,[\]{}&*!|>%@`]/.test(value)
     ? JSON.stringify(value)
     : value;
 }
@@ -227,6 +239,79 @@ function mergeFrontmatter(block: string, meta: DocMeta, nl: string): string {
     if (pending.has(f)) lines.push({ text: fieldLine(f, meta), eol: nl });
   if (lines.every((l) => l.text.trim() === "")) return "";
   // The closing fence brings the last line's break with it.
+  const last = lines.length - 1;
+  return lines.map((l, i) => (i < last ? l.text + l.eol : l.text)).join("");
+}
+
+// A header line that sets any key, pandoc's hyphenated ones included.
+const ANY_KEY_RE = /^([A-Za-z_][\w-]*)\s*:/;
+
+/** A header value: a scalar after `key: `, or the lines of a list or block
+ * under `key:`; null removes the key. */
+export type HeaderValue = string | readonly string[] | null;
+
+/**
+ * The document with the header lines of `entries` set or removed and every
+ * other line kept byte for byte, the way the citation dialog writes its keys.
+ * A key already in the header is replaced in place, with the value lines
+ * under it; a new key goes below the existing lines; a document without a
+ * header gets one at the top, and an ml:meta comment below it is untouched.
+ */
+export function setHeaderLines(
+  text: string,
+  entries: Record<string, HeaderValue>,
+  nl = "\n",
+): string {
+  const fm = text.startsWith("---") ? FRONTMATTER_RE.exec(text) : null;
+  const merged = editHeader(fm === null ? "" : fm[2], entries, nl);
+  if (fm === null) {
+    if (merged === "") return text;
+    const block = `---${nl}${merged}${nl}---`;
+    return text === "" ? `${block}${nl}` : `${block}${nl}${nl}${text}`;
+  }
+  const [whole, open, , close] = fm;
+  const rest = text.slice(whole.length);
+  if (merged === "") return rest.replace(/^(?:\r\n?|\n)+/, "");
+  return open + merged + close + rest;
+}
+
+function keyLines(key: string, value: Exclude<HeaderValue, null>, nl: string) {
+  return typeof value === "string"
+    ? `${key}: ${yamlScalar(value)}`
+    : [`${key}:`, ...value].join(nl);
+}
+
+/** The header content with `entries` applied, see setHeaderLines. */
+function editHeader(
+  block: string,
+  entries: Record<string, HeaderValue>,
+  nl: string,
+): string {
+  const pending = new Map(
+    Object.entries(entries).map(([k, v]) => [k.toLowerCase(), v]),
+  );
+  const lines: { text: string; eol: string }[] = [];
+  let inReplaced = false;
+  // An empty header has no line, not one empty line.
+  const parts = block === "" ? [] : block.split(/(\r\n?|\n)/);
+  for (let i = 0; i < parts.length; i += 2) {
+    const text = parts[i];
+    const eol = parts[i + 1] ?? nl;
+    const key = ANY_KEY_RE.exec(text)?.[1].toLowerCase() ?? null;
+    if (key !== null && pending.has(key)) {
+      inReplaced = true;
+      const value = pending.get(key) ?? null;
+      pending.delete(key);
+      if (value !== null) lines.push({ text: keyLines(key, value, nl), eol });
+      continue;
+    }
+    if (inReplaced && VALUE_LINE_RE.test(text)) continue;
+    inReplaced = false;
+    lines.push({ text, eol });
+  }
+  for (const [key, value] of pending)
+    if (value !== null) lines.push({ text: keyLines(key, value, nl), eol: nl });
+  if (lines.every((l) => l.text.trim() === "")) return "";
   const last = lines.length - 1;
   return lines.map((l, i) => (i < last ? l.text + l.eol : l.text)).join("");
 }

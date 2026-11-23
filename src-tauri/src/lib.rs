@@ -742,6 +742,42 @@ async fn write_file(path: String, contents: String) -> Result<(), String> {
     .await
 }
 
+/// The example bibliography the references dialog lays out beside the
+/// document: a fixed name next to `document_path`, written once. An existing
+/// file of that name is left as it is, and `false` says so. The general
+/// write_file command does not take a `.bib`, and this one takes nothing else.
+#[tauri::command]
+async fn write_example_bibliography(
+    document_path: String,
+    contents: String,
+) -> Result<bool, String> {
+    off_main_thread(move || {
+        validate_path(&document_path, ALLOW_NETWORK_PATHS.load(Ordering::Relaxed))?;
+        let dir = std::path::Path::new(&document_path)
+            .parent()
+            .ok_or_else(|| "The document has no folder".to_string())?;
+        write_example_beside(dir, contents.as_bytes())
+    })
+    .await
+}
+
+fn write_example_beside(dir: &std::path::Path, contents: &[u8]) -> Result<bool, String> {
+    use std::io::Write;
+    let path = dir.join(references::EXAMPLE_FILE);
+    let mut file = match std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+    {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return Ok(false),
+        Err(e) => return Err(format!("Failed to write {}: {e}", path.display())),
+    };
+    file.write_all(contents)
+        .map_err(|e| format!("Failed to write {}: {e}", path.display()))?;
+    Ok(true)
+}
+
 /// The bundled citation styles and locales, for the references dialog.
 #[tauri::command]
 fn citation_catalogue() -> citations::Catalogue {
@@ -1696,6 +1732,7 @@ pub fn run() {
             find_image_by_name,
             load_references,
             render_citations,
+            write_example_bibliography,
             citation_catalogue,
             set_allow_network_paths,
             watch_file,
@@ -1753,6 +1790,20 @@ pub fn run() {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_example_bibliography_is_written_once_and_never_overwritten() {
+        let dir = std::env::temp_dir().join(format!("ml-example-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        assert_eq!(
+            write_example_beside(&dir, b"@book{a, title={A}}\n"),
+            Ok(true)
+        );
+        assert_eq!(write_example_beside(&dir, b"other"), Ok(false));
+        let kept = std::fs::read_to_string(dir.join(references::EXAMPLE_FILE)).unwrap();
+        assert_eq!(kept, "@book{a, title={A}}\n");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     use super::*;
     use tauri::async_runtime::block_on;
 

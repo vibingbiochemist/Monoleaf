@@ -1995,9 +1995,26 @@ html.theme-dark #editor .cm-cursor {
   cursor: pointer;
 }
 
-.ml-dialog input[type="checkbox"] {
+.ml-dialog input[type="checkbox"],
+.ml-dialog input[type="radio"] {
   width: auto;
   accent-color: var(--accent);
+}
+
+/* A radio group: its legend reads as a field label, its options sit close
+   together under it. */
+.ml-dialog fieldset {
+  border: 0;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.ml-dialog legend {
+  padding: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+.ml-dialog fieldset .check-row {
+  margin: 4px 0 0;
 }
 
 .ml-dialog input + label,

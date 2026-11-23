@@ -60,7 +60,17 @@ import {
   parseMeta,
   type DocMeta,
   type MetaFormat,
+  headerLength,
+  setHeaderLines,
 } from "./meta";
+import {
+  DEFAULT_STYLE,
+  EXAMPLE_BIB,
+  headerEntries,
+  setupFromHeader,
+  templateText,
+  type CitationSetup,
+} from "./citationsetup";
 import {
   currentReferences,
   describeSources,
@@ -1241,6 +1251,150 @@ const metaFields: Record<keyof DocMeta, HTMLInputElement> = {
 const metaFrontmatter = document.getElementById(
   "meta-frontmatter",
 ) as HTMLInputElement;
+
+// --- references dialog ---
+const referencesDialog = document.getElementById(
+  "references-dialog",
+) as HTMLDialogElement;
+const refsFields = {
+  style: document.getElementById("refs-style") as HTMLSelectElement,
+  lang: document.getElementById("refs-lang") as HTMLSelectElement,
+  files: document.getElementById("refs-files") as HTMLInputElement,
+  inline: document.getElementById("refs-inline") as HTMLInputElement,
+  title: document.getElementById("refs-title") as HTMLInputElement,
+  // Radio groups: their value is the checked option's, "true" or "false".
+  suppress: referencesDialog
+    .querySelector("form")!
+    .elements.namedItem("refs-suppress") as RadioNodeList,
+  segment: referencesDialog
+    .querySelector("form")!
+    .elements.namedItem("refs-segment") as RadioNodeList,
+  template: document.getElementById("refs-template") as HTMLInputElement,
+};
+// The styles most writers want, at the top of the select; the rest follow.
+const COMMON_STYLES = [
+  "apa",
+  "ieee",
+  "chicago-author-date",
+  "vancouver",
+  "nature",
+  "mla",
+];
+let catalogueFilled = false;
+
+/** The selects, filled once from the backend's bundled styles and locales. */
+async function fillCatalogue() {
+  if (catalogueFilled) return;
+  catalogueFilled = true;
+  let styles = [DEFAULT_STYLE];
+  let locales: string[] = [];
+  try {
+    const found = await invoke<{ styles: string[]; locales: string[] }>(
+      "citation_catalogue",
+    );
+    const common = COMMON_STYLES.filter((s) => found.styles.includes(s));
+    styles = [...common, ...found.styles.filter((s) => !common.includes(s))];
+    locales = found.locales;
+  } catch {
+    // Without the backend the default style is still offered.
+  }
+  for (const name of styles) {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    refsFields.style.append(option);
+  }
+  for (const code of locales) {
+    const option = document.createElement("option");
+    option.value = code;
+    option.textContent = code;
+    refsFields.lang.append(option);
+  }
+}
+
+async function openReferencesDialog() {
+  await fillCatalogue();
+  const header = frontMatter(serializeDocument(view.state));
+  const { setup, hasReferences } = setupFromHeader(header);
+  refsFields.style.value = setup.style;
+  if (refsFields.style.value !== setup.style)
+    refsFields.style.value = DEFAULT_STYLE;
+  refsFields.lang.value = setup.lang;
+  refsFields.files.value = setup.bibliography;
+  refsFields.inline.checked = false;
+  // A header that holds a list keeps it; the dialog adds, never replaces.
+  refsFields.inline.disabled = hasReferences;
+  refsFields.inline.title = hasReferences
+    ? "The header already holds a references list."
+    : "";
+  refsFields.title.value = setup.sectionTitle;
+  refsFields.suppress.value = String(setup.suppressBibliography);
+  refsFields.segment.value = String(setup.refsegment);
+  refsFields.template.checked = false;
+  // A document that already names references has its own text; the how-to
+  // and the example file are for one that starts from nothing.
+  const hasFiles = setup.bibliography !== "" || hasReferences;
+  refsFields.template.disabled = hasFiles;
+  refsFields.template.title = hasFiles
+    ? "The header already names references."
+    : "";
+  referencesDialog.returnValue = "cancel";
+  referencesDialog.addEventListener(
+    "close",
+    () => {
+      if (referencesDialog.returnValue !== "ok") return;
+      void applyReferencesSetup({
+        style: refsFields.style.value,
+        lang: refsFields.lang.value,
+        bibliography: refsFields.files.value,
+        inlineReferences:
+          refsFields.inline.checked && !refsFields.inline.disabled,
+        sectionTitle: refsFields.title.value,
+        suppressBibliography: refsFields.suppress.value === "true",
+        refsegment: refsFields.segment.value === "true",
+        template: refsFields.template.checked && !refsFields.template.disabled,
+      });
+    },
+    { once: true },
+  );
+  referencesDialog.showModal();
+}
+
+/** Writes the header lines, the template after the header, and the example
+ * file beside a saved document before the text changes, so the list loads
+ * with the file in place. One transaction, so one undo takes it back. */
+async function applyReferencesSetup(setup: CitationSetup) {
+  const path = getCurrentDocumentPath();
+  if (setup.template && path !== null) {
+    try {
+      await invoke("write_example_bibliography", {
+        documentPath: path,
+        contents: EXAMPLE_BIB,
+      });
+    } catch (err) {
+      console.error("example bibliography not written", err);
+    }
+  }
+  const nl = view.state.lineBreak;
+  const current = serializeDocument(view.state);
+  let updated = setHeaderLines(
+    current,
+    headerEntries(setup, path !== null),
+    nl,
+  );
+  if (setup.template) {
+    const at = headerLength(updated);
+    const gap = at > 0 ? nl : "";
+    updated = updated.slice(0, at) + gap + templateText(nl) + updated.slice(at);
+  }
+  if (updated !== current) {
+    view.dispatch({
+      changes: { from: 0, to: view.state.doc.length, insert: updated },
+      userEvent: "input.references",
+    });
+  }
+  view.focus();
+}
 
 function openMetaDialog() {
   const { meta, format, locked } = parseMeta(serializeDocument(view.state));
@@ -2922,6 +3076,7 @@ const actions: Record<string, () => void> = {
   open: () => void openFile(),
   save: () => void saveFile(),
   "save-as": () => void saveFile(true),
+  references: () => void openReferencesDialog(),
 };
 
 for (const [id, handler] of Object.entries(actions)) {
