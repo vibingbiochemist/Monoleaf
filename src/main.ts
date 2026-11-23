@@ -53,6 +53,7 @@ import {
   toDocumentLineBreaks,
 } from "./document";
 import { citationCompletion, citationHover } from "./citations";
+import { refreshLiveCitations } from "./livecitations";
 import {
   applyMeta,
   frontMatter,
@@ -800,6 +801,8 @@ function setupReferenceWatch() {
     .listen(REFERENCES_CHANGED_EVENT, () => {
       forgetLoadedReferences();
       scheduleReferencesSync();
+      // The live view's citations were rendered from the old file.
+      view.dispatch({ effects: refreshLiveCitations.of(null) });
     })
     .catch(() => {
       console.error(

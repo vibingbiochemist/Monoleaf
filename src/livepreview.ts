@@ -47,6 +47,8 @@ import { pageBreaksField } from "./pagination";
 import { tableExtensions } from "./tablewidget";
 import { mathExtensions } from "./math";
 import { footnoteExtensions } from "./footnotes";
+import { liveCitations } from "./livecitations";
+import { findCitations, namesReferences } from "./citationsyntax";
 import { markupRepair } from "./repair";
 import { formatShortcut } from "./platform";
 
@@ -539,6 +541,29 @@ export function buildLivePreviewDecorations(
   const inCriticMark = (nodeFrom: number, nodeTo: number) =>
     criticRegions.some((r) => r.from <= nodeFrom && nodeTo <= r.to);
 
+  // The parser reads every `[…]` as a link, so a citation `[@key]` and the
+  // bracket of `@key [p. 3]` arrive as Link nodes. They are not links: the
+  // citation plugin (livecitations.ts) renders them, and hiding their marks
+  // here would collide with that. Citations are found per line, once.
+  const citationsByLine = new Map<number, { from: number; to: number }[]>();
+  // Without references in the header a bracket is a link, as it was before.
+  const citationsOn = namesReferences(
+    state.doc.sliceString(0, frontmatterEnd(state)),
+  );
+  const inCitation = (nodeFrom: number, nodeTo: number) => {
+    if (!citationsOn) return false;
+    const line = state.doc.lineAt(nodeFrom);
+    let found = citationsByLine.get(line.number);
+    if (found === undefined) {
+      found = findCitations(line.text).map((c) => ({
+        from: line.from + c.from,
+        to: line.from + c.to,
+      }));
+      citationsByLine.set(line.number, found);
+    }
+    return found.some((r) => r.from <= nodeFrom && nodeTo <= r.to);
+  };
+
   // Leading YAML front matter (the opt-in metadata format): style its lines as
   // a muted metadata block instead of letting `---` render as horizontal rules
   // and the key:value lines read as body text. Only relevant in the top chunk.
@@ -665,7 +690,7 @@ export function buildLivePreviewDecorations(
         case "LinkMark":
           // Inline links show only their text; the URL is edited via the
           // link command (Ctrl+K). Image marks are hidden by the Image case.
-          if (parentName === "Link") {
+          if (parentName === "Link" && !inCitation(node.from, node.to)) {
             hideRange(node.from, node.to);
           }
           break;
@@ -879,6 +904,7 @@ export function buildLivePreviewDecorations(
         }
 
         case "Link": {
+          if (inCitation(node.from, node.to)) break;
           const urlNode = node.node.getChild("URL");
           const url =
             urlNode === null ? null : state.sliceDoc(urlNode.from, urlNode.to);
@@ -1253,6 +1279,7 @@ export function livePreviewExtensions(): Extension {
     livePreviewPlugin,
     mathExtensions(),
     footnoteExtensions(),
+    liveCitations(),
     pageBreaksField,
     tableExtensions(),
     paragraphGuard,

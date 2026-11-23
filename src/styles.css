@@ -373,6 +373,42 @@ html.theme-dark .brand-dark {
   margin-right: 0.35em;
 }
 
+/* Live citations: the rendering reads as text; a dotted edge says it is a
+   widget whose source returns on its line. An unknown key keeps its source
+   under a dashed accent edge, like a missing image. */
+.cm-citation {
+  cursor: text;
+  border-bottom: 1px dotted light-dark(#b9b8b4, #565650);
+}
+.cm-citation-unknown {
+  text-decoration: underline dashed var(--accent);
+  text-underline-offset: 3px;
+}
+
+/* The reference list at a `::: {#refs}` block, laid out as the PDF prints
+   it: a hanging indent where the style asks for one, a numeric style's label
+   in a left margin. The marker lines return when the cursor is on them. */
+.cm-refs {
+  margin: 0.4em 0;
+  cursor: text;
+}
+.cm-refs-entry {
+  margin: 0 0 0.35em;
+}
+.cm-refs-hanging .cm-refs-entry {
+  padding-left: 2em;
+  text-indent: -2em;
+}
+.cm-refs-label {
+  display: inline-block;
+  min-width: 2.5em;
+  text-indent: 0;
+}
+.cm-refs-suppressed {
+  font-style: italic;
+  opacity: 0.6;
+}
+
 /* Rendered math (KaTeX) in the live view */
 .cm-math {
   cursor: default;
