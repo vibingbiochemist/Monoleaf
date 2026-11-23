@@ -1,8 +1,20 @@
-import MarkdownIt, { type StateCore } from "markdown-it";
+import MarkdownIt, { type StateCore, type StateInline } from "markdown-it";
 import taskLists from "markdown-it-task-lists";
 import sub from "markdown-it-sub";
 import sup from "markdown-it-sup";
 import footnotePlugin from "markdown-it-footnote";
+import {
+  findCitations,
+  REFS_CLOSE_RE,
+  refsClasses,
+  refsOpen,
+  refsegmentOn,
+  segmentLists,
+  WORD_CHAR,
+  type ParsedCitation,
+  type SegmentEvent,
+  namesReferences,
+} from "./citationsyntax";
 import katexPluginImport from "@vscode/markdown-it-katex";
 import hljs from "highlight.js/lib/core";
 import javascript from "highlight.js/lib/languages/javascript";
@@ -17,6 +29,7 @@ import sql from "highlight.js/lib/languages/sql";
 import markdownLang from "highlight.js/lib/languages/markdown";
 import { EditorState, TransactionSpec } from "@codemirror/state";
 import { PortabilityMode } from "./portability";
+import { frontMatter } from "./meta";
 import { ADMONITIONS, admonitionKind } from "./admonitions";
 import { isRemoteUrl, remoteImagesAllowed } from "./remoteimages";
 import { escapeDashes } from "./htmlcomment";
@@ -355,6 +368,376 @@ function installAdmonitions(md: InstanceType<typeof MarkdownIt>): void {
   });
 }
 
+/** The citations a parse found, in document order, and what the backend
+ * rendered for each; both live on `env` between parse and render. */
+type CitationEnv = {
+  /** Whether the header names references; without them a citation is text. */
+  citationsOn?: boolean;
+  citations?: ParsedCitation[];
+  renderedCitations?: readonly (string | null)[];
+  /** In a note style, the footnote each citation becomes, by index. */
+  citationNotes?: readonly (string | null)[];
+};
+
+/** What the backend renders for a document's citations. COUPLED:
+ * `RenderedCitations` in src-tauri/src/citations.rs. */
+export interface RenderedCitations {
+  /** One per citation found; null where it stays as written. In a note
+   * style, what stays in the sentence: nothing, or the author of `@key`. */
+  citations: readonly (string | null)[];
+  /** In a note style, one per citation found: the footnote a citation
+   * outside a footnote becomes; absent in other styles. */
+  notes?: readonly (string | null)[];
+  bibliography: readonly { key: string; label: string | null; html: string }[];
+  hangingIndent: boolean;
+  /** The heading over the list, from `reference-section-title:`. */
+  title: string | null;
+  warnings: readonly string[];
+}
+
+export type CitationRenderer = (
+  citations: readonly ParsedCitation[],
+) => Promise<RenderedCitations>;
+
+/**
+ * A renderer that never rejects: when the backend refuses (an unknown style,
+ * a header it cannot read), the citations print as written and the refusal
+ * is the one warning, so the export goes on.
+ */
+export function tolerantRenderer(render: CitationRenderer): CitationRenderer {
+  return async (citations) => {
+    try {
+      return await render(citations);
+    } catch (err) {
+      return {
+        citations: citations.map(() => null),
+        bibliography: [],
+        hangingIndent: false,
+        title: null,
+        warnings: [String(err)],
+      };
+    }
+  };
+}
+
+type Token = ReturnType<InstanceType<typeof MarkdownIt>["parse"]>[number];
+
+/** The entries of the reference list as pandoc prints them: one
+ * `csl-entry` per work, a numeric style's label in a left margin. */
+function referenceEntriesHtml(
+  bibliography: RenderedCitations["bibliography"],
+  escape: (text: string) => string,
+): string {
+  return bibliography
+    .map(({ key, label, html }) => {
+      const body =
+        label === null
+          ? html
+          : `<div class="csl-left-margin">${label}</div>` +
+            `<div class="csl-right-inline">${html}</div>`;
+      return `<div id="ref-${escape(key)}" class="csl-entry" role="listitem">${body}</div>`;
+    })
+    .join("\n");
+}
+
+/** The classes pandoc gives the list's div, after the author's own. */
+function referenceClasses(rendered: RenderedCitations, own: string[]): string {
+  const ours = ["references", "csl-bib-body"];
+  if (rendered.hangingIndent) ours.push("hanging-indent");
+  return [...new Set([...own, ...ours])].join(" ");
+}
+
+/** A refs block or a citation of a parse, by the citation's index. */
+type DocumentEvent = { kind: "block" } | { kind: "cite"; index: number };
+
+/**
+ * The refs blocks and citations of a parse in document order, as pandoc
+ * reads it: a footnote's text stands at its first mark, not at the end of
+ * the file where markdown-it collects the footnotes.
+ */
+function documentEvents(tokens: Token[]): DocumentEvent[] {
+  const events: DocumentEvent[] = [];
+  const marks: { at: number; id: number }[] = [];
+  const inFootnote = new Map<number, DocumentEvent[]>();
+  let footnote: number | null = null;
+  for (const token of tokens) {
+    if (token.type === "footnote_open")
+      footnote = (token.meta as { id: number }).id;
+    else if (token.type === "footnote_close") footnote = null;
+    else if (token.type === "refs_open" && footnote === null)
+      events.push({ kind: "block" });
+    for (const child of token.children ?? []) {
+      if (child.type === "citation") {
+        const index = (child.meta as { index: number }).index;
+        const event: DocumentEvent = { kind: "cite", index };
+        if (footnote === null) events.push(event);
+        else
+          inFootnote.set(footnote, [
+            ...(inFootnote.get(footnote) ?? []),
+            event,
+          ]);
+      } else if (child.type === "footnote_ref" && footnote === null) {
+        marks.push({
+          at: events.length,
+          id: (child.meta as { id: number }).id,
+        });
+      }
+    }
+  }
+  const seen = new Set<number>();
+  const first = marks.filter(({ id }) => !seen.has(id) && seen.add(id));
+  for (const { at, id } of first.reverse()) {
+    events.splice(at, 0, ...(inFootnote.get(id) ?? []));
+  }
+  return events;
+}
+
+/** Flags each citation inside a footnote, except one that opens it, as
+ * pandoc reads them: the opening one is the note itself. */
+function flagNoteCitations(tokens: Token[], cited: ParsedCitation[]): void {
+  let inside = false;
+  let opening = false;
+  for (const token of tokens) {
+    if (token.type === "footnote_open") {
+      inside = opening = true;
+    } else if (token.type === "footnote_close") {
+      inside = false;
+    }
+    (token.children ?? []).forEach((child, i) => {
+      if (inside && child.type === "citation" && !(opening && i === 0)) {
+        cited[(child.meta as { index: number }).index].inNote = true;
+      }
+    });
+    if (token.type === "inline") {
+      opening = false;
+    }
+  }
+}
+
+/**
+ * Put the list where pandoc puts it: into every `::: {#refs}` block, after
+ * what the block already holds. Without a block the list goes to the end of
+ * the document, before the footnotes, under the `reference-section-title`
+ * heading when the header sets one; a block never gets that heading. With
+ * `refsegment` a block lists what segmentLists gives it.
+ */
+function placeReferenceList(
+  tokens: Token[],
+  rendered: RenderedCitations,
+  escape: (text: string) => string,
+  lists: readonly (ReadonlySet<string> | null)[],
+): void {
+  const first = tokens[0];
+  if (first === undefined || rendered.bibliography.length === 0) return;
+  const Ctor = first.constructor as new (
+    t: string,
+    g: string,
+    n: number,
+  ) => Token;
+  const htmlBlock = (content: string) => {
+    const block = new Ctor("html_block", "", 0);
+    block.content = content;
+    return block;
+  };
+  const entries = referenceEntriesHtml(rendered.bibliography, escape);
+  let placed = false;
+  let block = tokens.filter((t) => t.type === "refs_open").length;
+  for (let i = tokens.length - 1; i >= 0; i--) {
+    if (tokens[i].type !== "refs_close") continue;
+    const keys = lists[--block] ?? null;
+    let open = i - 1;
+    while (tokens[open].type !== "refs_open") open--;
+    const own = String(tokens[open].attrGet("class") ?? "").split(" ");
+    tokens[open].attrSet(
+      "class",
+      referenceClasses(rendered, own.filter(Boolean)),
+    );
+    tokens[open].attrSet("role", "list");
+    const listed =
+      keys === null
+        ? entries
+        : referenceEntriesHtml(
+            rendered.bibliography.filter((entry) => keys.has(entry.key)),
+            escape,
+          );
+    tokens.splice(i, 0, htmlBlock(listed + "\n"));
+    placed = true;
+    i = open;
+  }
+  if (placed) return;
+  const title =
+    rendered.title === null
+      ? ""
+      : `<h1 id="bibliography" class="unnumbered references-title">${escape(rendered.title)}</h1>\n`;
+  const list =
+    `${title}<div id="refs" class="${referenceClasses(rendered, [])}" role="list">\n` +
+    `${entries}\n</div>\n`;
+  const footnotes = tokens.findIndex((t) => t.type === "footnote_block_open");
+  tokens.splice(
+    footnotes === -1 ? tokens.length : footnotes,
+    0,
+    htmlBlock(list),
+  );
+}
+
+/**
+ * Pandoc's `::: {#refs}` block as a div of its own, so the list can go into
+ * it once the backend has rendered. To markdown-it the fences are lines of
+ * paragraphs; a heading inside the block ends the opener's paragraph, so the
+ * closing fence may stand in a later one. A block that is never closed
+ * stays text. Without a list the block prints as an empty div, as in pandoc.
+ */
+function installRefsBlocks(md: InstanceType<typeof MarkdownIt>): void {
+  md.core.ruler.after("block", "ml_refs_blocks", (state: StateCore) => {
+    const tokens = state.tokens;
+    type Tok = (typeof tokens)[number];
+    const linesOf = (i: number) => tokens[i + 1].content.split("\n");
+    // A paragraph's lines from `at` on, as paragraph tokens; none if empty.
+    const paragraph = (at: number, lines: string[], from: number): Tok[] => {
+      if (lines.every((line) => line.trim() === "")) return [];
+      const start = tokens[at].map?.[0] ?? 0;
+      const map: [number, number] = [start + from, start + from + lines.length];
+      const open = new state.Token("paragraph_open", "p", 1);
+      const inline = new state.Token("inline", "", 0);
+      const close = new state.Token("paragraph_close", "p", -1);
+      open.map = map;
+      open.level = tokens[at].level;
+      inline.map = map;
+      inline.content = lines.join("\n");
+      inline.children = [];
+      inline.level = tokens[at].level + 1;
+      close.level = tokens[at].level;
+      for (const token of [open, inline, close]) token.block = true;
+      return [open, inline, close];
+    };
+    const fence = (type: string, nesting: 1 | -1, at: number, line: number) => {
+      const token = new state.Token(type, "div", nesting);
+      const start = (tokens[at].map?.[0] ?? 0) + line;
+      token.map = [start, start + 1];
+      token.level = tokens[at].level;
+      token.block = true;
+      return token;
+    };
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i].type !== "paragraph_open") continue;
+      const lines = linesOf(i);
+      if (!refsOpen(lines[0])) continue;
+      const open = fence("refs_open", 1, i, 0);
+      open.attrSet("id", "refs");
+      const classes = refsClasses(lines[0]);
+      if (classes.length > 0) open.attrSet("class", classes.join(" "));
+      // The closing fence: in the opener's own paragraph, or the first later
+      // paragraph at the same level that has one.
+      const inOwn = lines.findIndex((l, n) => n > 0 && REFS_CLOSE_RE.test(l));
+      if (inOwn !== -1) {
+        tokens.splice(
+          i,
+          3,
+          open,
+          ...paragraph(i, lines.slice(1, inOwn), 1),
+          fence("refs_close", -1, i, inOwn),
+          ...paragraph(i, lines.slice(inOwn + 1), inOwn + 1),
+        );
+        continue;
+      }
+      const level = tokens[i].level;
+      let j = i + 3;
+      let at = -1;
+      for (; j < tokens.length && tokens[j].level >= level; j++) {
+        if (tokens[j].type !== "paragraph_open" || tokens[j].level !== level)
+          continue;
+        at = linesOf(j).findIndex((l) => REFS_CLOSE_RE.test(l));
+        if (at !== -1) break;
+      }
+      if (at === -1) continue;
+      const closing = linesOf(j);
+      tokens.splice(
+        j,
+        3,
+        ...paragraph(j, closing.slice(0, at), 0),
+        fence("refs_close", -1, j, at),
+        ...paragraph(j, closing.slice(at + 1), at + 1),
+      );
+      tokens.splice(i, 3, open, ...paragraph(i, lines.slice(1), 1));
+    }
+  });
+}
+
+/**
+ * Pandoc citations, `[@key]` and `@key`, as their own inline token, so the
+ * export can collect them after the parse, have the backend render them and
+ * print the result. Without a rendering a citation prints as written.
+ */
+function installCitations(md: InstanceType<typeof MarkdownIt>): void {
+  // Before `link`: a bracket that holds a citation is not a link.
+  md.inline.ruler.before(
+    "link",
+    "ml_citation",
+    (state: StateInline, silent: boolean) => {
+      if (!(state.env as CitationEnv).citationsOn) return false;
+      const ch = state.src[state.pos];
+      if (ch !== "[" && ch !== "@") return false;
+      // The parser only sees the slice from here on, so the e-mail check on
+      // the character before the `@` happens here.
+      if (ch === "@" && WORD_CHAR.test(state.src[state.pos - 1] ?? ""))
+        return false;
+      // A citation does not cross a line; the slice keeps the scan short.
+      const lineEnd = state.src.indexOf("\n", state.pos);
+      const end =
+        lineEnd === -1 ? state.posMax : Math.min(lineEnd, state.posMax);
+      const [citation] = findCitations(state.src.slice(state.pos, end));
+      if (citation === undefined || citation.from !== 0) return false;
+      let length = citation.to;
+      if (!silent) {
+        const env = state.env as CitationEnv;
+        const index = (env.citations ??= []).push(citation) - 1;
+        const note = env.citationNotes?.[index] ?? null;
+        // A citation that is only a note leaves its mark on the word before
+        // it, as pandoc places it.
+        if (note !== null && env.renderedCitations?.[index] === "")
+          state.pending = state.pending.trimEnd();
+        const token = state.push("citation", "", 0);
+        token.content = state.src.slice(state.pos, state.pos + length);
+        token.meta = { index };
+        if (note !== null) {
+          // The mark goes after a punctuation mark that follows.
+          const next = state.src[state.pos + length] ?? "";
+          if (next !== "" && NOTE_PUNCTUATION.includes(next)) {
+            state.push("text", "", 0).content = next;
+            length += next.length;
+          }
+          pushNoteFootnote(state, note);
+        }
+      }
+      state.pos += length;
+      return true;
+    },
+  );
+  md.renderer.rules.citation = (tokens, idx, _opts, env) => {
+    const token = tokens[idx];
+    const { index } = token.meta as { index: number };
+    const rendered = (env as CitationEnv).renderedCitations?.[index] ?? null;
+    if (rendered === null) return md.utils.escapeHtml(token.content);
+    if (rendered === "") return "";
+    return `<span class="citation">${rendered}</span>`;
+  };
+}
+
+/** The punctuation a note's mark moves behind, as pandoc moves it. */
+export const NOTE_PUNCTUATION = ".,;:!?";
+
+/** A footnote holding `html`, made as markdown-it-footnote makes an inline
+ * one `^[...]`, so that it is numbered in document order with the others. */
+function pushNoteFootnote(state: StateInline, html: string): void {
+  const env = state.env as { footnotes?: { list?: unknown[] } };
+  const list = ((env.footnotes ??= {}).list ??= []);
+  const id = list.length;
+  const content = new state.Token("html_inline", "", 0);
+  content.content = html;
+  list[id] = { content: html, tokens: [content] };
+  state.push("footnote_ref", "", 0).meta = { id };
+}
+
 const NO_LOCAL_IMAGES: ReadonlyMap<string, string> = new Map();
 
 /** What the renderer is handed alongside the tokens. markdown-it's `env` is
@@ -532,6 +915,8 @@ function buildRenderer(
   md.use(katexPlugin, { output: "mathml", throwOnError: false });
   md.use(footnotePlugin); // [^1] references + a footnotes section at the end
   installAdmonitions(md); // > [!NOTE] blockquotes → styled callout boxes
+  installCitations(md); // [@key] and @key → tokens the backend renders
+  installRefsBlocks(md); // ::: {#refs} → the div the reference list goes into
 
   // Table borders/shading as INLINE styles on the elements — Paged.js's own
   // table styles (injected for fragmentation) strip stylesheet borders even
@@ -634,7 +1019,10 @@ export function renderDocumentHtml(
   localImages: ReadonlyMap<string, string> = NO_LOCAL_IMAGES,
 ): string {
   const { md, text } = buildRenderer(markdown, mode, sourceLines);
-  const env: RenderEnv = { localImages: NO_LOCAL_IMAGES };
+  const env: RenderEnv & CitationEnv = {
+    localImages: NO_LOCAL_IMAGES,
+    citationsOn: namesReferences(frontMatter(markdown)),
+  };
   const tokens = md.parse(text, env);
   return renderTokens(md, tokens, env, localImages, sourceLines);
 }
@@ -654,13 +1042,55 @@ export async function renderDocumentHtmlAsync(
   loadImages: (
     sources: readonly string[],
   ) => Promise<ReadonlyMap<string, string>>,
+  renderCitations?: CitationRenderer,
 ): Promise<string> {
   const { md, text } = buildRenderer(markdown, mode, sourceLines);
-  const env: RenderEnv = { localImages: NO_LOCAL_IMAGES };
-  const tokens = md.parse(text, env);
+  let env: RenderEnv & CitationEnv = {
+    localImages: NO_LOCAL_IMAGES,
+    citationsOn: namesReferences(frontMatter(markdown)),
+  };
+  let tokens = md.parse(text, env);
   const sources = collectImageSources(tokens);
-  const images =
-    sources.length === 0 ? NO_LOCAL_IMAGES : await loadImages(sources);
+  const cited = env.citations ?? [];
+  const events = documentEvents(tokens);
+  flagNoteCitations(tokens, cited);
+  // The backend numbers citations in the order it gets them. A citation in
+  // a footnote the text never marks is not sent: pandoc drops that footnote.
+  const order = events.flatMap((e) => (e.kind === "cite" ? [e.index] : []));
+  // Images and citations load side by side; each is skipped when the
+  // document has none, so the common case costs nothing extra.
+  const [images, rendered] = await Promise.all([
+    sources.length === 0 ? NO_LOCAL_IMAGES : loadImages(sources),
+    order.length === 0 || renderCitations === undefined
+      ? null
+      : renderCitations(order.map((i) => cited[i])),
+  ]);
+  if (rendered !== null) {
+    const byIndex: (string | null)[] = [];
+    order.forEach((i, sent) => (byIndex[i] = rendered.citations[sent] ?? null));
+    env.renderedCitations = byIndex;
+    const notes = rendered.notes;
+    if (notes !== undefined) {
+      // In a note style a citation is a footnote, numbered with the others
+      // as markdown-it numbers them while it parses: parse again.
+      const noteByIndex: (string | null)[] = [];
+      order.forEach((i, sent) => (noteByIndex[i] = notes[sent] ?? null));
+      env = {
+        localImages: NO_LOCAL_IMAGES,
+        citationsOn: true,
+        renderedCitations: byIndex,
+        citationNotes: noteByIndex,
+      };
+      tokens = md.parse(text, env);
+    }
+    const keyed: SegmentEvent[] = events.map((e) =>
+      e.kind === "block"
+        ? e
+        : { kind: "cite", keys: cited[e.index].items.map((item) => item.key) },
+    );
+    const lists = segmentLists(keyed, refsegmentOn(frontMatter(markdown)));
+    placeReferenceList(tokens, rendered, md.utils.escapeHtml, lists);
+  }
   return renderTokens(md, tokens, env, images, sourceLines);
 }
 
@@ -695,6 +1125,10 @@ table { border-collapse: collapse; margin: 1em 0; }
 img { max-width: 100%; height: auto; }
 hr { border: none; border-top: 1px solid #d8dee4; margin: 1.5em 0; }
 ul, ol { padding-left: 1.6em; }
+.csl-entry { margin: 0 0 0.5em; }
+.hanging-indent .csl-entry { padding-left: 2em; text-indent: -2em; }
+.csl-left-margin { float: left; min-width: 2.5em; }
+.csl-right-inline { margin-left: 2.5em; }
 @media (prefers-color-scheme: dark) {
   body { color: #e6edf3; background: #0d1117; }
   h1, h2 { border-bottom-color: #21262d; }
@@ -978,6 +1412,13 @@ ${root} sup.footnote-ref { font-size: 0.72em; }
 ${root} .footnotes { font-size: 9pt; margin-top: 14pt; padding-top: 6pt; border-top: 0.75pt solid #cccccc; }
 ${root} .footnotes ol { padding-left: 1.4em; margin: 4pt 0; }
 ${root} .footnotes li { margin: 2pt 0; }
+/* The reference list as pandoc lays it out: a hanging indent where the style
+   asks for one, a numeric style's label in a left margin. */
+${root} .references-title { break-after: avoid; }
+${root} .csl-entry { margin: 0 0 5pt; break-inside: avoid; }
+${root} .hanging-indent .csl-entry { padding-left: 2em; text-indent: -2em; }
+${root} .csl-left-margin { float: left; min-width: 2.5em; }
+${root} .csl-right-inline { margin-left: 2.5em; }
 ${root} mark { background: #fbe3a0; color: inherit; border-radius: 2px; } /* warm amber highlighter, matches the editor */
 .ml-pagebreak { display: block; height: 0; break-after: page; }
 ${cfg.justify ? `${root} p { text-align: justify; }` : ""}

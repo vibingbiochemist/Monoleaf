@@ -12,6 +12,7 @@ import {
   renderStandaloneHtml,
   setPageConfigSpec,
   wrapStandaloneHtml,
+  tolerantRenderer,
 } from "./export";
 import { createDocumentState, serializeDocument } from "./document";
 import { cellDisplayHtml } from "./tablecell";
@@ -201,6 +202,461 @@ describe("renderDocumentHtml", () => {
     expect(html).toContain("a b c");
   });
 
+  // A header that names references: without one a citation is text.
+  const REFS = "---\nbibliography: r.bib\n---\n\n";
+
+  it("renders citations through the backend and places the list at #refs", async () => {
+    const doc =
+      REFS + "Text [@a, p. 3] and @b.\n\n::: {#refs}\n:::\n\nAfter.\n";
+    const asked: string[][] = [];
+    const html = await renderDocumentHtmlAsync(
+      doc,
+      "strict",
+      false,
+      () => Promise.resolve(new Map()),
+      (citations) => {
+        asked.push(citations.map((c) => c.items.map((i) => i.key).join("+")));
+        return Promise.resolve({
+          citations: ["(Doe 2020, 3)", null],
+          bibliography: [
+            { key: "a", label: null, html: "Doe. 2020. <i>A</i>." },
+          ],
+          hangingIndent: true,
+          title: "References",
+          warnings: [],
+        });
+      },
+    );
+    expect(asked).toEqual([["a", "b"]]);
+    expect(html).toContain(
+      '<span class="citation">(Doe 2020, 3)</span> and @b.',
+    );
+    expect(html).not.toContain(":::");
+    // An explicit block never gets the header's title, as in pandoc.
+    expect(html).not.toContain("References");
+    const list = html.indexOf(
+      '<div id="refs" class="references csl-bib-body hanging-indent" role="list">',
+    );
+    expect(list).toBeGreaterThan(html.indexOf("Text"));
+    expect(list).toBeLessThan(html.indexOf("After."));
+    expect(html).toContain(
+      '<div id="ref-a" class="csl-entry" role="listitem">Doe. 2020. <i>A</i>.</div>',
+    );
+  });
+
+  it("leaves an @ after a letter of any script as text", async () => {
+    const asked: string[] = [];
+    await renderDocumentHtmlAsync(
+      REFS + "ü@doe2020 and jane@doe.org\n",
+      "strict",
+      false,
+      () => Promise.resolve(new Map()),
+      (citations) => {
+        asked.push(...citations.flatMap((c) => c.items.map((i) => i.key)));
+        return Promise.resolve({
+          citations: [],
+          bibliography: [],
+          hangingIndent: false,
+          title: null,
+          warnings: [],
+        });
+      },
+    );
+    expect(asked).toEqual([]);
+  });
+
+  describe("the refs blocks, as pandoc fills them", () => {
+    const stub = () =>
+      Promise.resolve({
+        citations: ["(Doe 2020)"],
+        bibliography: [{ key: "a", label: null, html: "Doe. 2020." }],
+        hangingIndent: false,
+        title: "Works & Notes",
+        warnings: [],
+      });
+    const render = (doc: string) =>
+      renderDocumentHtmlAsync(
+        REFS + doc,
+        "enhanced",
+        false,
+        () => Promise.resolve(new Map()),
+        stub,
+      );
+    const entry = '<div id="ref-a" class="csl-entry" role="listitem">';
+
+    it("fills every block with the whole list", async () => {
+      const html = await render(
+        "One [@a].\n\n::: {#refs}\n:::\n\nTwo.\n\n::: {#refs}\n\n:::\n",
+      );
+      expect(html.split(entry).length - 1).toBe(2);
+      expect(html).not.toContain(":::");
+      expect(html.indexOf(entry)).toBeLessThan(html.indexOf("Two."));
+    });
+
+    it("keeps what a block holds and puts the list after it", async () => {
+      const html = await render(
+        "See [@a].\n\n::: {#refs .small}\n# Works cited\n:::\n\nAfter.\n",
+      );
+      expect(html).toContain(
+        '<div id="refs" class="small references csl-bib-body" role="list">\n<h1>Works cited</h1>',
+      );
+      expect(html.indexOf("Works cited")).toBeLessThan(html.indexOf(entry));
+      expect(html.indexOf(entry)).toBeLessThan(html.indexOf("After."));
+      const inline = await render("See [@a].\n\n::: {#refs}\nSources:\n:::\n");
+      expect(inline).toContain("<p>Sources:</p>\n" + entry);
+    });
+
+    it("puts the title over the list only when there is no block", async () => {
+      const html = await render("See [@a].\n");
+      // pandoc 3.13 escapes the title: Works &amp; Notes.
+      expect(html).toContain(
+        '<h1 id="bibliography" class="unnumbered references-title">Works &amp; Notes</h1>\n<div id="refs"',
+      );
+    });
+
+    it("keeps text right after the closing fence as a paragraph", async () => {
+      const html = await render("See [@a].\n\n::: {#refs}\n:::\nAfter.\n");
+      // As pandoc 3.13 reads it: the block closes, After. follows the list.
+      expect(html).toContain("<p>After.</p>");
+      expect(html.indexOf(entry)).toBeLessThan(html.indexOf("After."));
+    });
+
+    it("leaves a block in code, an unclosed one and a block without citations", async () => {
+      const code = await render("See [@a].\n\n```\n::: {#refs}\n:::\n```\n");
+      expect(code).toContain("::: {#refs}");
+      expect(code).toContain('<h1 id="bibliography"');
+      const unclosed = await render("See [@a].\n\n::: {#refs}\n\nText.\n");
+      expect(unclosed).toContain("::: {#refs}");
+      const none = await render("No citations.\n\n::: {#refs}\n:::\n");
+      expect(none).toContain('<div id="refs"></div>');
+      expect(none).not.toContain(":::");
+    });
+  });
+
+  describe("refsegment: a block lists its chapter's works", () => {
+    const entry = (key: string) => ({ key, label: null, html: `${key}.` });
+    const render = (doc: string) =>
+      renderDocumentHtmlAsync(
+        doc,
+        "enhanced",
+        false,
+        () => Promise.resolve(new Map()),
+        (citations) =>
+          Promise.resolve({
+            citations: citations.map(() => "(x)"),
+            bibliography: ["a", "b", "c"].map(entry),
+            hangingIndent: false,
+            title: null,
+            warnings: [],
+          }),
+      );
+    // The entries of each refs block, in document order.
+    const lists = (html: string) =>
+      html
+        .split('<div id="refs"')
+        .slice(1)
+        .map((block) =>
+          [...block.split("</div>\n</div>")[0].matchAll(/id="ref-(\w+)"/g)]
+            .map((m) => m[1])
+            .join(","),
+        );
+    const doc = (header: string) =>
+      `---\nbibliography: r.bib\n${header}---\n\nOne [@a].\n\n::: {#refs}\n:::\n\n` +
+      `Two [@b] and a note.[^1]\n\n::: {#refs}\n:::\n\nAppendix [@a].\n\n` +
+      `::: {#refs}\n:::\n\n[^1]: The note cites [@c].\n`;
+
+    it("lists each chapter, a footnote at its mark, all at the last block", async () => {
+      const html = await render(doc("refsegment: true\n"));
+      expect(lists(html)).toEqual(["a", "b,c", "a,b,c"]);
+    });
+
+    it("lists every work at every block without the flag", async () => {
+      const html = await render(doc("csl: apa\n"));
+      expect(lists(html)).toEqual(["a,b,c", "a,b,c", "a,b,c"]);
+    });
+
+    it("lists every work in a block inside a footnote, which ends no segment", async () => {
+      const html = await render(
+        "---\nbibliography: r.bib\nrefsegment: true\n---\n\nOne [@a].\n\n" +
+          "::: {#refs}\n:::\n\nTwo [@b].\n\n::: {#refs}\n:::\n\nEnd.[^1]\n\n" +
+          "[^1]: Note [@c].\n\n    ::: {#refs}\n    :::\n",
+      );
+      // pandoc 3.13 fills a block inside a footnote with the whole list.
+      expect(lists(html)).toEqual(["a", "a,b,c", "a,b,c"]);
+    });
+  });
+
+  it("sends a footnote's citations at its mark, as pandoc numbers them", async () => {
+    const sent: string[] = [];
+    const html = await renderDocumentHtmlAsync(
+      REFS + "A [@a].[^1] B [@b].\n\n[^1]: Note [@c].\n",
+      "enhanced",
+      false,
+      () => Promise.resolve(new Map()),
+      (citations) => {
+        sent.push(...citations.map((c) => c.items[0].key));
+        return Promise.resolve({
+          citations: citations.map((_, n) => `[${n + 1}]`),
+          bibliography: [],
+          hangingIndent: false,
+          title: null,
+          warnings: [],
+        });
+      },
+    );
+    expect(sent).toEqual(["a", "c", "b"]);
+    // Each answer lands at its own citation: b is the third work.
+    expect(html).toContain('B <span class="citation">[3]</span>.');
+    expect(html).toContain('Note <span class="citation">[2]</span>.');
+  });
+
+  it("counts a footnote marked twice at its first mark", async () => {
+    const sent: string[] = [];
+    const html = await renderDocumentHtmlAsync(
+      REFS + "A [@a].[^1] B [@b]. C.[^1]\n\n[^1]: Note [@c].\n",
+      "enhanced",
+      false,
+      () => Promise.resolve(new Map()),
+      (citations) => {
+        sent.push(...citations.map((c) => c.items[0].key));
+        return Promise.resolve({
+          citations: citations.map((_, n) => `[${n + 1}]`),
+          bibliography: [],
+          hangingIndent: false,
+          title: null,
+          warnings: [],
+        });
+      },
+    );
+    // pandoc 3.13 in ieee: B [3], and both copies of the note cite [2].
+    expect(sent).toEqual(["a", "c", "b"]);
+    expect(html).toContain('B <span class="citation">[3]</span>.');
+    expect(html).toContain('Note <span class="citation">[2]</span>.');
+  });
+
+  it("leaves out a citation in a footnote the text never marks", async () => {
+    const sent: string[] = [];
+    const render = (doc: string) =>
+      renderDocumentHtmlAsync(
+        REFS + doc,
+        "enhanced",
+        false,
+        () => Promise.resolve(new Map()),
+        (citations) => {
+          sent.push(...citations.map((c) => c.items[0].key));
+          return Promise.resolve({
+            citations: citations.map(() => "[1]"),
+            bibliography: [],
+            hangingIndent: false,
+            title: null,
+            warnings: [],
+          });
+        },
+      );
+    // pandoc 3.13 drops an unused footnote and reads a mark inside a
+    // footnote as text: in ieee it numbers and lists a and b only.
+    await render(
+      "A [@a].[^1] B [@b].\n\n[^1]: Outer.[^2]\n\n[^2]: Inner [@c].\n\n" +
+        "[^9]: Unused [@d].\n",
+    );
+    expect(sent).toEqual(["a", "b"]);
+    sent.length = 0;
+    await render("No mark.\n\n[^9]: Unused [@d].\n");
+    expect(sent).toEqual([]);
+  });
+
+  it("escapes the key in an entry's id", async () => {
+    const html = await renderDocumentHtmlAsync(
+      REFS + "See [@a&b].\n",
+      "enhanced",
+      false,
+      () => Promise.resolve(new Map()),
+      () =>
+        Promise.resolve({
+          citations: ["(Doe 2020)"],
+          bibliography: [{ key: "a&b", label: null, html: "Doe. 2020." }],
+          hangingIndent: false,
+          title: null,
+          warnings: [],
+        }),
+    );
+    // As pandoc 3.13 writes it.
+    expect(html).toContain('<div id="ref-a&amp;b" class="csl-entry"');
+  });
+
+  it("makes a citation a footnote in a note style, as pandoc does", async () => {
+    const html = await renderDocumentHtmlAsync(
+      REFS +
+        "One[^a] and [@doe].\n\nAs @roe says.\n\nAgain [-@doe, p. 4] x.\n\n" +
+        "Note two.[^b]\n\n[^a]: First own note.\n[^b]: Own note citing [@roe].\n",
+      "enhanced",
+      false,
+      () => Promise.resolve(new Map()),
+      (citations) => {
+        // What the backend gives in chicago-notes: the sentence part and
+        // the note, or the text in parentheses inside a footnote.
+        const parts = citations.map((c): [string, string | null] => {
+          const key = c.items[0].key;
+          if (c.inNote) return ["(Roe, Other Book)", null];
+          if (c.inText) return ["Jim Roe", "Other Book (Pub, 2019)."];
+          if (c.items[0].suppressAuthor) return ["", "\u201cA Study,\u201d 4."];
+          return ["", key === "doe" ? "Doe, \u201cA Study.\u201d" : null];
+        });
+        return Promise.resolve({
+          citations: parts.map(([text]) => text),
+          notes: parts.map(([, note]) => note),
+          bibliography: [],
+          hangingIndent: false,
+          title: null,
+          warnings: [],
+        });
+      },
+    );
+    // The text outside the tags, as a reader sees it.
+    const text = (h: string) => {
+      let out = "";
+      let inTag = false;
+      for (const c of h) {
+        if (c === "<") {
+          inTag = true;
+        } else if (c === ">") {
+          inTag = false;
+        } else if (!inTag) {
+          out += c;
+        }
+      }
+      return out.replace(/\u21a9\ufe0e/g, "").trim();
+    };
+    const body = html.slice(0, html.indexOf('<section class="footnotes">'));
+    // pandoc 3.13: One[1] and.[2] / As Jim Roe[3] says. / Again[4] x. / Note two.[5]
+    expect(text(body).split(/\n+/)).toEqual([
+      "One[1] and.[2]",
+      "As Jim Roe[3] says.",
+      "Again[4] x.",
+      "Note two.[5]",
+    ]);
+    const notes = [...html.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/g)].map((m) =>
+      text(m[1]),
+    );
+    expect(notes).toEqual([
+      "First own note.",
+      "Doe, \u201cA Study.\u201d",
+      "Other Book (Pub, 2019).",
+      "\u201cA Study,\u201d 4.",
+      "Own note citing (Roe, Other Book).",
+    ]);
+  });
+
+  it("flags a citation inside a footnote unless it opens the footnote", async () => {
+    const sent: string[] = [];
+    await renderDocumentHtmlAsync(
+      REFS +
+        "A [@a].[^1][^2][^3]\n\n[^1]: [@b] then *[@c]*.\n\n[^2]: See [@d].\n\n" +
+        "[^3]: First [@e].\n\n    [@f] opens the second paragraph.\n",
+      "enhanced",
+      false,
+      () => Promise.resolve(new Map()),
+      (citations) => {
+        sent.push(...citations.map((c) => c.items[0].key + (c.inNote ?? "")));
+        return Promise.reject(new Error("not rendered"));
+      },
+    ).catch(() => undefined);
+    // pandoc 3.13 in chicago-notes: only b is the note itself; c, d, e and
+    // f, though it opens the second paragraph, are in parentheses.
+    expect(sent).toEqual(["a", "b", "ctrue", "dtrue", "etrue", "ftrue"]);
+  });
+
+  it("puts the list before the footnotes when the document has no #refs block", async () => {
+    const doc = REFS + "See [@a][^1].\n\n[^1]: Note\n";
+    const html = await renderDocumentHtmlAsync(
+      doc,
+      "strict",
+      false,
+      () => Promise.resolve(new Map()),
+      () =>
+        Promise.resolve({
+          citations: ["[1]"],
+          bibliography: [{ key: "a", label: "[1]", html: "J. Doe, 2020." }],
+          hangingIndent: false,
+          title: null,
+          warnings: [],
+        }),
+    );
+    expect(html).not.toContain("references-title");
+    expect(html).toContain(
+      '<div class="csl-left-margin">[1]</div><div class="csl-right-inline">J. Doe, 2020.</div>',
+    );
+    expect(html.indexOf('id="refs"')).toBeLessThan(
+      html.indexOf('class="footnotes'),
+    );
+  });
+
+  it("does not ask the backend for a document without citations", async () => {
+    let calls = 0;
+    await renderDocumentHtmlAsync(
+      "Mail jane@doe.org.\n",
+      "strict",
+      false,
+      () => Promise.resolve(new Map()),
+      () => {
+        calls++;
+        return Promise.reject(new Error("not expected"));
+      },
+    );
+    expect(calls).toBe(0);
+  });
+
+  it("prints a citation as written until the backend renders it", () => {
+    const doc =
+      "---\nbibliography: r.bib\n---\n\nSee [@doe2020, p. 3] and @roe, or mail jane@doe.org.\n";
+    const html = renderDocumentHtml(doc, "strict");
+    expect(html).toContain(
+      "See [@doe2020, p. 3] and @roe, or mail jane@doe.org.",
+    );
+  });
+
+  it("goes on with the citations as written when the backend refuses", async () => {
+    const refused = tolerantRenderer(() =>
+      Promise.reject(new Error('unknown citation style "foo"')),
+    );
+    const html = await renderDocumentHtmlAsync(
+      REFS + "See [@a, p. 3 & 4].\n\n::: {#refs}\n:::\n",
+      "enhanced",
+      false,
+      () => Promise.resolve(new Map()),
+      refused,
+    );
+    expect(html).toContain("See [@a, p. 3 &amp; 4].");
+    expect(html).not.toContain('class="citation"');
+    expect(html).not.toContain("csl-entry");
+    const result = await refused([
+      { from: 0, to: 4, items: [], inText: false },
+    ]);
+    expect(result.warnings).toEqual(['Error: unknown citation style "foo"']);
+    expect(result.citations).toEqual([null]);
+  });
+
+  it("leaves @handles and their links alone when the header names no references", async () => {
+    const doc =
+      "Follow [@alice](https://example.org/alice) and ping @bob [on Slack](https://slack.example/x).\n";
+    const html = renderDocumentHtml(doc, "enhanced");
+    expect(html).toContain('<a href="https://example.org/alice">@alice</a>');
+    expect(html).toContain('<a href="https://slack.example/x">on Slack</a>');
+    expect(html).not.toContain("citation");
+    let calls = 0;
+    await renderDocumentHtmlAsync(
+      doc,
+      "enhanced",
+      false,
+      () => Promise.resolve(new Map()),
+      () => {
+        calls++;
+        return Promise.reject(new Error("not expected"));
+      },
+    );
+    expect(calls).toBe(0);
+  });
+
   it("strips the ml:meta comment block from the body", () => {
     const doc =
       '<!--ml:meta {"title":"Report","author":"Martin"}-->\n\n# Body\n';
@@ -264,6 +720,18 @@ describe("renderDocumentHtml", () => {
     expect(css).toContain("table-header-group");
     expect(css).toContain("break-inside: avoid");
     expect(css).toContain("width: 100%");
+  });
+
+  it("print and standalone CSS lay out the reference list as pandoc does", () => {
+    const css = buildPrintCss(DEFAULT_PAGE_CONFIG, VARS);
+    expect(css).toContain(
+      ".hanging-indent .csl-entry { padding-left: 2em; text-indent: -2em; }",
+    );
+    expect(css).toContain(".csl-left-margin { float: left;");
+    const html = renderStandaloneHtml("# x\n", "strict", "T");
+    expect(html).toContain(
+      ".hanging-indent .csl-entry { padding-left: 2em; text-indent: -2em; }",
+    );
   });
 
   it("renders sub/sup in enhanced mode only", () => {

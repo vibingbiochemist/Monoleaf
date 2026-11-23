@@ -53,7 +53,13 @@ import {
   toDocumentLineBreaks,
 } from "./document";
 import { citationCompletion, citationHover } from "./citations";
-import { applyMeta, parseMeta, type DocMeta, type MetaFormat } from "./meta";
+import {
+  applyMeta,
+  frontMatter,
+  parseMeta,
+  type DocMeta,
+  type MetaFormat,
+} from "./meta";
 import {
   currentReferences,
   describeSources,
@@ -138,6 +144,9 @@ import {
   wrapStandaloneHtml,
   setPageConfigSpec,
   renderDocumentHtmlAsync,
+  type CitationRenderer,
+  type RenderedCitations,
+  tolerantRenderer,
 } from "./export";
 import { fitImagesToPage, IMAGE_PAGE_SLACK_PX } from "./imagefit";
 import { embedFontsForExport } from "./fontEmbeds";
@@ -548,13 +557,23 @@ const referencesStatus = document.getElementById(
 ) as HTMLButtonElement;
 const referencesPanel = document.getElementById("references-panel")!;
 
+/** What the last rendering of the document's citations warned about: an
+ * unknown key, a date that is none. Set by every export and page measurement. */
+let exportWarnings: readonly string[] = [];
+
 /** The status-bar entry follows the loaded list; absent without references. */
 function refreshReferencesStatus() {
   const refs = currentReferences();
-  const label = referencesLabel(refs);
+  const parts = [referencesLabel(refs)];
+  if (exportWarnings.length > 0) {
+    const n = exportWarnings.length;
+    parts.push(`${n} export warning${n === 1 ? "" : "s"}`);
+  }
+  const label = parts.filter((part) => part !== "").join(", ");
   referencesStatus.hidden = label === "";
   referencesStatus.textContent = label;
-  referencesStatus.classList.toggle("has-warnings", refs.warnings.length > 0);
+  const warned = refs.warnings.length > 0 || exportWarnings.length > 0;
+  referencesStatus.classList.toggle("has-warnings", warned);
   if (referencesStatus.hidden) toggleReferencesPanel(false);
   else if (!referencesPanel.hidden) renderReferencesPanel();
 }
@@ -579,6 +598,19 @@ function renderReferencesPanel() {
     }
     referencesPanel.append(row);
   }
+  if (exportWarnings.length === 0) return;
+  const row = document.createElement("div");
+  row.className = "references-source";
+  const name = document.createElement("span");
+  name.textContent = "last export";
+  row.append(name);
+  for (const warning of exportWarnings) {
+    const item = document.createElement("div");
+    item.className = "warning";
+    item.textContent = warning;
+    row.append(item);
+  }
+  referencesPanel.append(row);
 }
 
 function toggleReferencesPanel(show = referencesPanel.hidden) {
@@ -1805,14 +1837,35 @@ async function renderDocumentHtmlWithImages(
   markdown: string,
   sourceLines = false,
 ): Promise<string> {
+  exportWarnings = [];
   const html = await renderDocumentHtmlAsync(
     markdown,
     mode,
     sourceLines,
     (sources) => loadLocalImagesForExport(sources, getCurrentDocumentPath()),
+    (citations) => renderCitationsForExport(frontMatter(markdown), citations),
   );
+  refreshReferencesStatus();
   return sanitizeDocumentHtml(html);
 }
+
+// The backend reads the files the header names and renders with hayagriva;
+// tolerantRenderer keeps a refusal from stopping the export.
+const renderCitationsForExport: (
+  header: string,
+  ...rest: Parameters<CitationRenderer>
+) => ReturnType<CitationRenderer> = async (header, citations) => {
+  const render = tolerantRenderer((cited) =>
+    invoke<RenderedCitations>("render_citations", {
+      documentPath: getCurrentDocumentPath(),
+      frontMatter: header,
+      citations: cited,
+    }),
+  );
+  const rendered = await render(citations);
+  exportWarnings = rendered.warnings;
+  return rendered;
+};
 
 async function exportPdf() {
   // A previous call's Paged.js render may still be in flight (its own loop
