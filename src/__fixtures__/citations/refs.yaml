@@ -1,0 +1,9 @@
+references:
+- id: yaml2022
+  type: book
+  title: A YAML Reference
+  author:
+  - family: Young
+    given: Yves
+  issued: 2022
+  publisher: Yaml Press

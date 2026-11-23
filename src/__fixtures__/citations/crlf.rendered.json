@@ -1,0 +1,21 @@
+{
+  "citations": [
+    "(Doe &amp; Roe, 2020, p. 3)",
+    "Smith (2019)"
+  ],
+  "bibliography": [
+    {
+      "key": "doe2020",
+      "label": null,
+      "html": "Doe, J., &amp; Roe, R. (2020). A study of reference lists. <span style=\"font-style: italic;\">Journal of Studies</span>, <span style=\"font-style: italic;\">3</span>(2), 1–9. <a href=\"https://doi.org/10.1000/jos.2020.3\">https://doi.org/10.1000/jos.2020.3</a>"
+    },
+    {
+      "key": "smith2019",
+      "label": null,
+      "html": "Smith, J. (2019). <span style=\"font-style: italic;\">The book of citations</span>. Example Press."
+    }
+  ],
+  "hangingIndent": true,
+  "title": null,
+  "warnings": []
+}

@@ -1,0 +1,5 @@
+[
+{"from":0,"to":25,"items":[{"key":"ERA5LandHourlyData2019","prefix":"","suffix":"","suppressAuthor":false}],"inText":false},
+{"from":0,"to":10,"items":[{"key":"doe2020","prefix":"","suffix":"","suppressAuthor":false}],"inText":false},
+{"from":0,"to":35,"items":[{"key":"doe2020","prefix":"","suffix":"","suppressAuthor":false},{"key":"ERA5LandHourlyData2019","prefix":"","suffix":"","suppressAuthor":false}],"inText":false}
+]

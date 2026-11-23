@@ -9,6 +9,7 @@ use tauri::{AppHandle, Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_updater::Update;
 
 pub mod biblatex_csl;
+pub mod citations;
 mod filewatch;
 pub mod pdfimport;
 pub mod references;
@@ -741,6 +742,12 @@ async fn write_file(path: String, contents: String) -> Result<(), String> {
     .await
 }
 
+/// The bundled citation styles and locales, for the references dialog.
+#[tauri::command]
+fn citation_catalogue() -> citations::Catalogue {
+    citations::catalogue()
+}
+
 /// Distinguishes the temporary files of writes running at the same time.
 static TEMP_FILE_COUNTER: AtomicU64 = AtomicU64::new(0);
 
@@ -1038,6 +1045,25 @@ async fn load_references(
             &front_matter,
             ALLOW_NETWORK_PATHS.load(Ordering::Relaxed),
         ))
+    })
+    .await
+}
+
+/// Render the citations the export found, and the reference list, from the
+/// references the header names. Reads the files again, off the main thread.
+#[tauri::command]
+async fn render_citations(
+    document_path: Option<String>,
+    front_matter: String,
+    citations: Vec<citations::Citation>,
+) -> Result<citations::RenderedCitations, String> {
+    off_main_thread(move || {
+        citations::render_document(
+            document_path.as_deref(),
+            &front_matter,
+            ALLOW_NETWORK_PATHS.load(Ordering::Relaxed),
+            &citations,
+        )
     })
     .await
 }
@@ -1669,6 +1695,8 @@ pub fn run() {
             read_image_as_data_url,
             find_image_by_name,
             load_references,
+            render_citations,
+            citation_catalogue,
             set_allow_network_paths,
             watch_file,
             watch_references,

@@ -1,0 +1,33 @@
+{
+  "citations": [
+    "(Lee, in press)",
+    "(Kim, 2018)",
+    "(National Aeronautics and Space Administration, 2021)",
+    "(Brosh, 2010)"
+  ],
+  "bibliography": [
+    {
+      "key": "brosh2010",
+      "label": null,
+      "html": "Brosh, A. (2010,). <span style=\"font-style: italic;\">The alot is better than you at everything</span>. Hyperbole and a Half. <a href=\"https://hyperboleandahalf.blogspot.com/2010/04/alot-is-better-than-you-at-everything.html\">https://hyperboleandahalf.blogspot.com/2010/04/alot-is-better-than-you-at-everything.html</a>"
+    },
+    {
+      "key": "kim2018",
+      "label": null,
+      "html": "Kim, M.-jun. (2018). <span style=\"font-style: italic;\">Reference lists at scale</span> [PhD thesis]. Example University."
+    },
+    {
+      "key": "lee2024",
+      "label": null,
+      "html": "Lee, A. (in press). Citations yet to come. <span style=\"font-style: italic;\">Journal of Studies</span>."
+    },
+    {
+      "key": "nasa2021",
+      "label": null,
+      "html": "National Aeronautics and Space Administration. (2021). <span style=\"font-style: italic;\">Citing data sets</span> (Nos. TM-2021–1). NASA."
+    }
+  ],
+  "hangingIndent": true,
+  "title": null,
+  "warnings": []
+}

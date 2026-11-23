@@ -1,0 +1,22 @@
+{
+  "citations": [
+    "(1)",
+    "(2)",
+    "(1)"
+  ],
+  "bibliography": [
+    {
+      "key": "doe2020",
+      "label": "1.",
+      "html": "A study of reference lists. Journal of Studies. 2020 ;3(2):1–9. doi:<a href=\"https://doi.org/10.1000/jos.2020.3\">10.1000/jos.2020.3</a>"
+    },
+    {
+      "key": "smith2019",
+      "label": "2.",
+      "html": "The book of citations. Berlin: Example Press; 2019."
+    }
+  ],
+  "hangingIndent": false,
+  "title": null,
+  "warnings": []
+}

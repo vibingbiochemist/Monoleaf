@@ -1,0 +1,25 @@
+{
+  "citations": [
+    "(Doe &amp; Roe, 2020, S. 3)",
+    "(Doe &amp; Roe, 2020, Kapitel 2)",
+    "(Doe &amp; Roe, 2020, Abbildung 1)",
+    "(Doe &amp; Roe, 2020, Abschnitt 4)",
+    "(Doe &amp; Roe, 2020, p. 5)",
+    "(vgl. Smith, 2019, S. 7–9, Hervorhebung)"
+  ],
+  "bibliography": [
+    {
+      "key": "doe2020",
+      "label": null,
+      "html": "Doe, J., &amp; Roe, R. (2020). A Study of Reference Lists. <span style=\"font-style: italic;\">Journal of Studies</span>, <span style=\"font-style: italic;\">3</span>(2), 1–9. <a href=\"https://doi.org/10.1000/jos.2020.3\">https://doi.org/10.1000/jos.2020.3</a>"
+    },
+    {
+      "key": "smith2019",
+      "label": null,
+      "html": "Smith, J. (2019). <span style=\"font-style: italic;\">The Book of Citations</span>. Example Press."
+    }
+  ],
+  "hangingIndent": true,
+  "title": null,
+  "warnings": []
+}

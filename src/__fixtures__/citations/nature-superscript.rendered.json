@@ -1,0 +1,22 @@
+{
+  "citations": [
+    "<span style=\"vertical-align: super;\">1</span>",
+    "<span style=\"vertical-align: super;\">1</span><span style=\"vertical-align: super;\">,</span><span style=\"vertical-align: super;\">2</span>",
+    "see <span style=\"vertical-align: super;\">2</span>"
+  ],
+  "bibliography": [
+    {
+      "key": "doe2020",
+      "label": "1.",
+      "html": "Doe, J. &amp; Roe, R. A study of reference lists. <span style=\"font-style: italic;\">Journal of Studies</span> <span style=\"font-weight: bold;\">3,</span> 1–9 (2020)."
+    },
+    {
+      "key": "smith2019",
+      "label": "2.",
+      "html": "Smith, J. <span style=\"font-style: italic;\">The Book of Citations</span>. (Example Press, Berlin, 2019)."
+    }
+  ],
+  "hangingIndent": false,
+  "title": null,
+  "warnings": []
+}

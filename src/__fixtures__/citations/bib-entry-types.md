@@ -1,0 +1,10 @@
+---
+title: Entry types a .bib file holds
+csl: apa
+bibliography: refs.bib
+---
+
+A work in press [@lee2024], a thesis [@kim2018], a report [@nasa2021] and a
+web page [@brosh2010]. In the list the thesis names its university, the
+report its institution and the web page its site; the work in press has no
+year.
