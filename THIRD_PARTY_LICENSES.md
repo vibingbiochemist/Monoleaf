@@ -10515,6 +10515,7 @@ Used by:
 - hayagriva 0.10.1
 - hermit-abi 0.5.2
 - itoa 1.0.18
+- libyaml-rs 0.3.0
 - linux-raw-sys 0.12.1
 - num_enum 0.7.6
 - num_enum_derive 0.7.6
@@ -10565,6 +10566,7 @@ Used by:
 - wit-bindgen 0.57.1
 - x11-dl 2.21.0
 - x11 2.21.0
+- yaml_serde 0.10.7
 - zmij 1.0.23
 - zvariant_utils 3.5.0
 
