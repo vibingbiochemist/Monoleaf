@@ -137,6 +137,14 @@ export function parseMeta(text: string): {
   return { ...header, format: fm !== null ? "frontmatter" : "comment" };
 }
 
+/** The text between the fences of a leading front matter, or "" without one. */
+export function frontMatter(text: string): string {
+  const fm = text.startsWith("---") ? FRONTMATTER_RE.exec(text) : null;
+  if (fm === null) return "";
+  const [, , content] = fm;
+  return content;
+}
+
 /** Remove any metadata block (front matter or ml:meta comment) from the text. */
 export function stripMeta(text: string): string {
   let t = text;

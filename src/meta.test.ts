@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { applyMeta, metaBlock, parseMeta, stripMeta, EMPTY_META } from "./meta";
+import {
+  applyMeta,
+  frontMatter,
+  metaBlock,
+  parseMeta,
+  stripMeta,
+  EMPTY_META,
+} from "./meta";
 import { createDocumentState, serializeDocument } from "./document";
 
 describe("parseMeta", () => {
@@ -26,6 +33,15 @@ describe("parseMeta", () => {
     const { meta, format } = parseMeta("# Just a doc\n");
     expect(meta).toEqual(EMPTY_META);
     expect(format).toBe("comment");
+  });
+});
+
+describe("frontMatter", () => {
+  it("is the text between the fences, or empty without a header", () => {
+    expect(frontMatter("---\ntitle: X\ncsl: apa\n---\n\nbody\n")).toBe(
+      "title: X\ncsl: apa",
+    );
+    expect(frontMatter("# Body\n")).toBe("");
   });
 });
 

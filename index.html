@@ -753,6 +753,7 @@
           <span>Document properties…</span>
         </button>
       </div>
+      <div id="references-panel" class="menu references-panel" hidden></div>
       <div id="table-picker" class="menu" hidden>
         <div
           id="tp-grid"
@@ -896,6 +897,12 @@
         <span id="file-name" title="Unsaved document">Untitled</span>
         <span class="status-spacer"></span>
         <span id="word-count"></span>
+        <button
+          id="references-status"
+          title="The references the header names, and what could not be read"
+          aria-expanded="false"
+          hidden
+        ></button>
         <span
           id="page-indicator"
           title="Current page / total pages (computed from the real print layout)"

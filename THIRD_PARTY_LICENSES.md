@@ -66,7 +66,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-## @codemirror/autocomplete@6.20.3
+## @codemirror/autocomplete@6.20.4
 
 License: MIT
 Repository: git+https://code.haverbeke.berlin/codemirror/autocomplete

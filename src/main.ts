@@ -52,7 +52,15 @@ import {
   serializeDocument,
   toDocumentLineBreaks,
 } from "./document";
+import { citationCompletion, citationHover } from "./citations";
 import { applyMeta, parseMeta, type DocMeta, type MetaFormat } from "./meta";
+import {
+  currentReferences,
+  describeSources,
+  forgetLoadedReferences,
+  referencesLabel,
+  syncReferences,
+} from "./references";
 import { PortabilityMode, portabilityExtensions } from "./portability";
 import { livePreviewExtensions } from "./livepreview";
 import { imageReferenceAt, type ImageReference } from "./imageref";
@@ -483,6 +491,13 @@ function setupRecoveryFlush() {
  */
 const FILE_CHANGED_EVENT = "file-changed-on-disk";
 
+/**
+ * Rust's name for "a reference file of your document changed on disk".
+ *
+ * COUPLED: `REFERENCES_CHANGED_EVENT` in src-tauri/src/filewatch.rs.
+ */
+const REFERENCES_CHANGED_EVENT = "references-changed-on-disk";
+
 /** The payload of FILE_CHANGED_EVENT (filewatch::FileChange in Rust). */
 interface FileChange {
   path: string;
@@ -518,6 +533,84 @@ function syncFileWatch() {
   // the setting refuses, or a directory that cannot be watched. Neither is
   // worth interrupting the user over, since everything else still works.
   void invoke("watch_file", { path: currentPath }).catch(() => {});
+}
+
+/** Load the references the header names for the document as it is now. */
+function syncReferencesNow() {
+  void syncReferences(currentPath, view.state.doc.toString()).then(
+    refreshReferencesStatus,
+  );
+}
+
+// --- references panel: what the header names, and what could not be read ---
+const referencesStatus = document.getElementById(
+  "references-status",
+) as HTMLButtonElement;
+const referencesPanel = document.getElementById("references-panel")!;
+
+/** The status-bar entry follows the loaded list; absent without references. */
+function refreshReferencesStatus() {
+  const refs = currentReferences();
+  const label = referencesLabel(refs);
+  referencesStatus.hidden = label === "";
+  referencesStatus.textContent = label;
+  referencesStatus.classList.toggle("has-warnings", refs.warnings.length > 0);
+  if (referencesStatus.hidden) toggleReferencesPanel(false);
+  else if (!referencesPanel.hidden) renderReferencesPanel();
+}
+
+// Text only: a source name or warning comes from a file the document names.
+function renderReferencesPanel() {
+  referencesPanel.replaceChildren();
+  for (const line of describeSources(currentReferences())) {
+    const row = document.createElement("div");
+    row.className = "references-source";
+    const name = document.createElement("span");
+    name.textContent = line.name;
+    const summary = document.createElement("span");
+    summary.className = "summary";
+    summary.textContent = line.summary;
+    row.append(name, summary);
+    for (const warning of line.warnings) {
+      const item = document.createElement("div");
+      item.className = "warning";
+      item.textContent = warning;
+      row.append(item);
+    }
+    referencesPanel.append(row);
+  }
+}
+
+function toggleReferencesPanel(show = referencesPanel.hidden) {
+  referencesPanel.hidden = !show;
+  referencesStatus.setAttribute("aria-expanded", String(show));
+  if (!show) return;
+  renderReferencesPanel();
+  // Right-aligned with the entry that opened it, kept on screen.
+  const entry = referencesStatus.getBoundingClientRect();
+  const left = Math.max(8, entry.right - referencesPanel.offsetWidth);
+  referencesPanel.style.left = `${left}px`;
+}
+
+referencesStatus.addEventListener("click", () => toggleReferencesPanel());
+document.addEventListener("mousedown", (e) => {
+  if (referencesPanel.hidden) return;
+  const target = e.target as HTMLElement;
+  if (target.closest("#references-panel, #references-status") === null) {
+    toggleReferencesPanel(false);
+  }
+});
+
+// Loading reads the bibliography files, so typing inside the header waits
+// for a pause rather than reading them on every keystroke.
+const REFERENCES_SYNC_DELAY_MS = 400;
+let referencesSyncTimer: number | undefined;
+function scheduleReferencesSync() {
+  clearTimeout(referencesSyncTimer);
+  referencesSyncTimer = window.setTimeout(
+    syncReferencesNow,
+    REFERENCES_SYNC_DELAY_MS,
+  );
 }
 
 /** Wait until the shared confirm dialog is free, so a prompt never overwrites
@@ -665,6 +758,20 @@ function setupFileWatch() {
     .catch(() => {
       console.error(
         `Monoleaf: could not listen for ${FILE_CHANGED_EVENT}; external edits will not be noticed.`,
+      );
+    });
+}
+
+/** A changed reference file: load the list again, after the usual pause. */
+function setupReferenceWatch() {
+  void thisWindow
+    .listen(REFERENCES_CHANGED_EVENT, () => {
+      forgetLoadedReferences();
+      scheduleReferencesSync();
+    })
+    .catch(() => {
+      console.error(
+        `Monoleaf: could not listen for ${REFERENCES_CHANGED_EVENT}; edits to reference files will not be noticed.`,
       );
     });
 }
@@ -2366,6 +2473,8 @@ const editorExtensions = () => [
   spellcheckCompartment.of(spellcheckExtensions()),
   commentsExtension(),
   criticExtension(),
+  citationCompletion(),
+  citationHover(),
   EditorView.lineWrapping,
   EditorView.updateListener.of((update) => {
     if (update.docChanged) {
@@ -2373,6 +2482,7 @@ const editorExtensions = () => [
       scheduleDocRefresh();
       schedulePagination();
       scheduleAutosaveRecovery();
+      scheduleReferencesSync();
     }
     if (update.docChanged) refreshWordCount();
     if (update.docChanged || update.selectionSet) {
@@ -2487,6 +2597,7 @@ function loadIntoEditor(
   diskBaseline = null;
   missingOnDisk = false; // a different document; refreshTitle below shows it
   syncFileWatch();
+  syncReferencesNow();
   // A document with a path needs no suggestion; one without keeps whatever the
   // caller supplied (an import) and otherwise reverts to "Untitled".
   suggestedName = path === null ? suggested : null;
@@ -2713,8 +2824,10 @@ async function saveFile(
     autosaveErrorShown = false;
     currentPath = path;
     setCurrentDocumentPath(path);
-    // Save As moves the watch to the new file.
+    // Save As moves the watch to the new file, and the bibliography paths
+    // are relative to it.
     syncFileWatch();
+    syncReferencesNow();
     // A document saved for the first time (or saved-as to a new directory)
     // can turn previously unresolvable relative image references into
     // resolvable ones. Same reconfigure toggleRemoteImages uses: an image
@@ -4159,6 +4272,10 @@ window.addEventListener(
       toggleSettingsMenu(false);
       return;
     }
+    if (e.key === "Escape" && !referencesPanel.hidden) {
+      toggleReferencesPanel(false);
+      return;
+    }
     if (e.key === "Escape" && !printPreview.hidden) {
       e.preventDefault();
       closePreview();
@@ -4224,6 +4341,7 @@ localizeShortcutLabels(); // ⌘ labels on macOS; no-op elsewhere
 setupCloseGuard();
 // Before the startup chain, which is what opens a file and starts its watch.
 setupFileWatch();
+setupReferenceWatch();
 applyViewClass();
 applyZoom();
 refreshTitle();
