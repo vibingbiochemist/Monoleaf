@@ -39,6 +39,8 @@ tauri-plugin-updater = "2.10.1"
 pdf-extract = "0.12"
 base64 = "0.23"
 notify-debouncer-mini = "0.7.0"
+hayagriva = { version = "0.10.1", features = ["csl-json"] }
+biblatex = "0.12.0"
 
 # The `windows` crate is only used by the (Windows-only) spell-check module, so
 # gate it to Windows targets. Left in [dependencies] it would drag the
